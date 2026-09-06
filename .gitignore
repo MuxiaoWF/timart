@@ -1,0 +1,29 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Kotlin 2.x 编译会话数据
+.kotlin/
+
+# IDE 向导直接构建到 app/release/ 的产物
+/app/release
+
+# 本地构建日志与堆转储
+*.log
+*.hprof
+
+# 密钥库
+*.jks
+*.keystore
+
+# 本地开发文档
+/AGENTS.md
+/docs/
+.workbuddy/

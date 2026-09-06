@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动背景 / 全局底色：近黑暖炭 -->
+    <color name="window_background">#121110</color>
+    <!-- 启动器图标底色 -->
+    <color name="ic_launcher_background">#121110</color>
+</resources>

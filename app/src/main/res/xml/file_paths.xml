@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 封存图片（加密 .bin，仅内部调试用） -->
+    <files-path name="images" path="images/" />
+    <!-- 备份 zip 导出 -->
+    <files-path name="backup" path="backup/" />
+    <!-- 海报 PNG（外部私有目录） -->
+    <external-files-path name="poster" path="Pictures/" />
+    <!-- 临时分享文件 -->
+    <cache-path name="share" path="share/" />
+</paths>

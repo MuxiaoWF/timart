@@ -1,0 +1,88 @@
+package com.muxiao.timart.ui.detail
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
+import com.muxiao.timart.l10n.LocalStrings
+import com.muxiao.timart.domain.model.CapsuleState
+import com.muxiao.timart.ui.components.visual.SectionHeader
+import com.muxiao.timart.ui.cosmic.CapsuleOrbView
+import com.muxiao.timart.ui.theme.InkDisabled
+import com.muxiao.timart.ui.theme.InkSecondary
+import com.muxiao.timart.ui.theme.TimartType
+import com.muxiao.timart.utils.format.TimeFormatter
+
+/**
+ * 状态 D：DESTROYED 尘迹态（PRD §3.4.4 状态 D / 设计稿 09）：
+ * - 不保留完整尘核，仅原位置附近极淡尘迹残影；
+ * - 进入页面先显示一瞬间尘迹，再缓慢静止（残影整体 1.0 → 0.62，900ms）；
+ * - 仅标题、销毁时间与一句低调纪念文案；不出现任何原始正文或图片。
+ */
+@Composable
+fun DestroyedStateView(
+    title: String?,
+    destroyedAt: Long?,
+    modifier: Modifier = Modifier,
+) {
+    val L = LocalStrings.current
+    // 「先一瞬间尘迹 → 缓慢静止」
+    val still = remember { Animatable(1f) }
+    LaunchedEffect(Unit) {
+        still.animateTo(0.62f, animationSpec = tween(durationMillis = 900))
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            // 顶部 64dp：为左上返回按钮让位
+            .padding(start = 32.dp, end = 32.dp, top = 64.dp, bottom = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        SectionHeader(title = L.destroyedTitle, note = "ARCHIVED")
+
+        Spacer(modifier = Modifier.weight(0.28f))
+
+        // 尘迹残影（无完整球体，残影弧由 CapsuleOrbView DESTROYED 分支绘制）
+        CapsuleOrbView(
+            state = CapsuleState.DESTROYED,
+            radius = 64.dp,
+            modifier = Modifier.graphicsLayer { alpha = still.value },
+        )
+
+        Spacer(modifier = Modifier.height(26.dp))
+
+        Text(
+            text = title ?: L.untitledCapsule,
+            style = TimartType.titleSerif,
+            color = InkSecondary,
+        )
+        Text(
+            text = destroyedAt?.let { TimeFormatter.dateTime(it) } ?: L.destroyedTimeUnknown,
+            style = TimartType.caption,
+            color = InkDisabled,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+
+        Spacer(modifier = Modifier.height(22.dp))
+
+        Text(
+            text = L.destroyedBody,
+            style = TimartType.body,
+            color = InkDisabled,
+        )
+
+        Spacer(modifier = Modifier.weight(0.72f))
+    }
+}

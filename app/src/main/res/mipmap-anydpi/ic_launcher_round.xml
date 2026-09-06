@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 24/25 兜底：圆形版本（构图与方形一致，底为整圆） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#121110"
+        android:pathData="M54,0a54,54 0 1,0 0.001,0z" />
+    <path
+        android:fillColor="#14E8B44A"
+        android:pathData="M28,54a26,26 0 1,0 52,0a26,26 0 1,0 -52,0z" />
+    <path
+        android:fillColor="#1FE8B44A"
+        android:pathData="M31.5,54a22.5,22.5 0 1,0 45,0a22.5,22.5 0 1,0 -45,0z" />
+    <path
+        android:fillColor="#29E8B44A"
+        android:pathData="M35,54a19,19 0 1,0 38,0a19,19 0 1,0 -38,0z" />
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-24">
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#59E8B44A"
+            android:strokeWidth="1.2"
+            android:pathData="M37,54a17,6.5 0 1,0 34,0a17,6.5 0 1,0 -34,0z" />
+    </group>
+    <path
+        android:fillColor="#8B6C2C"
+        android:pathData="M43,54a11,11 0 1,0 22,0a11,11 0 1,0 -22,0z" />
+    <path
+        android:fillColor="#E8B44A"
+        android:pathData="M43.6,52.8a9.4,9.4 0 1,0 18.8,0a9.4,9.4 0 1,0 -18.8,0z" />
+    <path
+        android:fillColor="#F5D08C"
+        android:pathData="M47.6,47.5a2.6,2.6 0 1,0 5.2,0a2.6,2.6 0 1,0 -5.2,0z" />
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-24">
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#8CE8B44A"
+            android:strokeWidth="1.2"
+            android:pathData="M37,54a17,6.5 0 0,0 34,0" />
+        <path
+            android:fillColor="#F5D08C"
+            android:pathData="M39.4,56.6a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0z" />
+        <path
+            android:fillColor="#E8B44A"
+            android:pathData="M68.8,50.6a1.2,1.2 0 1,0 2.4,0a1.2,1.2 0 1,0 -2.4,0z" />
+    </group>
+</vector>

@@ -1,0 +1,517 @@
+package com.muxiao.timart.ui.detail
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.muxiao.timart.utils.RuntimeSettings
+import com.muxiao.timart.l10n.currentStrings
+import com.muxiao.timart.AppContainer
+import com.muxiao.timart.data.local.crypto.CryptoException
+import com.muxiao.timart.domain.context.DependencyStatus
+import com.muxiao.timart.domain.model.Capsule
+import com.muxiao.timart.domain.model.CapsuleState
+import com.muxiao.timart.domain.model.ConditionStatus
+import com.muxiao.timart.domain.usecase.ReadCapsuleUseCase
+import com.muxiao.timart.domain.model.unlock.UnlockCondition
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * 详情页四状态 VM（架构 §2.16 / PRD §2.3、§3.4.4）：
+ *
+ * - 订阅 observeById：Room 是唯一状态事实源，页面 phase 由胶囊状态 + 阅读进程推导；
+ * - LOCKED 态 30s 周期重判 + 进页立即一次（前台上下文，含 GPS）；
+ *   条件满足差集 → pendingPulse 计数（UI 局部向心尘流），全部满足 → 回写 UNLOCKED + 通知；
+ * - UNSEAL / 450ms 简化重读是纯视觉层：**业务（内容解密、销毁）永不等待动画回调**；
+ * - autoDestroy 阅读后销毁：唯一主动作 + 二次确认 + 返回「销毁/保留」，无静默销毁路径。
+ */
+class DetailViewModel(
+    private val container: AppContainer,
+    private val capsuleId: String,
+    private val firstUnlock: Boolean,
+) : ViewModel() {
+
+    /** 详情页相位（业务状态机；UNSEAL/DISSOLVE 仅是动画承载相位，跳过路径随时可落终态） */
+    enum class Phase { LOADING, LOCKED, UNSEAL, CONTENT, DISSOLVE, ARCHIVED, MISSING }
+
+    /** 条件时间线 UI 数据（LOCKED 态） */
+    data class TimelineUi(
+        val items: List<ConditionStatus>,
+        val satisfiedCount: Int,
+        val totalCount: Int,
+        val dependencyTitle: String?,
+        val dependencyStatus: DependencyStatus?,
+        val dependencyReason: String?,
+
+        /** 依赖胶囊已销毁 → 本胶囊永久无法解锁（明示） */
+        val dependencyUnreachable: Boolean,
+
+        /** 今日步数（判定链路同一 stepProvider 读取；无计步硬件/无权限/首帧未读到 = null） */
+        val stepProgress: Int? = null,
+    )
+
+    data class UiState(
+        val phase: Phase = Phase.LOADING,
+        val timeline: TimelineUi? = null,
+        val content: ReadCapsuleUseCase.CapsuleContent? = null,
+        val capsuleTitle: String? = null,
+
+        /** 当前胶囊领域模型（autoDestroy / 天气 / 标签等元信息读取） */
+        val capsule: Capsule? = null,
+        val unlockedAt: Long? = null,
+        val destroyedAt: Long? = null,
+
+        /** 冷启动会话未解锁：进内容前先要口令 */
+        val needPassword: Boolean = false,
+        val destroyConfirmVisible: Boolean = false,
+        val backConfirmVisible: Boolean = false,
+
+        /** 用户已选「保留」，返回不再弹「销毁/保留」 */
+        val keepAfterRead: Boolean = false,
+
+        /** 条件满足差集脉冲计数（UI 据此单发 PENDING 向心尘流） */
+        val pendingPulse: Int = 0,
+        val errorText: String? = null,
+
+        /** 会话内已完成的现场挑战 id（来源 = 每轮判定结果时间线，挑战卡据此显示完成态） */
+        val satisfiedChallenges: Set<String> = emptySet(),
+
+        /** 「后悔药」：条件修改机会可用（meta 一次性标记未消耗） */
+        val regretAvailable: Boolean = false,
+        val showRegretSheet: Boolean = false,
+
+        /**
+         * 本次进入阅读是否已播完整揭封（UNSEAL 相位）。
+         * true → 落 CONTENT 时文字直接是完成态（揭封信笺已把完整正文显示过，
+         * 若再跑一次 reveal 会出现"文字完整 → 消失 → 重敲"的倒退观感）。
+         */
+        val playedFullUnseal: Boolean = false,
+    )
+
+    private val _state = MutableStateFlow(UiState())
+    val state: StateFlow<UiState> = _state.asStateFlow()
+
+    private val repo = container.capsuleRepository
+    private val judge = container.unlockJudgeUseCase
+    private val crud = container.capsuleCrudUseCase
+    private val reader = container.readCapsuleUseCase
+    private val crypto = container.contentCryptoManager
+    private val destroyedRepo = container.destroyedRepository
+
+    /** 本次会话内是否见过 LOCKED 态（解锁发生在眼前 → 播完整 UNSEAL） */
+    private var sawLocked = false
+
+    /** 阅读标记检查结果：false = 本胶囊从未被打开阅读（UNLOCKED 后首读 → 播完整 UNSEAL） */
+    private var readMarkChecked = false
+    private var readMarkExists = true
+
+    private var judgeJob: Job? = null
+
+    /**
+     * 本次详情页会话内已提交的现场挑战应答（challengeId → 应答串）。
+     * 挑战是用户当场完成的一次性事实，会话内永久有效：
+     * - 多挑战逐个提交时必须累积，否则后一挑战复判会丢失前一应答（AND 规则下永远差一口气）；
+     * - 30s 周期重判也必须携带，否则已完成挑战会被周期快照打回「待完成」。
+     * Worker / ON_RESUME 全量判定不走此处，fail-closed 语义不变。
+     * 主线程提交写入与 Default 协程周期读取并发 → 用 ConcurrentHashMap。
+     */
+    private val sessionChallengeAnswers = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private var latestCapsule: Capsule? = null
+
+    init {
+        viewModelScope.launch(Dispatchers.Default) {
+            repo.observeById(capsuleId).collect { onCapsule(it) }
+        }
+        // 后悔药可用性：读 meta 一次性标记（读失败按已消耗处理，绝不误开隐藏入口）
+        viewModelScope.launch(Dispatchers.IO) {
+            val used = runCatching {
+                container.database.metaDao().get(condEditKey()) == "true"
+            }.getOrDefault(true)
+            _state.update { it.copy(regretAvailable = !used) }
+        }
+    }
+
+    // ================= 胶囊状态回流 =================
+
+    private suspend fun onCapsule(capsule: Capsule?) {
+        if (capsule == null) {
+            _state.update { if (it.phase == Phase.LOADING) it.copy(phase = Phase.MISSING) else it }
+            return
+        }
+        latestCapsule = capsule
+        when (capsule.state) {
+            CapsuleState.LOCKED -> {
+                sawLocked = true
+                val current = _state.value
+                if (current.phase != Phase.LOADING && current.phase != Phase.LOCKED) return
+                _state.update {
+                    it.copy(
+                        phase = Phase.LOCKED,
+                        capsule = capsule,
+                        timeline = it.timeline ?: emptyTimeline(capsule),
+                    )
+                }
+                startJudgeLoop()
+            }
+
+            CapsuleState.UNLOCKED -> {
+                ensureReadMarkChecked()
+                onUnlocked(capsule)
+            }
+
+            CapsuleState.DESTROYED -> {
+                _state.update {
+                    it.copy(
+                        // 消散动画播放中保持相位（销毁完成回流不改写），否则直落尘迹态
+                        phase = if (it.phase == Phase.DISSOLVE) Phase.DISSOLVE else Phase.ARCHIVED,
+                        capsule = capsule,
+                    )
+                }
+                loadDestroyedAt()
+            }
+        }
+    }
+
+    /** 一次性读取「已阅读」标记（meta，读失败按已读处理，避免误播） */
+    private suspend fun ensureReadMarkChecked() {
+        if (readMarkChecked) return
+        readMarkExists = runCatching {
+            container.database.metaDao().get(readMarkKey()) == "true"
+        }.getOrDefault(true)
+        readMarkChecked = true
+    }
+
+    /** UNLOCKED 后首次进入阅读：写已读标记（之后重读走 450ms 简化过渡） */
+    private fun markAsRead() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                container.database.metaDao().put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(readMarkKey(), "true"),
+                )
+            }
+        }
+    }
+
+    private fun readMarkKey() = "capsule.read.$capsuleId"
+
+    /** 归尘时间：领域模型不含销毁时间戳，从尘迹档案记录一次性读取 */
+    private fun loadDestroyedAt() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val at = destroyedRepo.observeAll().first().firstOrNull { it.id == capsuleId }?.destroyedAt
+            if (at != null) {
+                _state.update { it.copy(destroyedAt = at) }
+            }
+        }
+    }
+
+    private fun emptyTimeline(capsule: Capsule): TimelineUi = TimelineUi(
+        items = emptyList(),
+        satisfiedCount = 0,
+        totalCount = capsule.unlockRule.conditionList.size,
+        dependencyTitle = null,
+        dependencyStatus = null,
+        dependencyReason = null,
+        dependencyUnreachable = false,
+    )
+
+    // ================= 判定循环（LOCKED 态） =================
+
+    private fun startJudgeLoop() {
+        if (judgeJob?.isActive == true) return
+        judgeJob = viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                judgeOnce()
+                if (_state.value.phase != Phase.LOCKED) break
+                delay(REJUDGE_INTERVAL_MS.milliseconds)
+            }
+        }
+    }
+
+    /**
+     * 单颗判定：进页一次 + 每 30s 一次；满足差集 → 脉冲；全满足 → 回写 UNLOCKED。
+     * 判定始终携带会话内已累积的挑战应答（已完成挑战在时间线上保持满足态）；
+     * [newAnswers] 非空 = 本轮刚提交了挑战应答（仅用于应答错误的即时反馈）
+     */
+    private suspend fun judgeOnce(newAnswers: Map<String, String> = emptyMap()) {
+        val capsule = repo.byIdSync(capsuleId) ?: return
+        if (capsule.state != CapsuleState.LOCKED) return
+        val result = judge.judge(
+            capsule,
+            container.defaultContext(foregroundOnly = false),
+            RuntimeSettings.resolvedLang,
+            sessionChallengeAnswers,
+        )
+
+        // 挑战应答反馈：仅「刚提交且判错」才提示（正确提交不打扰，其余未满足原因时间线行内已明示）
+        if (newAnswers.isNotEmpty()) {
+            val reasons = com.muxiao.timart.domain.model.unlock.JudgeReasons.forLang(RuntimeSettings.resolvedLang)
+            val wrongReason = result.items.lastOrNull { it.reason == reasons.challengeWrong }?.reason
+            _state.update { it.copy(errorText = wrongReason) }
+        }
+
+        val depTitle = capsule.dependCapsuleId?.let { repo.byIdSync(it)?.title }
+        val timeline = TimelineUi(
+            items = result.items,
+            satisfiedCount = result.items.count { it.satisfied },
+            totalCount = result.items.size,
+            dependencyTitle = depTitle,
+            dependencyStatus = if (capsule.dependCapsuleId != null) result.dependencyStatus else null,
+            dependencyReason = capsule.dependCapsuleId?.let { judge.dependencyReason(result.dependencyStatus, RuntimeSettings.resolvedLang) },
+            dependencyUnreachable = result.dependencyStatus == DependencyStatus.DESTROYED,
+            stepProgress = container.stepProvider.todaySteps(),
+        )
+
+        // 条件满足差集 → 局部 PENDING 脉冲（不解锁内容、无庆祝反馈）
+        val prev = _state.value.timeline
+        var newPulses = 0
+        if (prev != null && !result.overallOk) {
+            result.items.forEachIndexed { index, item ->
+                val wasSatisfied = prev.items.getOrNull(index)?.satisfied == true
+                if (!wasSatisfied && item.satisfied) newPulses++
+            }
+        }
+
+        // 已完成的现场挑战 id（权威状态源：判定结果中挑战条件的 satisfied 位）
+        val satisfiedChallengeIds = result.items
+            .filter { it.condition is UnlockCondition.ChallengeCondition && it.satisfied }
+            .map { (it.condition as UnlockCondition.ChallengeCondition).challengeId }
+            .toSet()
+
+        if (result.overallOk) {
+            // 业务先行：回写 UNLOCKED，Room Flow 回流后进入 UNSEAL/CONTENT
+            repo.updateState(capsule.id, CapsuleState.UNLOCKED, container.timeProvider.nowMillis())
+            container.notifier.notifyUnlock(capsule.id, capsule.title)
+        }
+
+        _state.update {
+            it.copy(
+                timeline = timeline,
+                pendingPulse = it.pendingPulse + newPulses,
+                satisfiedChallenges = satisfiedChallengeIds,
+            )
+        }
+    }
+
+    // ================= 现场挑战（打开胶囊当场完成） =================
+
+    /** 锁定规则中的全部挑战条件（UI 渲染挑战小件用；快照判定永不满足它们） */
+    fun pendingChallenges(): List<UnlockCondition.ChallengeCondition> =
+        latestCapsule?.unlockRule?.conditionList
+            ?.filterIsInstance<UnlockCondition.ChallengeCondition>()
+            ?: emptyList()
+
+    /** 提交一个挑战的当场应答：累积进会话应答表后复判，全部满足即解锁 */
+    fun submitChallengeAnswer(condition: UnlockCondition.ChallengeCondition, answer: String) {
+        sessionChallengeAnswers[condition.challengeId] = answer
+        viewModelScope.launch(Dispatchers.Default) {
+            judgeOnce(mapOf(condition.challengeId to answer))
+        }
+    }
+
+    // ================= 后悔药：条件修改（每胶囊一次，长按尘核唤出） =================
+
+    private fun condEditKey() = "capsule.condEdit.$capsuleId"
+
+    /** 长按/连续快击尘核：仅机会未消耗且处于锁定态时唤出编辑面板（已消耗则彻底无感） */
+    fun onOrbLongPress() {
+        val current = _state.value
+        if (current.regretAvailable && current.phase == Phase.LOCKED) {
+            _state.update { it.copy(showRegretSheet = true) }
+        }
+    }
+
+    fun dismissRegretSheet() {
+        _state.update { it.copy(showRegretSheet = false) }
+    }
+
+    /**
+     * 确认修改：先写规则、成功后才写一次性标记（中途失败不消耗机会），
+     * 然后立即重判刷新时间线（不必等 30s 周期）。
+     */
+    fun saveEditedRule(rule: com.muxiao.timart.domain.model.unlock.UnlockRule) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                repo.updateUnlockRule(capsuleId, rule)
+                container.database.metaDao().put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(condEditKey(), "true"),
+                )
+            }
+            _state.update {
+                if (result.isSuccess) {
+                    it.copy(regretAvailable = false, showRegretSheet = false, errorText = null)
+                } else {
+                    it.copy(showRegretSheet = false, errorText = currentStrings().condEditFailed)
+                }
+            }
+            if (result.isSuccess) judgeOnce()
+        }
+    }
+
+    // ================= 解锁 → 阅读 =================
+
+    private fun onUnlocked(capsule: Capsule) {
+        val current = _state.value
+        if (current.phase == Phase.UNSEAL || current.phase == Phase.CONTENT ||
+            current.phase == Phase.DISSOLVE || current.phase == Phase.ARCHIVED
+        ) {
+            return
+        }
+        if (!crypto.ensureUnlocked()) {
+            // 冷启动会话无密钥：先尝试保险库恢复（TTL 内免口令），仍无密钥才弹口令
+            viewModelScope.launch(Dispatchers.IO) {
+                if (crypto.tryRestoreSession()) {
+                    proceedUnlocked(capsule)
+                } else {
+                    _state.update {
+                        it.copy(needPassword = true, capsuleTitle = capsule.title, unlockedAt = capsule.unlockTimestamp)
+                    }
+                }
+            }
+            return
+        }
+        proceedUnlocked(capsule)
+    }
+
+    /** 进入阅读态：内容解密立即启动（业务不等待任何动画），相位仅决定视觉呈现 */
+    private fun proceedUnlocked(capsule: Capsule) {
+        // 完整揭封：解锁发生在眼前（本会话见过 LOCKED / 路由标记），或 UNLOCKED 后从未阅读过
+        val playFullUnseal = firstUnlock || sawLocked || !readMarkExists
+        markAsRead()
+        readMarkExists = true
+        readContent(capsule)
+        _state.update {
+            it.copy(
+                phase = if (playFullUnseal) Phase.UNSEAL else Phase.CONTENT,
+                playedFullUnseal = playFullUnseal,
+                needPassword = false,
+                errorText = null,
+                capsuleTitle = capsule.title,
+                unlockedAt = capsule.unlockTimestamp,
+            )
+        }
+    }
+
+    /** 口令弹窗确认（冷启动重读路径） */
+    fun onPasswordEntered(password: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching { crypto.unlock(password.toCharArray()) }.getOrDefault(false)
+            if (ok) {
+                val capsule = latestCapsule ?: repo.byIdSync(capsuleId)
+                if (capsule != null) proceedUnlocked(capsule)
+            } else {
+                _state.update { it.copy(errorText = currentStrings().dvPwWrong) }
+            }
+        }
+    }
+
+    fun dismissPassword() {
+        _state.update { it.copy(needPassword = false, errorText = null) }
+    }
+
+    private fun readContent(capsule: Capsule) {
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val content = reader.read(capsule, RuntimeSettings.resolvedLang)
+                _state.update { it.copy(content = content, errorText = null) }
+            } catch (e: CryptoException) {
+                _state.update {
+                    val L = currentStrings()
+                    it.copy(errorText = L.dvDecryptFailedFmt.format(e.message ?: L.dvCiphertextCorrupt))
+                }
+            } catch (_: IllegalStateException) {
+                _state.update { it.copy(errorText = currentStrings().dvContentUnreadable) }
+            }
+        }
+    }
+
+    // ================= UNSEAL 视觉层控制（跳过即落 CONTENT） =================
+
+    /** 任意点击 / 序列完成：安全落终态，业务零等待 */
+    fun onUnsealFinished() {
+        _state.update { if (it.phase == Phase.UNSEAL) it.copy(phase = Phase.CONTENT) else it }
+    }
+
+    // ================= 销毁决策（无静默销毁路径） =================
+
+    fun requestDestroy() {
+        _state.update { it.copy(destroyConfirmVisible = true) }
+    }
+
+    fun dismissDestroy() {
+        _state.update { it.copy(destroyConfirmVisible = false) }
+    }
+
+    /** 确认销毁：markDestroyed（物理删除 + 档案）立即启动；DISSOLVE 仅是视觉层 */
+    fun confirmDestroy() {
+        val current = _state.value
+        if (current.phase != Phase.CONTENT) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { crud.markDestroyed(capsuleId) }
+        }
+        _state.update {
+            it.copy(phase = Phase.DISSOLVE, destroyConfirmVisible = false, backConfirmVisible = false)
+        }
+        container.audioManager.playDissolve()
+    }
+
+    fun onDissolveFinished() {
+        _state.update { if (it.phase == Phase.DISSOLVE) it.copy(phase = Phase.ARCHIVED) else it }
+    }
+
+    /** 「保留」（返回弹窗）为持久决定：回退为普通胶囊，之后阅读/返回不再询问 */
+    fun keepAndExit() {
+        setAutoDestroyAfterRead(false)
+        _state.update { it.copy(keepAfterRead = true, backConfirmVisible = false) }
+    }
+
+    /**
+     * 切换「阅读后自动销毁」（看后销毁 ↔ 保留）：持久化写库，Room 回流刷新 UI。
+     * 保留胶囊的销毁仍走显式确认弹窗（无静默销毁路径）。
+     */
+    fun setAutoDestroyAfterRead(value: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.updateAutoDestroyAfterRead(capsuleId, value) }
+        }
+    }
+
+    /**
+     * 返回键拦截决策：
+     * UNSEAL → 跳过动画；CONTENT 且 autoDestroy 未决策 → 弹「销毁/保留」。
+     * @return true = UI 应消费本次返回（不退出页面）
+     */
+    fun onBackPressed(): Boolean {
+        val current = _state.value
+        return when (current.phase) {
+            Phase.UNSEAL -> {
+                onUnsealFinished()
+                true
+            }
+
+            Phase.CONTENT -> {
+                val autoDestroy = latestCapsule?.autoDestroyAfterRead == true
+                if (autoDestroy && !current.keepAfterRead && current.content != null) {
+                    _state.update { it.copy(backConfirmVisible = true) }
+                    true
+                } else {
+                    false
+                }
+            }
+
+            else -> false
+        }
+    }
+
+    companion object {
+        /** LOCKED 态周期重判间隔（PRD：详情页 30s 周期 + 进页一次） */
+        const val REJUDGE_INTERVAL_MS = 30_000L
+    }
+}
