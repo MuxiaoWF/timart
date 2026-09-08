@@ -9,12 +9,12 @@ import org.junit.Test
 class NfcPairingTest {
 
     @Test
-    fun `载荷即挑战ID`() {
+    fun 载荷即挑战ID() {
         assertEquals("abc-123", NfcPairing.payloadFor("abc-123"))
     }
 
     @Test
-    fun `外部类型名拼接`() {
+    fun 外部类型名拼接() {
         assertEquals("timart.com:capsule", NfcPairing.FULL_TYPE)
         assertTrue(NfcPairing.isTimartRecord("timart.com:capsule"))
         assertTrue(NfcPairing.isTimartRecord("TIMART.COM:CAPSULE"))

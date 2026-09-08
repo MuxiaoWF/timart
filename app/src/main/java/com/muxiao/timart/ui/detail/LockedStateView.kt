@@ -75,6 +75,7 @@ import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TrackHairline
 import com.muxiao.timart.utils.RuntimeSettings
 import com.muxiao.timart.utils.format.TimeFormatter
+import com.muxiao.timart.utils.permission.PERM_ACTIVITY_RECOGNITION
 
 /**
  * 状态 A：LOCKED 未解锁（PRD §3.4.4 状态 A / 设计稿 04）：
@@ -93,6 +94,7 @@ fun LockedStateView(
     onPlayPendingSound: () -> Unit,
     autoDestroyAfterRead: Boolean,
     onToggleAutoDestroy: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 
     /** 现场挑战条件列表与应答回调（完成当场挑战 → VM 携带应答复判） */
     pendingChallenges: List<UnlockCondition.ChallengeCondition> = emptyList(),
@@ -107,7 +109,6 @@ fun LockedStateView(
 
     /** 粒子画布（宿主 ParticleCanvas）在窗口根坐标中的原点：尘核锚点换算画布局部坐标用 */
     overlayOrigin: Offset = Offset.Zero,
-    modifier: Modifier = Modifier,
 ) {
     val L = LocalStrings.current
     val context = LocalContext.current
@@ -134,9 +135,12 @@ fun LockedStateView(
         (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
             ?.getDefaultSensor(android.hardware.Sensor.TYPE_STEP_COUNTER) != null
     }
-    val stepPermissionMissing = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) !=
-        android.content.pm.PackageManager.PERMISSION_GRANTED
+    val stepPermissionMissing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        ContextCompat.checkSelfPermission(context, PERM_ACTIVITY_RECOGNITION) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    } else {
+        false // API < 29 无该权限概念，读传感器不受限
+    }
     val stepBlocked = hasStepSensor && stepPermissionMissing && timeline?.items?.any {
         it.reason == judgeReasons.stepUnavailable
     } == true
@@ -358,7 +362,7 @@ fun LockedStateView(
                 title = L.dfStepTitle,
                 body = L.permActivityDesc,
                 onConfirm = {
-                    stepLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                    stepLauncher.launch(PERM_ACTIVITY_RECOGNITION)
                 },
                 onDismiss = { showStepGuide = false },
             )

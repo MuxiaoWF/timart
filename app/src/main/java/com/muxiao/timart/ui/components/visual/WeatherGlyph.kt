@@ -7,8 +7,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.WeatherType
 import com.muxiao.timart.ui.theme.GlowGold
 import com.muxiao.timart.ui.theme.InkSecondary
@@ -115,6 +113,3 @@ private fun DrawScope.drawGlyph(type: WeatherType, color: Color, accentColor: Co
         }
     }
 }
-
-/** 统一尺寸默认值（调用方大多数场景直接用） */
-val DefaultGlyphSize: Dp = 20.dp

@@ -4,7 +4,7 @@ package com.muxiao.timart.ui.components.particle
  * 胶囊动效状态机（架构 §8.1）：
  * IDLE ─→ BREATHE ─→ PENDING ─→ UNSEAL ─→ CONTENT ─→ DISSOLVE ─→ ARCHIVED
  *
- * 引擎不持有业务逻辑：业务侧经 [setState] 驱动，状态 → 预设映射集中在此文件。
+ * 引擎不持有业务逻辑：业务侧经 [ParticleEngine.setState] 驱动，状态 → 预设映射由引擎内部承担。
  */
 enum class MotionState {
     /** 无粒子 */
@@ -27,15 +27,4 @@ enum class MotionState {
 
     /** 尘迹静止（由静态绘制承担，引擎无粒子） */
     ARCHIVED,
-}
-
-/** 状态 → 默认预设映射表（§8.1；UNSEAL/ASSEMBLE 序列经 fire(sequence=true) 单独驱动） */
-fun MotionState.defaultPreset(): ParticlePreset? = when (this) {
-    MotionState.IDLE -> null
-    MotionState.BREATHE -> ParticlePreset.BREATHE
-    MotionState.PENDING -> ParticlePreset.PENDING
-    MotionState.UNSEAL -> ParticlePreset.UNSEAL
-    MotionState.CONTENT -> null
-    MotionState.DISSOLVE -> ParticlePreset.DISSOLVE
-    MotionState.ARCHIVED -> null
 }

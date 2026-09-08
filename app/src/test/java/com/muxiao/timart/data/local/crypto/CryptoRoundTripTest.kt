@@ -4,11 +4,9 @@ import com.muxiao.timart.data.local.db.MetaDao
 import com.muxiao.timart.data.local.db.entity.MetaEntity
 import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.CapsuleState
-import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.domain.model.unlock.UnlockRule
 import com.muxiao.timart.domain.repository.CapsuleRepository
 import java.io.File
-import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
@@ -81,22 +79,12 @@ class CryptoRoundTripTest {
 
         override suspend fun updateLayout(id: String, layoutX: Float?, layoutY: Float?) = Unit
         override suspend fun updateAutoDestroyAfterRead(id: String, value: Boolean) = Unit
+        override suspend fun updateUnlockRule(id: String, rule: UnlockRule) = Unit
 
         override suspend fun delete(id: String) {
             items.removeAll { it.id == id }
         }
     }
-
-    private fun emptyCapsule(id: String) = Capsule(
-        id = id,
-        title = "t",
-        contentCipher = null,
-        createTimestamp = 0L,
-        unlockRule = UnlockRule(
-            com.muxiao.timart.domain.model.unlock.LogicType.AND,
-            listOf(UnlockCondition.FixedDate(LocalDate.of(2026, 1, 1))),
-        ),
-    )
 
     private fun newManager(): Triple<ContentCryptoManager, FakeMetaDao, FakeCapsuleRepository> {
         val cipher = AesGcmCipher()

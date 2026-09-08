@@ -64,7 +64,6 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun WriteStep(
     vm: CreateViewModel,
-    engine: com.muxiao.timart.ui.components.particle.ParticleEngine,
     onSpark: (rootX: Float, rootY: Float) -> Unit,
     onNext: () -> Unit,
 ) {

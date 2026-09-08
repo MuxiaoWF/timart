@@ -522,7 +522,7 @@ internal fun ConditionTypeSheet(
                                     .then(if (disabled) Modifier else Modifier.clickable { onPick(type) })
                                     .padding(vertical = 14.dp),
                             ) {
-                                androidx.compose.foundation.layout.Column(
+                                Column(
                                     modifier = Modifier.align(Alignment.Center),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {

@@ -117,12 +117,4 @@ object BackupCodec {
         val createdAt: Long,
         val destroyedAt: Long,
     )
-
-    // ---- 编解码便捷函数 ----
-
-    fun <T> encode(serializer: kotlinx.serialization.KSerializer<T>, value: T): String =
-        json.encodeToString(serializer, value)
-
-    fun <T> decode(serializer: kotlinx.serialization.KSerializer<T>, raw: String): T =
-        json.decodeFromString(serializer, raw)
 }

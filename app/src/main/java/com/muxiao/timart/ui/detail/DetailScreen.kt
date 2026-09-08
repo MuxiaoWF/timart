@@ -38,7 +38,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.muxiao.timart.utils.RuntimeSettings
 import com.muxiao.timart.l10n.LocalStrings
-import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.AppContainer
 import com.muxiao.timart.ui.components.particle.ParticleCanvas
 import com.muxiao.timart.ui.components.visual.GlowOrb
@@ -222,9 +221,7 @@ fun DetailScreen(
                         onPlayPendingSound = { container.audioManager.playPending() },
                         autoDestroyAfterRead = capsule.autoDestroyAfterRead,
                         onToggleAutoDestroy = vm::setAutoDestroyAfterRead,
-                        pendingChallenges = state.capsule?.unlockRule?.conditionList
-                            ?.filterIsInstance<UnlockCondition.ChallengeCondition>()
-                            ?: emptyList(),
+                        pendingChallenges = vm.pendingChallenges(),
                         onChallengeAnswer = vm::submitChallengeAnswer,
                         satisfiedChallenges = state.satisfiedChallenges,
                         regretAvailable = state.regretAvailable,
@@ -262,10 +259,6 @@ fun DetailScreen(
                 }
                 UnsealSequence(
                     engine = engine,
-                    title = state.capsule?.title,
-                    metaLine = unsealMetaLine(state),
-                    paragraphs = state.content?.paragraphs ?: emptyList(),
-                    contentReady = state.content != null,
                     cardHeightPx = measuredCardHeight,
                     onPlaySound = { container.audioManager.playUnseal() },
                     onDone = vm::onUnsealFinished,
@@ -451,14 +444,4 @@ fun DetailScreen(
             onConfirm = vm::onPasswordEntered,
         )
     }
-}
-
-/** UNSEAL 阶段 4 元信息行（阶段内文案为空时该行不出现） */
-private fun unsealMetaLine(state: DetailViewModel.UiState): String? {
-    val capsule = state.capsule ?: return null
-    val parts = mutableListOf(TimeFormatter.sealDate(capsule.createTimestamp))
-    capsule.weather?.let { weather ->
-        parts += "${weather.cityName} · ${weatherNameOf(weather.weatherType, RuntimeSettings.resolvedLang)} ${weather.tempC.toInt()}°C"
-    }
-    return parts.joinToString(" · ")
 }

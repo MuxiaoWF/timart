@@ -87,6 +87,8 @@ import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TrackHairline
 import com.muxiao.timart.data.remote.update.UpdateChecker
 import com.muxiao.timart.utils.AppLanguage
+import com.muxiao.timart.utils.permission.PERM_ACTIVITY_RECOGNITION
+import com.muxiao.timart.utils.permission.PERM_POST_NOTIFICATIONS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -567,9 +569,9 @@ private fun PermissionManageCard(modifier: Modifier = Modifier) {
 
     fun refresh() {
         val sdk = Build.VERSION.SDK_INT
-        notifGranted = sdk < 33 || hasPerm(Manifest.permission.POST_NOTIFICATIONS)
+        notifGranted = sdk < 33 || hasPerm(PERM_POST_NOTIFICATIONS)
         locGranted = hasPerm(Manifest.permission.ACCESS_FINE_LOCATION)
-        activityGranted = sdk < 29 || hasPerm(Manifest.permission.ACTIVITY_RECOGNITION)
+        activityGranted = sdk < 29 || hasPerm(PERM_ACTIVITY_RECOGNITION)
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         locServiceOn = lm?.let {
             it.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ||
@@ -599,8 +601,8 @@ private fun PermissionManageCard(modifier: Modifier = Modifier) {
                 !activity.shouldShowRequestPermissionRationale(perm)
             when (perm) {
                 Manifest.permission.ACCESS_FINE_LOCATION -> locNeverAsk = neverAsk
-                Manifest.permission.POST_NOTIFICATIONS -> notifNeverAsk = neverAsk
-                Manifest.permission.ACTIVITY_RECOGNITION -> activityNeverAsk = neverAsk
+                PERM_POST_NOTIFICATIONS -> notifNeverAsk = neverAsk
+                PERM_ACTIVITY_RECOGNITION -> activityNeverAsk = neverAsk
             }
         }
         refresh()
@@ -637,7 +639,7 @@ private fun PermissionManageCard(modifier: Modifier = Modifier) {
             action = Build.VERSION.SDK_INT >= 33 && !notifGranted,
             onClick = {
                 if (Build.VERSION.SDK_INT >= 33 && !notifGranted) {
-                    requestOrOpen(Manifest.permission.POST_NOTIFICATIONS, notifNeverAsk)
+                    requestOrOpen(PERM_POST_NOTIFICATIONS, notifNeverAsk)
                 }
             },
         )
@@ -659,7 +661,7 @@ private fun PermissionManageCard(modifier: Modifier = Modifier) {
             action = Build.VERSION.SDK_INT >= 29 && !activityGranted,
             onClick = {
                 if (Build.VERSION.SDK_INT >= 29 && !activityGranted) {
-                    requestOrOpen(Manifest.permission.ACTIVITY_RECOGNITION, activityNeverAsk)
+                    requestOrOpen(PERM_ACTIVITY_RECOGNITION, activityNeverAsk)
                 }
             },
         )
@@ -681,10 +683,11 @@ private fun PermissionManageCard(modifier: Modifier = Modifier) {
             action = !batteryIgnored,
             onClick = {
                 if (!batteryIgnored) {
+                    // Play 政策合规：跳系统电池优化列表页由用户手动设置本应用为「不允许优化」；
+                    // 此 action 无需 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 权限（Manifest 已移除该声明）
                     runCatching {
                         context.startActivity(
-                            Intent(SystemSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                                .setData("package:${context.packageName}".toUri()),
+                            Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
                         )
                     }
                 }

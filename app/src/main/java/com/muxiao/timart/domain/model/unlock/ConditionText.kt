@@ -63,8 +63,8 @@ object ConditionText {
                 w.sunEncounter + condition.phases.map { sunName(it, lang) }.joinToString(w.listSep)
             is UnlockCondition.WeatherMetric -> {
                 val name = metricName(condition.metric, lang)
-                val minV = condition.min?.let { formatMetric(condition.metric, it, lang) }
-                val maxV = condition.max?.let { formatMetric(condition.metric, it, lang) }
+                val minV = condition.min?.let { formatMetric(condition.metric, it) }
+                val maxV = condition.max?.let { formatMetric(condition.metric, it) }
                 when {
                     minV != null && maxV != null -> w.metricBetween.format(name, minV, maxV)
                     minV != null -> w.metricAbove.format(name, minV)
@@ -83,9 +83,9 @@ object ConditionText {
             is UnlockCondition.CompassHeading -> w.compassFmt.format(condition.targetDeg, condition.toleranceDeg)
             is UnlockCondition.AltitudeRange -> when {
                 condition.minM != null && condition.maxM != null ->
-                    w.altitudeBetween.format(formatMetric(WeatherMetricKind.PRESSURE, condition.minM, lang), formatMetric(WeatherMetricKind.PRESSURE, condition.maxM, lang))
-                condition.minM != null -> w.altitudeAbove.format(formatMetric(WeatherMetricKind.PRESSURE, condition.minM, lang))
-                condition.maxM != null -> w.altitudeBelow.format(formatMetric(WeatherMetricKind.PRESSURE, condition.maxM, lang))
+                    w.altitudeBetween.format(formatMetric(WeatherMetricKind.PRESSURE, condition.minM), formatMetric(WeatherMetricKind.PRESSURE, condition.maxM))
+                condition.minM != null -> w.altitudeAbove.format(formatMetric(WeatherMetricKind.PRESSURE, condition.minM))
+                condition.maxM != null -> w.altitudeBelow.format(formatMetric(WeatherMetricKind.PRESSURE, condition.maxM))
                 else -> w.altitudeAny
             }
             is UnlockCondition.OpenCountAtLeast -> w.openCountFmt.format(condition.count)
@@ -132,8 +132,8 @@ object ConditionText {
         WeatherMetricKind.UV -> words(lang).metricUv
     }
 
-    /** 指标数值格式化（湿度 %、风速 km/h、气压 hPa、紫外线指数与海拔 m 无单位后缀差异） */
-    fun formatMetric(kind: WeatherMetricKind, value: Double, lang: Lang = Lang.ZH_HANS): String {
+    /** 指标数值格式化（湿度 %、风速 km/h、气压 hPa、紫外线指数与海拔 m 无单位后缀差异；单位全语言通用，无 lang 参数） */
+    fun formatMetric(kind: WeatherMetricKind, value: Double): String {
         val num = if (value == value.toLong().toDouble()) value.toLong().toString() else "%.1f".format(value)
         return when (kind) {
             WeatherMetricKind.HUMIDITY -> "$num%"

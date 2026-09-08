@@ -105,11 +105,6 @@ class CapsuleCrudUseCase(
         capsules.delete(id)
         imageStore.deleteDir(id)
     }
-
-    /** 用户自定义星图坐标（不改变时间数据，仅视觉） */
-    suspend fun updateLayout(id: String, layoutX: Float?, layoutY: Float?) {
-        capsules.updateLayout(id, layoutX, layoutY)
-    }
 }
 
 

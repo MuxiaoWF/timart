@@ -1,9 +1,6 @@
 package com.muxiao.timart.data.local.crypto
 
 import com.muxiao.timart.l10n.currentStrings
-
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import java.io.File
 
 /**
@@ -39,10 +36,6 @@ class ImageCipherStore(
         if (!target.exists()) return null
         return cipher.decrypt(keyOrThrow(), target.readBytes())
     }
-
-    /** 解密并解码为 Bitmap（详情页信笺图片用） */
-    fun readBitmap(capsuleId: String, index: Int): Bitmap? =
-        read(capsuleId, index)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
 
     /** 删除胶囊的整个图片目录（销毁流程物理删除，不可逆） */
     fun deleteDir(capsuleId: String) {

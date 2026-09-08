@@ -2,12 +2,9 @@ package com.muxiao.timart.ui.components.particle
 
 /**
  * 粒子预设（架构 §8.1）：引擎发射粒子的行为模板。
- * 预设只描述"怎么动"，不携带业务语义；业务状态经 [CapsuleMotionState] 映射到此枚举。
+ * 预设只描述"怎么动"，不携带业务语义；业务状态经 [MotionState] 映射到此枚举。
  */
 enum class ParticlePreset {
-    /** 首页时尘背景：全屏缓慢漂移，循环重生 */
-    DUST_BACKGROUND,
-
     /** 胶囊呼吸：锚点外环带慢公转 + 径向呼吸，循环重生 */
     BREATHE,
 

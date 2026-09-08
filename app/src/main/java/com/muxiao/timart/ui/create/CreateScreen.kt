@@ -148,7 +148,6 @@ fun CreateScreen(
                 when (currentStep) {
                     0 -> WriteStep(
                         vm = vm,
-                        engine = engine,
                         onSpark = fireInputSpark,
                         onNext = vm::next,
                     )

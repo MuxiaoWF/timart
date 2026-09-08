@@ -22,9 +22,6 @@ class ParticleBudget private constructor(tier: AnimationTier) {
     /** ASSEMBLE 封存聚合粒子数：350 / 160 / 50 */
     val assemble: Int = AnimationTier.assembleParticles(tier)
 
-    /** 页面转场粒子数（与背景同档）：80 / 40 / 0 */
-    val pageTransition: Int = AnimationTier.backgroundParticles(tier)
-
     /** UNSEAL 揭封序列峰值粒子数：800 / 350 / 80 */
     val unsealPeak: Int = AnimationTier.unsealPeak(tier)
 

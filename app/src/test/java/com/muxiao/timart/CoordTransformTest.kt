@@ -42,14 +42,14 @@ class CoordTransformTest {
     }
 
     @Test
-    fun `国内偏移方向为东北向`() {
+    fun 国内偏移方向为东北向() {
         val (bdLat, bdLng) = CoordTransform.wgs84ToBd09(39.9042, 116.4074)
         assertTrue("bd lat 应大于 wgs lat", bdLat > 39.9042)
         assertTrue("bd lng 应大于 wgs lng", bdLng > 116.4074)
     }
 
     @Test
-    fun `境外坐标往返闭合_BD09偏移全球生效`() {
+    fun 境外坐标往返闭合_BD09偏移全球生效() {
         // 纽约 / 伦敦 / 悉尼：GCJ 偏移透传，但 BD-09 偏移仍然施加（差 ~0.006°）——往返应闭合
         listOf(
             40.7128 to -74.0060,

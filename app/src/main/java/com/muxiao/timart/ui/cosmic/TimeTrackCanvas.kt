@@ -62,7 +62,7 @@ import kotlin.math.sqrt
  * 本画布每帧同步锚点屏幕坐标与状态色（预分配通道，零分配）。
  * 锚点坐标系约定：引擎在宿主 ParticleCanvas 的**画布局部坐标系**绘制，
  * 因此锚点 = 本画布局部坐标 + 本画布相对粒子画布的原点差
- * （[rootOrigin] − [overlayOrigin]；此前直接加 rootOrigin 会把状态栏与页眉高度
+ * （rootOrigin − overlayOrigin；此前直接加 rootOrigin 会把状态栏与页眉高度
  * 误计成整体偏移，粒子相对胶囊错位）。
  */
 @Composable
@@ -77,6 +77,7 @@ fun TimeTrackCanvas(
     onTransform: (panDelta: Offset, zoomDelta: Float) -> Unit,
     onCapsuleTap: (id: String, firstUnlock: Boolean, anchorX: Float, anchorY: Float) -> Unit,
     onLayoutChange: (id: String, nx: Float, ny: Float, finished: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
     parallax: ParallaxSensor? = null,
     tier: com.muxiao.timart.domain.model.AnimationTier = com.muxiao.timart.domain.model.AnimationTier.HIGH,
 
@@ -85,7 +86,6 @@ fun TimeTrackCanvas(
 
     /** 粒子画布（宿主 ParticleCanvas）在窗口根坐标中的原点：换算画布局部锚点用 */
     overlayOrigin: Offset = Offset.Zero,
-    modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()

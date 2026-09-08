@@ -231,7 +231,10 @@ class ParticleEngine(tier: AnimationTier) {
         val needBreathe = currentState == MotionState.BREATHE && anchorCount > 0
         if (!needBackground && !needBreathe) return
         if (needBackground) {
-            for (i in driftActive until budget.background) spawnBackgroundParticle() ?: break
+            // spawn 成功即自增 driftActive；pool 满（返回 null）时停止补齐
+            while (driftActive < budget.background) {
+                spawnBackgroundParticle() ?: break
+            }
         }
         if (needBreathe) {
             // 总环带预算收敛：球多时按锚点数摊薄（20 球 × 20 粒挤在窄环带里是噪声云），
@@ -239,7 +242,8 @@ class ParticleEngine(tier: AnimationTier) {
             val totalOrbitBudget = pool.size() / 6 // 150 / 70 / 18（高 / 中 / 低）
             val perOrb = min(budget.breathePerOrb, max(4, totalOrbitBudget / anchorCount))
             for (a in 0 until anchorCount) {
-                for (k in orbitActive[a] until perOrb) {
+                // spawn 成功即自增 orbitActive[a]；pool 满（返回 false）时停止补齐
+                while (orbitActive[a] < perOrb) {
                     if (!spawnBreatheParticle(a)) break
                 }
             }
@@ -409,7 +413,8 @@ class ParticleEngine(tier: AnimationTier) {
     /** PENDING：300–600ms 向心聚合单发 */
     private fun spawnPending(ax: Float, ay: Float, ar: Float, color: Int) {
         val count = budget.pending.coerceAtMost(20)
-        for (i in 0 until count) {
+        // pool 满（obtain 返回 null）时非局部 return 停止发射
+        repeat(count) {
             val p = pool.obtain() ?: return
             configureConverge(p, ax, ay, ar, color, 300L + nextLongBound(300L))
         }
@@ -417,7 +422,7 @@ class ParticleEngine(tier: AnimationTier) {
 
     /** REREAD：重读过渡的向心聚合单发（档位预算 reread：40/20/0） */
     private fun spawnReread(ax: Float, ay: Float, ar: Float, color: Int) {
-        for (i in 0 until budget.reread) {
+        repeat(budget.reread) {
             val p = pool.obtain() ?: return
             configureConverge(p, ax, ay, ar, color, 350L + nextLongBound(250L))
         }
@@ -426,7 +431,7 @@ class ParticleEngine(tier: AnimationTier) {
     /** DISSOLVE：0–1000ms 沿轨道向外散逸 */
     private fun spawnDissolve(ax: Float, ay: Float, ar: Float, color: Int) {
         val count = budget.dissolve
-        for (i in 0 until count) {
+        repeat(count) {
             val p = pool.obtain() ?: return
             val angle = random.nextFloat() * 6.28f
             val speed = dp(30f + random.nextFloat() * 70f)
@@ -451,7 +456,7 @@ class ParticleEngine(tier: AnimationTier) {
         if (lastSparkElapsed < SPARK_THROTTLE_MS) return
         lastSparkElapsed = 0L
         val count = budget.inputSpark
-        for (i in 0 until count) {
+        repeat(count) {
             val p = pool.obtain() ?: return
             val angle = -1.57f + (random.nextFloat() - 0.5f) * 1.2f // 大致向上
             val speed = dp(18f + random.nextFloat() * 22f)

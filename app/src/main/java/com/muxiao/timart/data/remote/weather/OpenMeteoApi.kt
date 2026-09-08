@@ -51,7 +51,7 @@ class OpenMeteoApi {
                 weatherCode = currentWeather.getInt("weathercode"),
                 temperatureC = currentWeather.getDouble("temperature"),
                 humidityPercent = current?.optDouble("relative_humidity_2m")?.takeUnless { it.isNaN() },
-                windKmh = currentWeather.optDouble("windspeed")?.takeUnless { it.isNaN() },
+                windKmh = currentWeather.optDouble("windspeed").takeUnless { it.isNaN() },
                 pressureHpa = current?.optDouble("surface_pressure")?.takeUnless { it.isNaN() },
                 uvIndex = uvIndex,
             )

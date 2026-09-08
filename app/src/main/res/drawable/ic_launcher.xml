@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- API 24/25 兜底：矢量图标（mipmap 目录允许 vector），构图与自适应前景一致 -->
+<!-- API 24/25 兜底：矢量图标（vector 归 drawable；v26+ 走 drawable-anydpi-v26 自适应图标），构图与自适应前景一致 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp"
     android:height="48dp"

@@ -44,11 +44,4 @@ class NetworkTypeDetector(context: Context) : NetworkProvider {
             else -> NetType.NONE
         }
     }
-
-    /** 仅供调试排查：人类可读的网络名（不参与判定） */
-    fun describe(type: NetType = current()): String = when (type) {
-        NetType.WIFI -> "Wi-Fi"
-        NetType.CELLULAR -> "移动数据"
-        NetType.NONE -> "无网络"
-    }
 }

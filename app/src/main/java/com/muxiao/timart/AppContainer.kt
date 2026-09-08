@@ -16,21 +16,20 @@ import com.muxiao.timart.data.local.crypto.SessionKeyVault
 import com.muxiao.timart.data.local.db.TimartDatabase
 import com.muxiao.timart.data.remote.weather.OpenMeteoApi
 import com.muxiao.timart.data.remote.weather.WeatherRepositoryImpl
+import com.muxiao.timart.domain.context.CapsuleMetaProvider
 import com.muxiao.timart.domain.context.ConditionContext
 import com.muxiao.timart.domain.context.DependencyChecker
+import com.muxiao.timart.domain.model.AnimationTier
+import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.repository.CapsuleRepository
 import com.muxiao.timart.domain.repository.DestroyedRepository
-import com.muxiao.timart.domain.repository.WeatherRepository
-import com.muxiao.timart.domain.context.CapsuleMetaProvider
-import com.muxiao.timart.domain.model.Capsule
-import com.muxiao.timart.domain.model.AnimationTier
 import com.muxiao.timart.domain.usecase.CapsuleCrudUseCase
 import com.muxiao.timart.domain.usecase.DependencyGraphUseCase
 import com.muxiao.timart.domain.usecase.ReadCapsuleUseCase
 import com.muxiao.timart.domain.usecase.UnlockJudgeUseCase
 import com.muxiao.timart.ui.components.particle.ParticleEngine
-import com.muxiao.timart.utils.audio.AudioManager
 import com.muxiao.timart.utils.app.UsageStatsTracker
+import com.muxiao.timart.utils.audio.AudioManager
 import com.muxiao.timart.utils.device.SystemModeReader
 import com.muxiao.timart.utils.export.BackupManager
 import com.muxiao.timart.utils.location.GeocodeResolver
@@ -104,9 +103,6 @@ class AppContainer(context: Context) {
     val weatherRepositoryImpl: WeatherRepositoryImpl by lazy {
         WeatherRepositoryImpl(OpenMeteoApi(), cityRepository)
     }
-
-    /** 天气仓库（同时充当 ConditionContext 的 WeatherProvider） */
-    val weatherRepository: WeatherRepository get() = weatherRepositoryImpl
 
     /** 地址解析链（GPS 条件表单：原生 Geocoder → Nominatim → Photon → 天地图） */
     val geocodeResolver: GeocodeResolver by lazy { GeocodeResolver(appContext, BuildConfig.TIANDITU_TK) }

@@ -238,8 +238,8 @@ class BackupManager(
             throw BackupException(currentStrings().bkErrWrongPw, wrongPassword = true)
         }
 
-        // 数据段：v2 = 解密 data.enc；v1 = 明文 capsules/destroyed 段（兼容导入）
-        val settings: BackupCodec.Settings?
+        // 数据段：v2 = 解密 data.enc；v1 = 明文 capsules/destroyed 段（兼容导入）。
+        // 包内 settings 段（档位/音效等镜像）刻意不在此应用：导入只迁数据，不改写本机用户偏好
         val capsulesDto: List<BackupCodec.Capsule>
         val destroyedDto: List<BackupCodec.DestroyedRecord>
         val dataEnc = entries[BackupCodec.ENTRY_DATA]
@@ -252,7 +252,6 @@ class BackupManager(
             val payload = runCatching {
                 BackupCodec.json.decodeFromString(BackupCodec.Payload.serializer(), plain.decodeToString())
             }.getOrElse { throw BackupException(currentStrings().bkErrDtoParse) }
-            settings = payload.settings
             capsulesDto = payload.capsules
             destroyedDto = payload.destroyed
         } else {
@@ -272,7 +271,6 @@ class BackupManager(
                     )
                 }.getOrElse { emptyList() }
             } ?: emptyList()
-            settings = meta.settings
         }
 
         // 逐胶囊解密校验（含内容密文的才校验；失败视为数据损坏，中止导入）

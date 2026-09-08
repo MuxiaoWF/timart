@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下云备份规则（fullBackupContent；Android 12+ 走 data_extraction_rules）：
+     应用私有数据（含密文）禁止系统级备份，与 allowBackup=false / data_extraction_rules 同口径
+     （应用自带加密备份功能，见设置页）。 -->
+<full-backup-content>
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

@@ -12,7 +12,7 @@ import com.muxiao.timart.R
  * 统一受设置音效开关控制；音频素材为合成软音色（上行轻钟/琶音/下行渐弱/滤波噪声垫）。
  * 注意与 android.media.AudioManager 同名，内部用 [SystemAudioManager] 别名。
  */
-class AudioManager(private val context: Context) {
+class AudioManager(context: Context) {
 
     private val systemAudioManager: SystemAudioManager? =
         context.getSystemService(Context.AUDIO_SERVICE) as? SystemAudioManager
@@ -42,8 +42,6 @@ class AudioManager(private val context: Context) {
         if (!value) stopAmbient()
     }
 
-    fun isEnabled(): Boolean = enabled
-
     private fun play(soundId: Int) {
         if (!enabled) return
         try {
@@ -66,20 +64,6 @@ class AudioManager(private val context: Context) {
     /** 消散音效 */
     fun playDissolve() = play(dissolveId)
 
-    /** 天气环境音（循环） */
-    fun startAmbient() {
-        if (!enabled || ambientPlayer != null) return
-        try {
-            val player = MediaPlayer.create(context, R.raw.ambient) ?: return
-            player.isLooping = true
-            player.setVolume(AMBIENT_VOLUME, AMBIENT_VOLUME)
-            player.start()
-            ambientPlayer = player
-        } catch (_: Throwable) {
-            ambientPlayer = null
-        }
-    }
-
     fun stopAmbient() {
         try {
             ambientPlayer?.stop()
@@ -88,20 +72,5 @@ class AudioManager(private val context: Context) {
             // 忽略重复释放
         }
         ambientPlayer = null
-    }
-
-    /** Application 退出时释放全部资源 */
-    fun release() {
-        stopAmbient()
-        try {
-            soundPool.release()
-        } catch (_: Throwable) {
-            // SoundPool 已释放
-        }
-    }
-
-    private companion object {
-        /** 环境音保持极低音量，避免喧宾夺主 */
-        const val AMBIENT_VOLUME = 0.25f
     }
 }

@@ -76,7 +76,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * | 3    | 平整信笺短暂停留 → 交接正文卡片（同位同构，文字显现效果接管）| 1350–1700|
  *
  * 位置契约：舞台即最终卡片矩形（左上 (24dp, 64dp)、宽 = 屏宽-48dp、圆角 18dp，
- * 与 [PaperLetterCard] 一致）；双翼摊平后与 CONTENT 相位的真实卡片完全同位，
+ * 与 `PaperLetterCard` 一致）；双翼摊平后与 CONTENT 相位的真实卡片完全同位，
  * 切换时卡片"留在原地"，文字显现（打字机/扰乱/模糊/波浪）在真实卡片上接管。
  *
  * - 粒子批次由共享引擎 UNSEAL 时间轴驱动；skipToEnd 任意时刻安全落 CONTENT；
@@ -86,10 +86,6 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun UnsealSequence(
     engine: ParticleEngine,
-    title: String?,
-    metaLine: String?,
-    paragraphs: List<String>,
-    contentReady: Boolean,
     onDone: () -> Unit,
     /** 真实卡片实测高度（px）；null 时退回估算值。双翼按此高度生成，交接零几何差 */
     cardHeightPx: Int? = null,

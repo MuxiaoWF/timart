@@ -202,6 +202,7 @@ class UnlockJudgeUseCaseTest {
         }
         override suspend fun updateLayout(id: String, layoutX: Float?, layoutY: Float?) = Unit
         override suspend fun updateAutoDestroyAfterRead(id: String, value: Boolean) = Unit
+        override suspend fun updateUnlockRule(id: String, rule: UnlockRule) = Unit
         override suspend fun delete(id: String) = Unit
     }
 

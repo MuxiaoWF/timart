@@ -56,7 +56,7 @@ object NfcCardWriter {
                 }
                 Result.Success
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Result.Failure(FailReason.IO)
         }
     }

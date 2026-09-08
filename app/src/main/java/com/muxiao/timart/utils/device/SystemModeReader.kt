@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.os.PowerManager
 import com.muxiao.timart.domain.context.AlarmProvider
 import com.muxiao.timart.domain.context.SystemModeProvider
@@ -35,12 +36,16 @@ class SystemModeReader(context: Context) : AlarmProvider, SystemModeProvider {
     }
 
     private companion object {
-        val HEADPHONE_TYPES = setOf(
-            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
-            AudioDeviceInfo.TYPE_WIRED_HEADSET,
-            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-            AudioDeviceInfo.TYPE_BLE_HEADSET,
-        )
+        // TYPE_BLE_HEADSET 为 API 31 新增字段（编译期常量内联，运行时本就安全）；
+        // 引用置于版本守卫内以通过 lint 检查
+        val HEADPHONE_TYPES: Set<Int> = buildSet {
+            add(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
+            add(AudioDeviceInfo.TYPE_WIRED_HEADSET)
+            add(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+            add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+            }
+        }
     }
 }

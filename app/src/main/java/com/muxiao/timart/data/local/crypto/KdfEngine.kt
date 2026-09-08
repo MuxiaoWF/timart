@@ -91,9 +91,6 @@ object KdfEngines {
     fun byAlgo(algo: String): KdfEngine =
         if (algo == ALGO_ARGON2ID) Argon2Kdf() else Pbkdf2Kdf()
 
-    /** 优先引擎：Argon2id（可用性在派生时兜底回退） */
-    fun preferred(): KdfEngine = Argon2Kdf()
-
     /** 生成 16B 随机盐 */
     fun newSalt(): ByteArray = ByteArray(SALT_LENGTH_BYTES).also { random.nextBytes(it) }
 

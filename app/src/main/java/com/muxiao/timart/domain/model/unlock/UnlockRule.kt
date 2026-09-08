@@ -168,7 +168,7 @@ sealed class UnlockCondition {
 /** 太阳相位 */
 enum class SunPhaseKind { SUNRISE, DAY, SUNSET, NIGHT }
 
-/** 天气指标（[WeatherMetric] 判定通道） */
+/** 天气指标（[UnlockCondition.WeatherMetric] 判定通道） */
 enum class WeatherMetricKind { HUMIDITY, WIND, PRESSURE, UV }
 
 /** 月相（8 相） */

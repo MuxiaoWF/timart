@@ -4,7 +4,7 @@ package com.muxiao.timart.ui.components.particle
  * 粒子可变数据帧 + 对象池（架构 §2.18）。
  *
  * 硬性约束：帧循环零分配——粒子字段全部 @JvmField 基础类型；
- * 池预分配 [capacity] 个实例 + IntArray 空闲栈，obtain/release 均 O(1) 无对象创建。
+ * 池按档位预算预分配实例 + IntArray 空闲栈，obtain/release 均 O(1) 无对象创建。
  */
 class Particle {
 
@@ -47,9 +47,6 @@ class Particle {
 
     /** BREATHE 绑定的锚点下标；-1 = 未绑定 */
     @JvmField var anchorIndex: Int = -1
-
-    /** 锚点半径（ORBIT 型流动范围） */
-    @JvmField var anchorRadius: Float = 0f
 
     /** 运动方向语义（ParticleFlow.ordinal，避免持有枚举对象引用成本可忽略但统一基础类型） */
     @JvmField var flow: Byte = 0

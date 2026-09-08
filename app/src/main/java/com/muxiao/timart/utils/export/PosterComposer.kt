@@ -66,11 +66,10 @@ class PosterComposer(private val context: Context) {
         content.weatherLine?.let { y = drawCaptionLine(canvas, it, y + 22f) }
 
         // ---- 正文（整段排版，超长节选） ----
-        val bodyBottom = H - FOOTER_ZONE
-        y = drawBody(canvas, content, y + 26f, bodyBottom)
+        y = drawBody(canvas, content, y + 26f)
 
         // ---- 图片（等比 + 圆角 + 细金边；空间不足自动缩小或略过） ----
-        drawImages(canvas, content.images, y + 10f, bodyBottom)
+        drawImages(canvas, content.images, y + 10f)
 
         drawFooter(canvas, content)
         drawEdgeDust(canvas, seed)
@@ -192,7 +191,8 @@ class PosterComposer(private val context: Context) {
     // ---- 正文与图片 ----
 
     /** 正文：段落合并整段排版；超出底部预留区自动省略并加节选标记；返回底部 y */
-    private fun drawBody(canvas: Canvas, content: PosterContent, top: Float, bottomLimit: Float): Float {
+    private fun drawBody(canvas: Canvas, content: PosterContent, top: Float): Float {
+        val bottomLimit = H - FOOTER_ZONE
         val bodyText = content.paragraphs
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -228,7 +228,8 @@ class PosterComposer(private val context: Context) {
     }
 
     /** 图片带：等比缩放（宽度优先、高度上限 IMAGE_MAX_H），逐张圆角落位；返回底部 y */
-    private fun drawImages(canvas: Canvas, images: List<Bitmap>, top: Float, bottomLimit: Float): Float {
+    private fun drawImages(canvas: Canvas, images: List<Bitmap>, top: Float): Float {
+        val bottomLimit = H - FOOTER_ZONE
         var y = top
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE

@@ -27,15 +27,4 @@ object TimeFormatter {
 
     /** "2026.08.09" */
     fun date(epochMillis: Long): String = DATE_FORMATTER.format(Instant.ofEpochMilli(epochMillis))
-
-    /** "销毁于 2026.08.09" */
-    fun destroyedDate(epochMillis: Long): String =
-        currentStrings().destroyedOnPrefix + DATE_FORMATTER.format(Instant.ofEpochMilli(epochMillis))
-
-    /** "已封存 N 天"（按自然日计算） */
-    fun elapsedDays(fromEpochMillis: Long, nowEpochMillis: Long): Long {
-        val from = Instant.ofEpochMilli(fromEpochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-        val now = Instant.ofEpochMilli(nowEpochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-        return java.time.temporal.ChronoUnit.DAYS.between(from, now)
-    }
 }

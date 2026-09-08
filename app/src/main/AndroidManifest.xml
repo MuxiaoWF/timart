@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 网络行为仅两类：Open-Meteo 天气调用 + GPS 条件地址解析兜底（Nominatim/Photon，仅发送输入的地点文字） -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -15,8 +16,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- 计步条件：仅 API 29+ 运行时申请（低版本直接读传感器） -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
-    <!-- 设置页「忽略电池优化」开关：弹系统白名单确认框（用户可拒绝；仅影响后台判定/计步保活） -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 设置页「忽略电池优化」入口：跳系统电池优化列表页由用户手动设置（Play 政策合规：
+         ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS 无需权限声明，故不声明
+         REQUEST_IGNORE_BATTERY_OPTIMIZATIONS；仅影响后台判定/计步保活） -->
 
     <!-- NFC 挑战条件：读取标签 ID（reader mode，无写卡） -->
     <uses-permission android:name="android.permission.NFC" />
@@ -25,19 +27,24 @@
     <application
         android:name=".TimartApplication"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/ic_launcher_round"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Timart">
 
+        <!-- 竖屏锁定为产品形态决策（信笺/时间胶囊叙事界面按竖屏构图）；
+             Android 16 起系统在大屏设备将自动忽略该属性并按自适应运行，行为无碍 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            tools:ignore="LockedOrientationActivity,Deprecated">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

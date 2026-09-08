@@ -150,10 +150,10 @@ class StepCounterReader(private val context: Context) : StepProvider, StepHistor
 
         baselineValue = baseline
         baselineDate = baseDate
-        prefs.edit()
-            .putString(KEY_BASELINE_DATE, baseDate.toString())
-            .putFloat(KEY_BASELINE_COUNTER, baseline)
-            .apply()
+        prefs.edit {
+            putString(KEY_BASELINE_DATE, baseDate.toString())
+            putFloat(KEY_BASELINE_COUNTER, baseline)
+        }
 
         val steps = (value - baseline).toInt().coerceAtLeast(0)
 
@@ -195,14 +195,6 @@ class StepCounterReader(private val context: Context) : StepProvider, StepHistor
     }
 
     private fun dayKey(date: LocalDate) = KEY_DAY_PREFIX + date.toString()
-
-    /** 释放传感器监听（Application 退出 / 测试收尾） */
-    fun release() {
-        if (listening) {
-            sensorManager.unregisterListener(listener)
-            listening = false
-        }
-    }
 
     private companion object {
         const val PREFS_NAME = "step_counter_baseline"
