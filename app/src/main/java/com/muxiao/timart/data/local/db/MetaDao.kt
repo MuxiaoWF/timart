@@ -19,6 +19,10 @@ interface MetaDao {
     @Query("SELECT value FROM meta WHERE `key` = :key")
     fun observe(key: String): Flow<String?>
 
+    /** 已开启（读过内容）胶囊的 meta key 列表（`capsule.read.<id>`；契约见 DetailViewModel.readMarkKey） */
+    @Query("SELECT `key` FROM meta WHERE `key` LIKE 'capsule.read.%'")
+    fun observeReadKeys(): Flow<List<String>>
+
     @Upsert
     suspend fun put(entity: MetaEntity)
 

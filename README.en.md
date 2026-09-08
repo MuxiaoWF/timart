@@ -17,13 +17,21 @@ Until the conditions are met, the content stays encrypted on-device — even the
 
 ## Key Features
 
-- **10 unlock condition types**: fixed date / N days elapsed / day of week / time range / battery level / charging state / daily step count / network type / weather type / GPS arrival (radius-based), combined with AND ("all must be met") or OR ("any will do") semantics
+- **39 unlock condition types**, combined with AND ("all must be met") or OR ("any will do") semantics:
+  - **Time** (8): fixed date / fixed date-time / N days elapsed / N minutes elapsed / day of week / time range / monthly day / yearly date
+  - **Device state** (7): battery level / charging state / power-save mode / silent mode / headphone connected / network type / Wi-Fi SSID
+  - **Behavior & steps** (5): daily step count / step streak / total open count / consecutive open days / days since last open
+  - **Location & environment** (9): arrive at a place / leave a place (radius-based) / weather type / temperature range / humidity·wind·pressure·UV / sun phase / moon phase / before the next alarm / motion state (walking/still)
+  - **Capsule-linked** (5): another capsule unlocked / another capsule destroyed / capsule count reached / compass heading / altitude range
+  - **Live challenges** (5): question / riddle / shake / flip-and-hold / NFC tap — completed on the spot when opening the capsule, never counted by automatic checks
+- **Device-capability gating**: conditions your hardware can't support (e.g. altitude without a barometer, NFC tap without an NFC chip) are disabled at creation time with a stated reason; importing a backup also flags conditions this device can never meet
+- **"Regret pill" — one-time rule edit**: each capsule carries exactly one chance — long-press the dust core for 3 seconds (or tap it 5 times quickly) to reveal a hidden editor for its unlock conditions (deliberately hidden; you only find it when you truly want to open it)
 - **Capsule dependencies**: a capsule can require another capsule to be unlocked first, with automatic cycle detection, dead-link and self-dependency validation
-- **Destroy after reading**: optional "return to dust" — at the end of a reading, ciphertext and images are physically deleted and only a metadata record remains. Destruction always requires explicit confirmation; there is no silent path
+- **Destroy after reading**: optional "return to dust" — at the end of a reading, ciphertext and images are physically deleted and only a metadata record remains. Destruction always requires explicit confirmation; there is no silent path. In the star library you can also batch "destroy" (leaves a dust record) or "delete" (removes completely)
 - **On-device encryption**: the passphrase is stretched with Argon2id and content is sealed with AES-256-GCM, one independent nonce per capsule and per image; the passphrase never touches storage, and ciphertext is useless off-device
 - **Keyless cold start**: the session key is wrapped by the Android Keystore for 72 hours, so you don't re-enter the passphrase on every launch; locking wipes it immediately
 - **Trilingual UI**: Simplified Chinese / Traditional Chinese / English / follow-system, applied instantly without restarting the app
-- **Time-track universe**: capsules orbit on a draggable, zoomable star map ordered by creation time, animated by a unified particle engine with three quality tiers (auto-downgraded by device memory)
+- **Time-track universe**: capsules orbit on a draggable, zoomable star map ordered by creation time — unopened orbs glow bright gold, read ones dim to an ember, at a glance; swipe the bottom preview card to switch between "latest capsule" and "almost there" (the locked capsule closest to being met)
 - **Keepsake poster & backup**: generate a shareable poster after unlocking; export everything as a fully encrypted backup archive and restore it on another device
 - **Local-first**: the only network calls are a weather lookup at Open-Meteo (nothing but the city's coordinates) and, only when you resolve an address for a GPS condition, open geocoder queries (Nominatim/Photon/Tianditu — nothing but the place text you typed). No analytics, no tracking, no accounts
 
@@ -36,7 +44,7 @@ Android 7.0 (API 24) or newer.
 1. **Set a passphrase**: the first seal guides you through creating one — it is the only key to your data. Forget it and the data is gone forever
 2. **Write & seal**: compose the letter, attach photos, capture the current weather, pick unlock conditions (or none — then the capsule opens immediately), and seal in three steps
 3. **Wait for the moment**: the capsule sits on the time-track star map; the app checks conditions every 6 hours in the background and instantly on every foreground return. When everything is met, a local notification arrives
-4. **Read & archive**: unseal and read; capsules with "destroy after reading" are physically deleted once finished, leaving only a memorial record — and you can generate a keepsake poster or export an encrypted backup at any time
+4. **Read & archive**: unseal and read (live challenges are completed on the spot while opening); capsules with "destroy after reading" are physically deleted once finished, leaving only a memorial record; unlocked capsules live in the star library (tag filters, batch destroy or delete), and you can generate a keepsake poster or export an encrypted backup at any time
 
 ## Security & Privacy
 
@@ -48,3 +56,7 @@ Android 7.0 (API 24) or newer.
 ## License
 
 This project is released under the [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
+
+## Feedback
+
+Questions and suggestions are welcome: [timart@muxiaowf.top](mailto:timart@muxiaowf.top), or open an issue.

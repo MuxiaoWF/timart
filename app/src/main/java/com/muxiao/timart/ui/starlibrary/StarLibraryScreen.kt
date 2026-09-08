@@ -72,9 +72,11 @@ fun StarLibraryScreen(
     val tags by vm.tags.collectAsStateWithLifecycle()
     val selectedTag by vm.selectedTag.collectAsStateWithLifecycle()
 
-    // 长按进入批量删除：selection 非空即为选择态，点击在 选中/取消 间切换；确认后物理删除
+    // 长按进入批量操作：selection 非空即为选择态，点击在 选中/取消 间切换；
+    // 确认后「删除」= 物理删除不档案，「归为销毁」= 内容销毁 + 尘迹档案
     var selection by remember { mutableStateOf(setOf<String>()) }
     var confirmBatch by remember { mutableStateOf(false) }
+    var confirmDestroyBatch by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -118,7 +120,9 @@ fun StarLibraryScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 批量选择操作栏（长按任一卡片后出现）
+        // 批量选择操作栏（长按任一卡片后出现）。
+        // 触达区域：padding 必须放在 clickable 之前（Modifier 链式顺序 = 布局包裹顺序），
+        // 否则可点区域只有文字本体——观感即「间距在但点不中」；vertical 10dp 扩到近 48dp 触达高度
         if (selection.isNotEmpty()) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -137,30 +141,38 @@ fun StarLibraryScreen(
                     style = TimartType.caption,
                     color = InkSecondary,
                     modifier = Modifier
+                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp)
                         .clickable {
                             selection = if (selection.size == filtered.size) {
                                 emptySet()
                             } else {
                                 filtered.map { it.id }.toSet()
                             }
-                        }
-                        .padding(start = 16.dp),
+                        },
+                )
+                Text(
+                    text = L.batchDestroy,
+                    style = TimartType.caption,
+                    color = TimeGold,
+                    modifier = Modifier
+                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp)
+                        .clickable { confirmDestroyBatch = true },
                 )
                 Text(
                     text = L.batchDelete,
                     style = TimartType.caption,
                     color = TimeGold,
                     modifier = Modifier
-                        .clickable { confirmBatch = true }
-                        .padding(start = 16.dp),
+                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp)
+                        .clickable { confirmBatch = true },
                 )
                 Text(
                     text = L.batchCancel,
                     style = TimartType.caption,
                     color = InkSecondary,
                     modifier = Modifier
-                        .clickable { selection = emptySet() }
-                        .padding(start = 16.dp),
+                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp)
+                        .clickable { selection = emptySet() },
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -216,6 +228,38 @@ fun StarLibraryScreen(
                 }
             }
         }
+    }
+
+    if (confirmDestroyBatch) {
+        AlertDialog(
+            onDismissRequest = { confirmDestroyBatch = false },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.starBatchDestroyTitle, style = TimartType.titleSerif) },
+            text = {
+                Text(
+                    text = L.starBatchDestroyBodyFmt.format(selection.size),
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.destroySelected(selection)
+                        selection = emptySet()
+                        confirmDestroyBatch = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                ) {
+                    Text(text = L.batchDestroy)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDestroyBatch = false }) {
+                    Text(text = L.batchCancel, color = InkSecondary)
+                }
+            },
+        )
     }
 
     if (confirmBatch) {

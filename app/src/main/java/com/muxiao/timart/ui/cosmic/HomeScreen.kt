@@ -1,17 +1,21 @@
 package com.muxiao.timart.ui.cosmic
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
@@ -42,11 +47,13 @@ import com.muxiao.timart.ui.components.visual.SectionHeader
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.TimartType
+import com.muxiao.timart.ui.theme.TimeGold
 
 /**
  * 首页时轨（架构 §2.14）：
- * Serif 页眉「时轨」+ 叙事文案 + TimeTrackCanvas（拖拽/缩放手势）+ 底部「最近的一颗」
- * 预览卡 + 右下「＋ 新建」聚合尘核入口；进页仅 300ms 尘粒复位，ON_PAUSE 背景暂停。
+ * Serif 页眉「时轨」+ 叙事文案 + TimeTrackCanvas（拖拽/缩放手势）+ 底部预览卡
+ * （第 1 页「最近的一颗」，第 2 页「即将达成的一颗」，左右滑动切换）+ 右下「＋ 新建」
+ * 聚合尘核入口；进页仅 300ms 尘粒复位，ON_PAUSE 背景暂停。
  * 空库显示引导文案；UNSEAL 待点击球点击进详情（首页不播完整解锁高潮）。
  */
 @Composable
@@ -63,7 +70,8 @@ fun HomeScreen(
     val capsules by vm.capsules.collectAsStateWithLifecycle()
     val unsealed by vm.unsealedIds.collectAsStateWithLifecycle()
     val pending by vm.pendingIds.collectAsStateWithLifecycle()
-    val latest by vm.latest.collectAsStateWithLifecycle()
+    val readMarks by vm.readIds.collectAsStateWithLifecycle()
+    val previews by vm.previews.collectAsStateWithLifecycle()
     val engine = container.particleEngine
 
     // ON_RESUME 重入计数：从详情返回等场景（组合未重建）下重同步 BREATHE 状态与锚点
@@ -190,6 +198,7 @@ fun HomeScreen(
                     focusId = focusId,
                     unsealedIds = unsealed,
                     pendingIds = pending,
+                    readIds = readMarks,
                     parallax = parallax,
                     tier = container.particleTier,
                     onTransform = { panDelta, zoomDelta ->
@@ -228,30 +237,74 @@ fun HomeScreen(
                 }
             }
 
-            // 底部「最近的一颗」预览卡与「新建」入口同行（预览占主宽，新建等高成组）
+            // 底部预览卡（第 1 页「最近的一颗」，第 2 页「即将达成的一颗」，左右滑动切换，
+            // 页点指示在卡下方居中）与「新建」入口同行。
+            // 注意：Pager 不支持 intrinsic 测量，此行不能用 IntrinsicSize.Min 定高——
+            // 改为行高随预览卡内容自适应（pager 页面包裹内容），新建入口自身内容定高、纵向居中
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
                     .padding(bottom = 10.dp),
             ) {
-                if (latest != null) {
-                    val preview = latest!!
-                    HomePreviewCard(
-                        preview = preview,
-                        onView = { onOpenDetail(preview.id, preview.unlocked && preview.id in unsealed) },
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
+                when {
+                    previews.size > 1 -> {
+                        val pagerState = rememberPagerState(pageCount = { previews.size })
+                        Column(modifier = Modifier.weight(1f)) {
+                            HorizontalPager(
+                                state = pagerState,
+                                pageSpacing = 12.dp,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { page ->
+                                val preview = previews.getOrNull(page) ?: return@HorizontalPager
+                                HomePreviewCard(
+                                    preview = preview,
+                                    onView = { onOpenDetail(preview.id, preview.unlocked && preview.id in unsealed) },
+                                )
+                            }
+                            // 页点指示（卡外下方居中）：多页时必显示，明确「还有一页可滑」
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                            ) {
+                                repeat(previews.size) { index ->
+                                    val active = index == pagerState.currentPage
+                                    val dotSize by animateDpAsState(if (active) 7.dp else 5.dp, label = "previewDotSize")
+                                    val dotColor by animateColorAsState(
+                                        if (active) TimeGold else InkSecondary.copy(alpha = 0.35f),
+                                        label = "previewDotColor",
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 3.dp)
+                                            .size(dotSize)
+                                            .clip(CircleShape)
+                                            .background(dotColor),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    previews.isNotEmpty() -> {
+                        // 单页：不挂 Pager——单页 Pager 仍会消费横向拖动（回弹无效果），
+                        // 观感即「滑不动」；不挂后卡片上的左右滑动交还主 Tab 翻页
+                        val preview = previews[0]
+                        HomePreviewCard(
+                            preview = preview,
+                            onView = { onOpenDetail(preview.id, preview.unlocked && preview.id in unsealed) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
+                    else -> Spacer(modifier = Modifier.weight(1f))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 HomeCreateEntry(
                     onCreate = onCreate,
-                    modifier = Modifier
-                        .width(88.dp)
-                        .fillMaxHeight(),
+                    modifier = Modifier.width(88.dp),
                 )
             }
         }

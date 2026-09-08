@@ -36,6 +36,9 @@ class CryptoRoundTripTest {
 
         override fun observe(key: String): Flow<String?> = flow { emit(store[key]) }
 
+        override fun observeReadKeys(): Flow<List<String>> =
+            flow { emit(store.keys.filter { it.startsWith("capsule.read.") }.toList()) }
+
         override suspend fun put(entity: MetaEntity) {
             store[entity.key] = entity.value
         }

@@ -65,4 +65,16 @@ class StarLibraryViewModel(container: AppContainer) : ViewModel() {
             ids.forEach { crud.delete(it) }
         }
     }
+
+    /**
+     * 批量归为销毁（长按多选 + 二次确认后调用）：
+     * 走 CRUD 的 markDestroyed（内容物理删除 + 尘迹档案 + DESTROYED 状态），
+     * 与「删除」的语义差异 = 留不留一行尘迹档案。
+     */
+    fun destroySelected(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            ids.forEach { runCatching { crud.markDestroyed(it) } }
+        }
+    }
 }

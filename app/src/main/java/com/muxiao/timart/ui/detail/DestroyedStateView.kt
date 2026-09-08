@@ -27,7 +27,8 @@ import com.muxiao.timart.utils.format.TimeFormatter
 /**
  * 状态 D：DESTROYED 尘迹态（PRD §3.4.4 状态 D / 设计稿 09）：
  * - 不保留完整尘核，仅原位置附近极淡尘迹残影；
- * - 进入页面先显示一瞬间尘迹，再缓慢静止（残影整体 1.0 → 0.62，900ms）；
+ * - 入场：残影淡入显现（0 → 1，320ms）再缓慢静止沉降（1.0 → 0.62，900ms）——
+ *   此前 t=0 直接满 alpha 弹出，与消散序列散尽后的「落尘成迹」叙事不符；
  * - 仅标题、销毁时间与一句低调纪念文案；不出现任何原始正文或图片。
  */
 @Composable
@@ -37,9 +38,10 @@ fun DestroyedStateView(
     modifier: Modifier = Modifier,
 ) {
     val L = LocalStrings.current
-    // 「先一瞬间尘迹 → 缓慢静止」
-    val still = remember { Animatable(1f) }
+    // 「淡入显现 → 缓慢静止」
+    val still = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
+        still.animateTo(1f, animationSpec = tween(durationMillis = 320))
         still.animateTo(0.62f, animationSpec = tween(durationMillis = 900))
     }
 

@@ -457,6 +457,16 @@ fun SettingsScreen(container: AppContainer) {
                     .padding(vertical = 10.dp)
                     .clickable { runCatching { uriHandler.openUri(REPO_URL) } },
             )
+            InfoParagraph(text = L.aboutFeedbackLabel)
+            Text(
+                text = FEEDBACK_EMAIL,
+                style = TimartType.caption,
+                color = TimeGold,
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .padding(vertical = 10.dp)
+                    .clickable { runCatching { uriHandler.openUri("mailto:$FEEDBACK_EMAIL") } },
+            )
         }
     }
 
@@ -538,6 +548,9 @@ fun SettingsScreen(container: AppContainer) {
 
 /** 更新与源码仓库（关于弹窗展示；仓库尚在构建中，占位口径） */
 private const val REPO_URL = "https://github.com/muxiaowf/timart"
+
+/** 反馈邮箱（关于弹窗展示；mailto: 唤起系统邮件客户端） */
+private const val FEEDBACK_EMAIL = "timart@muxiaowf.top"
 
 /**
  * 权限管理卡：应用全部可管理的系统授权入口（状态实时展示，ON_RESUME 回来后自动刷新）：

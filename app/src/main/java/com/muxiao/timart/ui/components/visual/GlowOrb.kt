@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.muxiao.timart.ui.components.particle.GlowPainter
+import com.muxiao.timart.ui.components.particle.PlanetPainter
 
 /**
  * 通用发光球体（架构 §2.18）：预渲染光晕 + **微缩星球质感**球核 + 可选进度圆环。
@@ -33,6 +34,10 @@ fun GlowOrb(
     ringProgress: Float? = null,
     ringColor: Color = Color.Transparent,
     ringWidth: Dp = 2.dp,
+
+    /** 球核质感：true 走 PlanetPainter 预渲染星球贴图（渐变体积 + 终止线 + rim，
+     *  供 ≥28dp 大球消除三层平涂的硬边色带）；false 维持三层平涂（小球/残影路径） */
+    planetCore: Boolean = false,
 ) {
     Canvas(modifier = modifier) {
         val r = radius.toPx()
@@ -48,26 +53,41 @@ fun GlowOrb(
                 alpha = glowAlpha,
             )
         }
-        // 微缩星球：暗边底盘 → 偏光内芯 → 左上高光弧
-        drawCircle(
-            color = coreColor.copy(alpha = coreColor.alpha).let { lerp(it, Color.Black, 0.32f) },
-            radius = r,
-            center = Offset(cx, cy),
-        )
-        drawCircle(
-            color = coreColor,
-            radius = r * 0.85f,
-            center = Offset(cx - r * 0.10f, cy - r * 0.13f),
-        )
-        drawArc(
-            color = GLOW_HIGHLIGHT.copy(alpha = 0.45f),
-            startAngle = -150f,
-            sweepAngle = 55f,
-            useCenter = false,
-            topLeft = Offset(cx - r * 0.8f, cy - r * 0.8f),
-            size = androidx.compose.ui.geometry.Size(r * 1.6f, r * 1.6f),
-            style = Stroke(width = 1.6f),
-        )
+        if (planetCore) {
+            // 星球质感球核：预渲染位图（渐变偏光 + 终止线 + 高光 + rim + 烘焙微尘），
+            // 帧循环仅 drawBitmap + alpha；coreColor 变化（PENDING lerp）才重建缓存键
+            drawIntoCanvas { canvas ->
+                PlanetPainter.drawPlanet(
+                    canvas.nativeCanvas,
+                    cx,
+                    cy,
+                    r,
+                    coreColor.toArgb(),
+                    coreColor.alpha,
+                )
+            }
+        } else {
+            // 微缩星球：暗边底盘 → 偏光内芯 → 左上高光弧
+            drawCircle(
+                color = coreColor.copy(alpha = coreColor.alpha).let { lerp(it, Color.Black, 0.32f) },
+                radius = r,
+                center = Offset(cx, cy),
+            )
+            drawCircle(
+                color = coreColor,
+                radius = r * 0.85f,
+                center = Offset(cx - r * 0.10f, cy - r * 0.13f),
+            )
+            drawArc(
+                color = GLOW_HIGHLIGHT.copy(alpha = 0.45f),
+                startAngle = -150f,
+                sweepAngle = 55f,
+                useCenter = false,
+                topLeft = Offset(cx - r * 0.8f, cy - r * 0.8f),
+                size = androidx.compose.ui.geometry.Size(r * 1.6f, r * 1.6f),
+                style = Stroke(width = 1.6f),
+            )
+        }
         ringProgress?.let { progress ->
             drawArc(
                 color = ringColor,

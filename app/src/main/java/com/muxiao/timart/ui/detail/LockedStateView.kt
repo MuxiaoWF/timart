@@ -7,7 +7,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -198,9 +199,19 @@ fun LockedStateView(
                             // 快击计数持有在 pointerInput 协程局部（key 不变则协程存活、计数保持）
                             var tapCount = 0
                             var firstTapAt = 0L
-                            detectTapGestures(
-                                onLongPress = { onOrbLongPress() },
-                                onTap = {
+                            awaitEachGesture {
+                                val startMs = System.currentTimeMillis()
+                                // 超时未松手 → 长按（时长 REGRET_LONG_PRESS_MS，远大于系统默认，
+                                // 维持入口隐蔽性）；被父级滚动手势打断同样返回 null，
+                                // 用耗时区分：不足时长的是打断，不触发
+                                val up = withTimeoutOrNull(REGRET_LONG_PRESS_MS) {
+                                    waitForUpOrCancellation()
+                                }
+                                if (up == null) {
+                                    if (System.currentTimeMillis() - startMs >= REGRET_LONG_PRESS_MS) {
+                                        onOrbLongPress()
+                                    }
+                                } else {
                                     val now = System.currentTimeMillis()
                                     if (now - firstTapAt > REGRET_TAP_WINDOW_MS) {
                                         tapCount = 1
@@ -212,8 +223,8 @@ fun LockedStateView(
                                         tapCount = 0
                                         onOrbLongPress()
                                     }
-                                },
-                            )
+                                }
+                            }
                         }
                     } else {
                         Modifier
@@ -226,7 +237,20 @@ fun LockedStateView(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            CapsuleOrbView(state = CapsuleState.LOCKED, radius = 88.dp)
+            // PENDING 视觉态（UI 层判定，不改库状态）：条件全部满足待判定/待点击 →
+            // 球核转金 lerp + 封印环变进度环；未全满时进度参数传入但不起效（无视觉变化）
+            val pendingTotal = timeline?.totalCount ?: capsule.unlockRule.conditionList.size
+            val pendingSatisfied = timeline?.satisfiedCount ?: 0
+            CapsuleOrbView(
+                state = CapsuleState.LOCKED,
+                radius = 88.dp,
+                pending = pendingTotal > 0 && pendingSatisfied >= pendingTotal,
+                satisfyProgress = if (pendingTotal > 0) {
+                    pendingSatisfied.toFloat() / pendingTotal
+                } else {
+                    0f
+                },
+            )
         }
 
         // 锁定尘核弱内流（BREATHE，此前从未接线）：锚点 = 尘核中心（画布局部坐标），随布局重同步
@@ -440,6 +464,9 @@ fun LockedStateView(
         }
     }
 }
+
+/** 「后悔药」隐藏入口：长按触发时长（远大于系统默认 ~400ms，入口更隐蔽；中途被打断不触发） */
+private const val REGRET_LONG_PRESS_MS = 3_000L
 
 /** 「后悔药」隐藏入口的快击触发：时间窗内连续点击次数与窗口时长（长按之外的备用手势） */
 private const val REGRET_TAP_TRIGGER_COUNT = 5

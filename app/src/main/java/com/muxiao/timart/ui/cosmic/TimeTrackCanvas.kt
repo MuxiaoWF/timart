@@ -74,10 +74,12 @@ fun TimeTrackCanvas(
     focusId: String?,
     unsealedIds: Set<String>,
     pendingIds: Set<String>,
+    modifier: Modifier = Modifier,
+    /** 已开启过（读过内容，meta `capsule.read.*`）的胶囊 id 集：已读金球做余温降档（亮度/环带/尘埃全弱化） */
+    readIds: Set<String> = emptySet(),
     onTransform: (panDelta: Offset, zoomDelta: Float) -> Unit,
     onCapsuleTap: (id: String, firstUnlock: Boolean, anchorX: Float, anchorY: Float) -> Unit,
     onLayoutChange: (id: String, nx: Float, ny: Float, finished: Boolean) -> Unit,
-    modifier: Modifier = Modifier,
     parallax: ParallaxSensor? = null,
     tier: com.muxiao.timart.domain.model.AnimationTier = com.muxiao.timart.domain.model.AnimationTier.HIGH,
 
@@ -216,10 +218,11 @@ fun TimeTrackCanvas(
                     y = dy + p.y + pan.y + shift.y,
                     radius = orbitDotRadius(p.orbitRadius, density),
                     colorArgb = dustWhitened(
-                        if (p.id in unsealedIds) {
-                            ParticleEngine.TIME_GOLD
-                        } else {
-                            capsuleState.anchorColorArgb(pending = p.id in pendingIds)
+                        when {
+                            p.id in unsealedIds -> ParticleEngine.TIME_GOLD
+                            // 已读金球：环绕尘埃随余温降档（同色压暗，见 ReadGoldDraw）
+                            capsuleState == CapsuleState.UNLOCKED && p.id in readIds -> ReadGoldArgb
+                            else -> capsuleState.anchorColorArgb(pending = p.id in pendingIds)
                         },
                     ),
                 )
@@ -380,10 +383,13 @@ fun TimeTrackCanvas(
                 val state = capsulesById[p.id]?.state ?: CapsuleState.LOCKED
                 val isUnsealed = p.id in unsealedIds
                 val isPending = p.id in pendingIds
+                // 已读金球余温降档：金相保留（身份不变），亮度/光晕/环带/尘埃整体弱化——
+                // 金球三档：UNSEAL 待点击（最亮）> 未读金球（满亮度，引导开启）> 已读（余温，不再催点）
+                val isReadGold = !isUnsealed && state == CapsuleState.UNLOCKED && p.id in readIds
                 val r = orbitDotRadius(p.orbitRadius, density)
                 val coreColor = when {
                     isUnsealed -> TimeGold
-                    state == CapsuleState.UNLOCKED -> TimeGold
+                    state == CapsuleState.UNLOCKED -> if (isReadGold) ReadGoldDraw else TimeGold
                     isPending -> pendingColor(p.id)
                     else -> LockedSlateDraw
                 }
@@ -396,9 +402,13 @@ fun TimeTrackCanvas(
                         canvas.nativeCanvas,
                         p.x,
                         py,
-                        r * if (isGolden) 2.4f else 1.7f,
+                        r * if (isGolden && !isReadGold) 2.4f else 1.7f,
                         coreColor.toArgb(),
-                        if (isGolden) 0.5f else 0.3f,
+                        when {
+                            isReadGold -> 0.22f
+                            isGolden -> 0.5f
+                            else -> 0.3f
+                        },
                     )
                 }
                 // 微缩星球：暗边底盘 → 偏光内芯 → 左上高光弧（与 GlowOrb 同构）
@@ -421,8 +431,8 @@ fun TimeTrackCanvas(
                     size = androidx.compose.ui.geometry.Size(r * 1.6f, r * 1.6f),
                     style = ORB_HIGHLIGHT_STROKE,
                 )
-                // 环带：已解锁金环；未解锁暗色细环；两粒慢公转尘埃（与 GlowPainter 路径）
-                if (isGolden) {
+                // 环带：亮金环仅属于待开启/未读（引导信号）；已读降为暗金细环；未解锁暗色细环
+                if (isGolden && !isReadGold) {
                     drawCircle(
                         color = TimeGold.copy(alpha = 0.32f),
                         radius = r + ringGoldPadPx,
@@ -431,15 +441,19 @@ fun TimeTrackCanvas(
                     )
                 } else {
                     drawCircle(
-                        color = coreColor.copy(alpha = 0.4f),
+                        color = coreColor.copy(alpha = if (isReadGold) 0.28f else 0.4f),
                         radius = r + ringLockedPadPx,
                         center = Offset(p.x, py),
                         style = RING_LOCKED_STROKE,
                     )
                 }
                 val motePhase = (p.id.hashCode() and 0xFF) / 255f * 6.2832f
-                val moteSpeed = if (isGolden) 0.45f else 0.28f
-                val moteColor = if (isGolden) TimeGold else coreColor
+                val moteSpeed = when {
+                    isReadGold -> 0.24f
+                    isGolden -> 0.45f
+                    else -> 0.28f
+                }
+                val moteColor = if (isGolden && !isReadGold) TimeGold else coreColor
                 for (m in 0..1) {
                     val moteAngle = nowSec * moteSpeed + motePhase + m * 3.1416f
                     val moteR = r + moteBasePx + m * moteStepPx
@@ -450,7 +464,11 @@ fun TimeTrackCanvas(
                             py + (sin(moteAngle) * moteR).toFloat(),
                             moteSizePx,
                             moteColor.toArgb(),
-                            if (isGolden) 0.85f else 0.65f,
+                            when {
+                                isReadGold -> 0.4f
+                                isGolden -> 0.85f
+                                else -> 0.65f
+                            },
                         )
                     }
                 }
@@ -512,6 +530,13 @@ private fun pendingColor(id: String): androidx.compose.ui.graphics.Color {
 }
 
 private val LockedSlateDraw = androidx.compose.ui.graphics.Color(0xFF5A6B7A)
+
+/**
+ * 已读金球余温色：TimeGold 压暗 40%（同色系降亮度，不引入新视觉 Token）——
+ * 与「未读金球满亮度」拉开一档，语义为「内容已读、不再催点，但仍是已解锁的金星」
+ */
+private val ReadGoldDraw = androidx.compose.ui.graphics.lerp(TimeGold, androidx.compose.ui.graphics.Color.Black, 0.40f)
+private val ReadGoldArgb = ReadGoldDraw.toArgb()
 
 // A8：绘制期 Stroke 常量（原每帧每球 new Stroke，提升为不可变单例）
 private val TRACK_STROKE = Stroke(width = 1.2f)

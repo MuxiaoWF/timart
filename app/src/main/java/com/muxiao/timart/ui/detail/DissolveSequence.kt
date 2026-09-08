@@ -25,9 +25,12 @@ import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * DISSOLVE 消散序列（架构 §2.16 / §8.1，0–1000ms 沿轨道散逸）：
+ * DISSOLVE 消散序列（架构 §2.16 / §8.1）：
  * - 粒子由共享引擎 DISSOLVE 预设承担（透明画布叠在信笺之上，内容本身由父层做淡出）；
- * - 任意点击 / 1s 后 → onFinished 落 ARCHIVED（业务销毁早已启动，此处纯视觉收尾）。
+ * - 两幕编排：先等信笺淡出推进（~420ms，卡片残影已稀薄），再从**信笺卡片实际中心**
+ *   发射散逸粒子（此前 t=0 即爆 + 锚点固定 h*0.42：卡片刚开始淡出、球体尚未出现时
+ *   粒子就在屏幕中部的空白处提前播完，视觉上"无中生有"）；散逸 1s → 落 ARCHIVED。
+ * - 任意点击 → onFinished 落 ARCHIVED（业务销毁早已启动，此处纯视觉收尾）。
  */
 @Composable
 fun DissolveSequence(
@@ -58,11 +61,19 @@ fun DissolveSequence(
 
     LaunchedEffect(canvasSize) {
         if (canvasSize == IntSize.Zero) return@LaunchedEffect
+        // 第一幕：信笺淡出先行——DetailScreen 的 700ms 淡出在此推进到 ~40% 残影，
+        // 粒子出现时卡片已"正在消散"，因果衔接成立
+        delay(420L.milliseconds)
+        // 第二幕：锚点 = 信笺卡片实际中心（DISSOLVE 相位信笺无返回按钮 → 顶距 40dp；
+        // 几何走 PaperCardGeometry 唯一来源，不再用屏幕比例位 h*0.42）
+        val cardTop = with(density) { 40.dp.toPx() }
+        val cardH = PaperCardGeometry.estimatedHeightPx(density, canvasSize.height.toFloat())
+        val cardW = PaperCardGeometry.widthPx(density, canvasSize.width.toFloat())
         engine.fire(
             preset = ParticlePreset.DISSOLVE,
             anchorX = canvasSize.width / 2f,
-            anchorY = canvasSize.height * 0.42f,
-            anchorRadius = with(density) { 90.dp.toPx() },
+            anchorY = cardTop + cardH / 2f,
+            anchorRadius = maxOf(cardW, cardH) / 2f * 0.9f,
             colorArgb = DustAsh.toArgb(),
         )
         delay(1000L.milliseconds)

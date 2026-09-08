@@ -50,7 +50,9 @@ interface Strings {
     val homeNarrative: String
     val homeEmpty: String
     val previewLatest: String
+    val previewUpcoming: String
     val previewReady: String
+    val previewOpened: String
     val previewWaiting: String
     val previewProgressFmt: String
     val previewView: String
@@ -64,9 +66,14 @@ interface Strings {
     val starBatchDeleteTitle: String
     val starBatchDeleteBodyFmt: String
 
+    /** 星库批量「归为销毁」确认弹窗（与删除的区别 = 留尘迹档案） */
+    val starBatchDestroyTitle: String
+    val starBatchDestroyBodyFmt: String
+
     // ---- 批量选择（星库 / 尘迹共用） ----
     val batchSelectedFmt: String
     val batchSelectAll: String
+    val batchDestroy: String
     val batchDelete: String
     val batchCancel: String
 
@@ -313,6 +320,9 @@ interface Strings {
 
     /** 更新与源码仓库行标签 */
     val aboutRepoLabel: String
+
+    /** 关于弹窗：反馈邮箱小注 */
+    val aboutFeedbackLabel: String
 
     // ---- 检查更新（GitHub Releases 占位） ----
     val setCheckUpdate: String

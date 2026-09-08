@@ -1,5 +1,6 @@
 package com.muxiao.timart.ui.cosmic
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,8 +29,14 @@ import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TimartType
 
 /**
- * 底部「最近的一颗」预览卡（架构 §2.14，对齐设计稿 01）：
- * 小注 + 标题 + 条件句；右侧进度 x/y 与「查看」入口。无最近胶囊时不渲染。
+ * 底部预览卡（架构 §2.14，对齐设计稿 01）：小注 + 标题 + 条件句；右侧进度 x/y 与「查看」入口。
+ * 由 HomeScreen 的 HorizontalPager 分页复用：第 1 页「最近的一颗」，第 2 页「即将达成的一颗」；
+ * 页点指示渲染在 pager 下方（卡外居中），本卡只负责内容。
+ *
+ * 三态视觉差异（是否已开启过）：
+ * - LOCKED：进度 x/y（灰金）+ 待满足条件句；
+ * - UNLOCKED 未读：金描边 + 「可开启」高亮（引导点击）；
+ * - UNLOCKED 已读：卡片降透明弱化 + 「已开启」灰字（不再催点）。
  */
 @Composable
 fun HomePreviewCard(
@@ -38,12 +45,15 @@ fun HomePreviewCard(
     modifier: Modifier = Modifier,
 ) {
     val L = LocalStrings.current
+    val ready = preview.unlocked && !preview.read
+    val opened = preview.unlocked && preview.read
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onView),
         shape = RoundedCornerShape(14.dp),
-        color = SurfaceRaise,
+        color = if (opened) SurfaceRaise.copy(alpha = 0.55f) else SurfaceRaise,
+        border = if (ready) BorderStroke(1.dp, TimeGold.copy(alpha = 0.5f)) else null,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -51,14 +61,18 @@ fun HomePreviewCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = L.previewLatest,
+                    text = if (preview.kind == HomeViewModel.LatestPreview.PreviewKind.UPCOMING) {
+                        L.previewUpcoming
+                    } else {
+                        L.previewLatest
+                    },
                     style = TimartType.caption,
                     color = InkSecondary,
                 )
                 Text(
                     text = preview.title,
                     style = TimartType.titleSerif,
-                    color = InkPrimary,
+                    color = if (opened) InkPrimary.copy(alpha = 0.6f) else InkPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 6.dp),
@@ -78,18 +92,19 @@ fun HomePreviewCard(
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = when {
-                        preview.unlocked -> L.previewReady
+                        ready -> L.previewReady
+                        opened -> L.previewOpened
                         preview.satisfied != null && preview.total != null ->
                             L.previewProgressFmt.format(preview.satisfied, preview.total)
                         else -> L.previewWaiting
                     },
                     style = TimartType.caption,
-                    color = TimeGold,
+                    color = if (ready) TimeGold else InkSecondary,
                 )
                 Text(
                     text = L.previewView,
                     style = TimartType.body,
-                    color = InkPrimary,
+                    color = if (opened) InkPrimary.copy(alpha = 0.6f) else InkPrimary,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -98,8 +113,8 @@ fun HomePreviewCard(
 }
 
 /**
- * 「＋ 新建」聚合尘核入口：与预览卡等高的描边幽灵卡（透明底 + 金描边），
- * ＋ 与文字纵向居中，和预览卡构成一组上下沿对齐的底部条。
+ * 「＋ 新建」聚合尘核入口：与预览卡等高观念的描边幽灵卡（透明底 + 金描边），
+ * ＋ 与文字纵向居中，和预览卡构成一组底部条（纵向居中对齐，自身内容定高）。
  */
 @Composable
 fun HomeCreateEntry(
@@ -111,7 +126,7 @@ fun HomeCreateEntry(
         modifier = modifier.clickable(onClick = onCreate),
         shape = RoundedCornerShape(14.dp),
         color = Color.Transparent,
-        border = androidx.compose.foundation.BorderStroke(1.dp, TimeGold.copy(alpha = 0.55f)),
+        border = BorderStroke(1.dp, TimeGold.copy(alpha = 0.55f)),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -135,4 +150,3 @@ fun HomeCreateEntry(
         }
     }
 }
-

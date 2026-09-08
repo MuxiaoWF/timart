@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.lerp
@@ -18,20 +19,28 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.CapsuleState
+import com.muxiao.timart.ui.components.particle.GlowPainter
 import com.muxiao.timart.ui.components.particle.ParticleEngine
 import com.muxiao.timart.ui.components.visual.GlowOrb
 import com.muxiao.timart.ui.theme.DustAsh
 import com.muxiao.timart.ui.theme.GlowGold
+import com.muxiao.timart.ui.theme.InkPrimary
 import com.muxiao.timart.ui.theme.LockedSlate
 import com.muxiao.timart.ui.theme.TimeGold
+import com.muxiao.timart.ui.theme.TrackHairline
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * 单球渲染（架构 §2.14）：四状态视觉映射，预览卡 / 详情页复用。
- * - LOCKED：冷灰青尘核（引擎 BREATHE 内流由上层接入；此处静态内点兜底）
- * - PENDING：LockedSlate→TimeGold lerp 内光 + 固定种子金点（[pending] 标志，非 CapsuleState 枚举值）
+ * - LOCKED：冷灰青星球质感尘核（PlanetPainter 预渲染贴图；引擎 BREATHE 内流由上层接入；
+ *   radius ≥ 64dp 加「封印轨道环」——细环 + 两粒固定封印节点，与启动图标斜轨同构）
+ * - PENDING：LockedSlate→TimeGold lerp 内光 + 固定种子金点 + 封印环变进度环
+ *   （[pending] 标志，非 CapsuleState 枚举值）
  * - UNLOCKED：暖金稳光慢呼吸（breathing 开关）
- * - DESTROYED：暖灰尘迹残影（无光晕）
+ * - DESTROYED：暖灰尘迹残影（无光晕，维持扁平余烬感不走星球贴图）
  * 同页同一时刻仅焦点球开呼吸（PRD 红线：单主焦点动画）。
  */
 @Composable
@@ -94,18 +103,22 @@ fun CapsuleOrbView(
             coreColor = coreColor,
             glowColor = glowColor,
             glowAlpha = glowAlpha,
+            // 星球质感球核：除 DESTROYED 残影（保持扁平余烬感）外全部启用；
+            // 小位图（依赖球 11dp 等）在 PlanetPainter 内自动跳过尘带/微尘，仅保留渐变体积
+            planetCore = state != CapsuleState.DESTROYED,
         )
-        // PENDING / LOCKED 内部固定种子金点（尘核内部流动的静态兜底）
-        if (state == CapsuleState.LOCKED) {
+        // PENDING 内部固定种子金点（尘核内部流动的静态兜底；纯 LOCKED 态尘点与
+        // 球核同色不可见，已删除——星球贴图自带烘焙微尘承担内部质感）
+        if (isPending) {
             Canvas(modifier = Modifier) {
                 val r = radius.toPx()
                 val seeds = floatArrayOf(0.13f, 0.71f, 0.33f, 0.91f)
-                val color = if (isPending) TimeGold else LockedSlate.copy(alpha = 0.9f)
+                val color = TimeGold
                 for (i in seeds.indices) {
                     val fx = seeds[i]
                     val fy = seeds[(i + 2) % seeds.size]
                     drawIntoCanvas { canvas ->
-                        com.muxiao.timart.ui.components.particle.GlowPainter.drawDot(
+                        GlowPainter.drawDot(
                             canvas.nativeCanvas,
                             size.width / 2f + (fx - 0.5f) * r * 0.9f,
                             size.height / 2f + (fy - 0.5f) * r * 0.9f,
@@ -130,6 +143,52 @@ fun CapsuleOrbView(
                     size = androidx.compose.ui.geometry.Size(r * 2f, r * 2f),
                     style = Stroke(width = 1.5f),
                 )
+            }
+        }
+        // 封印轨道环（详情页大球专属，radius ≥ 64dp 才启用）：
+        // 细环 + 环上两粒固定「封印节点」，与 App 启动图标斜轨同构——
+        // 环属于封印叙事（待启的核被扣在轨道上），首页时轨小球保持无环语义不变；
+        // 引擎 ORBIT 尘环（1.10–1.56× 球径）从环带穿过，动静两层互为支撑。
+        // PENDING 态同一位置改为进度环：底环 + 时金进度弧（自顶部顺时针）。
+        if (state == CapsuleState.LOCKED && radius >= 64.dp) {
+            Canvas(modifier = Modifier) {
+                val r = radius.toPx()
+                val ringR = r * 1.32f
+                if (isPending) {
+                    drawCircle(
+                        color = TrackHairline,
+                        radius = ringR,
+                        style = Stroke(width = 1.2.dp.toPx()),
+                    )
+                    drawArc(
+                        color = TimeGold.copy(alpha = 0.85f),
+                        startAngle = -90f,
+                        sweepAngle = 360f * satisfyProgress.coerceIn(0f, 1f),
+                        useCenter = false,
+                        topLeft = Offset(size.width / 2f - ringR, size.height / 2f - ringR),
+                        size = androidx.compose.ui.geometry.Size(ringR * 2f, ringR * 2f),
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                    )
+                } else {
+                    drawCircle(
+                        color = InkPrimary.copy(alpha = 0.20f),
+                        radius = ringR,
+                        style = Stroke(width = 1.2.dp.toPx()),
+                    )
+                    drawIntoCanvas { canvas ->
+                        for (a in floatArrayOf(210f, 30f)) {
+                            val rad = a * Math.PI.toFloat() / 180f
+                            GlowPainter.drawDot(
+                                canvas.nativeCanvas,
+                                size.width / 2f + cos(rad) * ringR,
+                                size.height / 2f + sin(rad) * ringR,
+                                2.4f.dp.toPx(),
+                                InkPrimary.toArgb(),
+                                0.55f,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
