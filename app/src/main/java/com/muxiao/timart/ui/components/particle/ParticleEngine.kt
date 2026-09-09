@@ -138,7 +138,7 @@ class ParticleEngine(tier: AnimationTier) {
 
     /** 更新某锚点（屏幕坐标 + 状态色） */
     fun setOrbAnchor(index: Int, x: Float, y: Float, radius: Float, colorArgb: Int) {
-        if (index < 0 || index >= MAX_ORBS) return
+        if (index !in 0..<MAX_ORBS) return
         anchorX[index] = x
         anchorY[index] = y
         anchorR[index] = radius

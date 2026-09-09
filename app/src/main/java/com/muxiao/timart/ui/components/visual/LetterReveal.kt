@@ -49,6 +49,13 @@ private fun rollRevealEffect(): LetterRevealEffect {
     return pool.random().also { lastRolledEffect = it }
 }
 
+/**
+ * 标题显现行数上限与超长处理：信笺卡片固定两行 + 省略号。
+ * 原本由 RevealTitle 参数传入，但全项目唯一调用点恒传同一组值，故下沉为常量。
+ */
+private const val TITLE_MAX_LINES = 2
+private val TITLE_OVERFLOW = TextOverflow.Ellipsis
+
 /** 扰乱字符池（块状/线状字形，视觉上更像未解码的尘粒） */
 private const val SCRAMBLE_POOL = "█▓▒░<>/\\[]{}#*+=-·"
 
@@ -56,7 +63,7 @@ private const val SCRAMBLE_POOL = "█▓▒░<>/\\[]{}#*+=-·"
 private const val REVEAL_TOTAL_MS = 1500L
 
 /** 标题显现窗口（= REVEAL_TOTAL_MS × 0.32，即标题进度走完 0→1 的实际毫秒数） */
-private val TITLE_WINDOW_MS = REVEAL_TOTAL_MS * 0.32f
+private const val TITLE_WINDOW_MS = REVEAL_TOTAL_MS * 0.32f
 
 /**
  * WAVE 波浪的单字周期（A9 固定时长制）：每个字的升起-归位时长恒定，
@@ -122,13 +129,18 @@ fun RevealTitle(
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
-    maxLines: Int = Int.MAX_VALUE,
-    overflow: TextOverflow = TextOverflow.Clip,
 ) {
     when (state.effect) {
         LetterRevealEffect.TYPEWRITER -> {
             val visible = (state.titleP * text.length).toInt().coerceIn(0, text.length)
-            Text(text.take(visible), style = style, color = color, maxLines = maxLines, overflow = overflow, modifier = modifier)
+            Text(
+                text.take(visible),
+                style = style,
+                color = color,
+                maxLines = TITLE_MAX_LINES,
+                overflow = TITLE_OVERFLOW,
+                modifier = modifier,
+            )
         }
 
         LetterRevealEffect.SCRAMBLE -> {
@@ -139,7 +151,14 @@ fun RevealTitle(
             for (i in text.indices) {
                 sb.append(if (i < revealIdx) text[i] else SCRAMBLE_POOL[rnd.nextInt(SCRAMBLE_POOL.length)])
             }
-            Text(sb.toString(), style = style, color = color, maxLines = maxLines, overflow = overflow, modifier = modifier)
+            Text(
+                sb.toString(),
+                style = style,
+                color = color,
+                maxLines = TITLE_MAX_LINES,
+                overflow = TITLE_OVERFLOW,
+                modifier = modifier,
+            )
         }
 
         LetterRevealEffect.BLUR -> {
@@ -150,8 +169,8 @@ fun RevealTitle(
                 text = text,
                 style = style,
                 color = lerp(color.copy(alpha = 0.15f), color, state.titleP),
-                maxLines = maxLines,
-                overflow = overflow,
+                maxLines = TITLE_MAX_LINES,
+                overflow = TITLE_OVERFLOW,
                 modifier = modifier.then(blurMod),
             )
         }

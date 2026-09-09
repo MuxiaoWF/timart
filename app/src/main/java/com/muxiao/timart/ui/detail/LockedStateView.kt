@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -115,8 +117,8 @@ fun LockedStateView(
     val context = LocalContext.current
     // 尘核中心（composition 根坐标，经 overlayOrigin 换算成粒子画布局部坐标供引擎使用）
     var orbCenter by remember { mutableStateOf(Offset.Zero) }
-    var orbRadiusPx by remember { mutableStateOf(1f) }
-    var lastPulse by remember { mutableStateOf(0) }
+    var orbRadiusPx by remember { mutableFloatStateOf(1f) }
+    var lastPulse by remember { mutableIntStateOf(0) }
 
     // 条件行权限引导（T14）：被权限阻断时，说明先于系统弹窗
     var showGpsGuide by remember { mutableStateOf(false) }
@@ -244,7 +246,7 @@ fun LockedStateView(
             CapsuleOrbView(
                 state = CapsuleState.LOCKED,
                 radius = 88.dp,
-                pending = pendingTotal > 0 && pendingSatisfied >= pendingTotal,
+                pending = pendingTotal in 1..pendingSatisfied,
                 satisfyProgress = if (pendingTotal > 0) {
                     pendingSatisfied.toFloat() / pendingTotal
                 } else {

@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.muxiao.timart.domain.model.WeatherType
 import com.muxiao.timart.ui.theme.GlowGold
 import com.muxiao.timart.ui.theme.InkSecondary
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * 纯 Canvas 天气小图形（架构 §2.18）：7 种 WeatherType 各自的简笔绘制。
@@ -44,8 +46,8 @@ private fun DrawScope.drawGlyph(type: WeatherType, color: Color, accentColor: Co
                 val r2 = h * 0.46f
                 drawLine(
                     color,
-                    Offset(cx + (Math.cos(rad) * r1).toFloat(), h * 0.5f + (Math.sin(rad) * r1).toFloat()),
-                    Offset(cx + (Math.cos(rad) * r2).toFloat(), h * 0.5f + (Math.sin(rad) * r2).toFloat()),
+                    Offset(cx + (cos(rad) * r1).toFloat(), h * 0.5f + (sin(rad) * r1).toFloat()),
+                    Offset(cx + (cos(rad) * r2).toFloat(), h * 0.5f + (sin(rad) * r2).toFloat()),
                     strokeWidth = stroke,
                     cap = StrokeCap.Round,
                 )
@@ -92,8 +94,8 @@ private fun DrawScope.drawGlyph(type: WeatherType, color: Color, accentColor: Co
                 val rad = Math.toRadians(deg.toDouble())
                 drawLine(
                     color,
-                    Offset(cx - (Math.cos(rad) * h * 0.32f).toFloat(), h * 0.5f - (Math.sin(rad) * h * 0.32f).toFloat()),
-                    Offset(cx + (Math.cos(rad) * h * 0.32f).toFloat(), h * 0.5f + (Math.sin(rad) * h * 0.32f).toFloat()),
+                    Offset(cx - (cos(rad) * h * 0.32f).toFloat(), h * 0.5f - (sin(rad) * h * 0.32f).toFloat()),
+                    Offset(cx + (cos(rad) * h * 0.32f).toFloat(), h * 0.5f + (sin(rad) * h * 0.32f).toFloat()),
                     strokeWidth = stroke,
                     cap = StrokeCap.Round,
                 )
@@ -106,10 +108,9 @@ private fun DrawScope.drawGlyph(type: WeatherType, color: Color, accentColor: Co
             drawCircle(color, radius = h * 0.2f, center = Offset(cx - w * 0.08f, h * 0.32f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
             drawCircle(color, radius = h * 0.24f, center = Offset(cx + w * 0.14f, h * 0.3f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
             drawLine(color, Offset(cx - w * 0.26f, h * 0.5f), Offset(cx + w * 0.3f, h * 0.5f), strokeWidth = stroke, cap = StrokeCap.Round)
-            val bolt = accentColor
-            drawLine(bolt, Offset(cx + w * 0.05f, h * 0.55f), Offset(cx - w * 0.04f, h * 0.7f), strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
-            drawLine(bolt, Offset(cx - w * 0.04f, h * 0.7f), Offset(cx + w * 0.04f, h * 0.72f), strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
-            drawLine(bolt, Offset(cx + w * 0.04f, h * 0.72f), Offset(cx - w * 0.06f, h * 0.9f), strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
+            drawLine(accentColor, Offset(cx + w * 0.05f, h * 0.55f), Offset(cx - w * 0.04f, h * 0.7f), strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
+            drawLine(accentColor, Offset(cx - w * 0.04f, h * 0.7f), Offset(cx + w * 0.04f, h * 0.72f), strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
+            drawLine(accentColor, Offset(cx + w * 0.04f, h * 0.72f), Offset(cx - w * 0.06f, h * 0.9f), strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
         }
     }
 }

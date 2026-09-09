@@ -34,6 +34,7 @@ import com.muxiao.timart.ui.components.particle.ParticleCanvas
 import com.muxiao.timart.ui.create.rules.RulesStep
 import com.muxiao.timart.ui.create.seal.AssembleOverlay
 import com.muxiao.timart.ui.create.seal.SealStep
+import com.muxiao.timart.ui.create.write.WriteStep
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import kotlin.time.Duration.Companion.milliseconds
 

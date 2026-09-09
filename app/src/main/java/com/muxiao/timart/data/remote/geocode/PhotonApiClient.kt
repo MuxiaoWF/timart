@@ -40,8 +40,7 @@ class PhotonApiClient {
         val primary = p.name?.takeIf { it.isNotBlank() }
             ?: listOfNotNull(p.housenumber, p.street).joinToString(" ").takeIf { it.isNotBlank() }
             ?: return null
-        val label = listOf(primary, p.city ?: p.county, p.state, p.country)
-            .filterNotNull()
+        val label = listOfNotNull(primary, p.city ?: p.county, p.state, p.country)
             .filter { it.isNotBlank() }
             .distinct()
             .joinToString(" · ")

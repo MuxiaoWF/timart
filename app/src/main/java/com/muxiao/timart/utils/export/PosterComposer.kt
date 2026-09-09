@@ -169,7 +169,7 @@ class PosterComposer(private val context: Context) {
             .setEllipsize(TextUtils.TruncateAt.END)
             .setLineSpacing(0f, 1.16f)
             .build()
-        canvas.withTranslate(MARGIN.toFloat(), top) { layout.draw(this) }
+        canvas.withContentOffset(top) { layout.draw(this) }
         return top + layout.height
     }
 
@@ -215,7 +215,7 @@ class PosterComposer(private val context: Context) {
             .setEllipsize(TextUtils.TruncateAt.END)
             .build()
 
-        canvas.withTranslate(MARGIN.toFloat(), top) { layout.draw(this) }
+        canvas.withContentOffset(top) { layout.draw(this) }
         var endY = top + layout.height
 
         // 被省略时补一行节选说明（极小字，避免读者误以为内容缺损）
@@ -314,10 +314,13 @@ class PosterComposer(private val context: Context) {
         this.color = color
     }
 
-    /** Canvas translate 便捷包装 */
-    private inline fun Canvas.withTranslate(x: Float, y: Float, block: Canvas.() -> Unit) {
+    /**
+     * Canvas translate 便捷包装：横向固定偏移到内容左边距 MARGIN（海报所有正文块均左对齐于此），
+     * 只传纵向偏移；结束时回滚到 checkpoint。
+     */
+    private inline fun Canvas.withContentOffset(y: Float, block: Canvas.() -> Unit) {
         val checkpoint = save()
-        translate(x, y)
+        translate(MARGIN.toFloat(), y)
         try {
             block()
         } finally {

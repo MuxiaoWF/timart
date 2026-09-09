@@ -332,7 +332,6 @@ fun NfcTapForm(onConfirm: (UnlockCondition.NfcTap) -> Unit) {
         if (pairedMode) {
             NfcWritePanel(
                 challengeId = challengeId,
-                paired = paired,
                 onPaired = { paired = true },
                 modifier = Modifier.padding(top = 10.dp),
             )
@@ -360,7 +359,6 @@ private enum class NfcWriteStatus { IDLE, WAITING, SUCCESS, FAILURE }
 @Composable
 private fun NfcWritePanel(
     challengeId: String,
-    paired: Boolean,
     onPaired: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -408,17 +406,20 @@ private fun NfcWritePanel(
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        when {
-            status == NfcWriteStatus.WAITING ->
+        when (status) {
+            NfcWriteStatus.WAITING ->
                 Text(text = L.nfcWriteWaiting, style = TimartType.caption, color = TimeGold)
-            status == NfcWriteStatus.SUCCESS && paired -> {
+
+            // 写卡成功与 onPaired() 同帧发生，SUCCESS 即代表已绑定，无需再判 paired
+            NfcWriteStatus.SUCCESS -> {
                 Text(text = L.nfcWriteSuccess, style = TimartType.caption, color = TimeGold)
                 FormConfirmButton(enabled = true, label = L.nfcWriteRewrite, onClick = {
                     status = NfcWriteStatus.WAITING
                     failMessage = null
                 })
             }
-            status == NfcWriteStatus.FAILURE -> {
+
+            NfcWriteStatus.FAILURE -> {
                 Text(
                     text = failMessage ?: L.nfcWriteFailIo,
                     style = TimartType.caption,
@@ -429,11 +430,11 @@ private fun NfcWritePanel(
                     failMessage = null
                 })
             }
-            else ->
-                FormConfirmButton(enabled = true, label = L.nfcWriteStart, onClick = {
-                    status = NfcWriteStatus.WAITING
-                    failMessage = null
-                })
+
+            else -> FormConfirmButton(enabled = true, label = L.nfcWriteStart, onClick = {
+                status = NfcWriteStatus.WAITING
+                failMessage = null
+            })
         }
     }
 }

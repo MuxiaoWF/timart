@@ -10,6 +10,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -226,8 +227,8 @@ fun WeatherMetricForm(onConfirm: (UnlockCondition.WeatherMetric) -> Unit) {
     var metric by remember { mutableStateOf(WeatherMetricKind.HUMIDITY) }
     var useMin by remember { mutableStateOf(true) }
     var useMax by remember { mutableStateOf(false) }
-    var minV by remember { mutableStateOf(50f) }
-    var maxV by remember { mutableStateOf(60f) }
+    var minV by remember { mutableFloatStateOf(50f) }
+    var maxV by remember { mutableFloatStateOf(60f) }
     val ranges = mapOf(
         WeatherMetricKind.HUMIDITY to 0f..100f,
         WeatherMetricKind.WIND to 0f..120f,

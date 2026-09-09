@@ -12,11 +12,11 @@ Nominatim → Photon 三级兜底，见 `data/remote/geocode/` 与 `utils/locati
 
 ## 内容
 
-| 文件 | 说明 |
-|---|---|
+| 文件                                                                    | 说明                                  |
+|-----------------------------------------------------------------------|-------------------------------------|
 | `java/com/muxiao/timart/ui/components/visual/BaiduMapPickerCanvas.kt` | 百度在线地图选点画布（依赖 `com.baidu.mapapi.*`） |
-| `java/com/muxiao/timart/ui/components/visual/LatLngPickerCanvas.kt` | 纯自绘经纬网格画布（无 SDK 依赖，可直接搬回编译） |
-| `java/com/muxiao/timart/utils/map/BaiduMapBootstrap.kt` | 百度 SDK 懒初始化（AK 校验、隐私合规） |
+| `java/com/muxiao/timart/ui/components/visual/LatLngPickerCanvas.kt`   | 纯自绘经纬网格画布（无 SDK 依赖，可直接搬回编译）         |
+| `java/com/muxiao/timart/utils/map/BaiduMapBootstrap.kt`               | 百度 SDK 懒初始化（AK 校验、隐私合规）             |
 
 ## 恢复步骤
 

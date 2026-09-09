@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muxiao.timart.domain.model.Lang
@@ -153,8 +152,6 @@ fun UnlockedLetterView(
                         state = reveal,
                         style = TimartType.titleSerif.copy(fontSize = 26.sp, lineHeight = 36.sp),
                         color = PaperInkColor,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
 
                     // 标题下金色划线：字符显现完成后从左扫入并保留（手账式短划线）

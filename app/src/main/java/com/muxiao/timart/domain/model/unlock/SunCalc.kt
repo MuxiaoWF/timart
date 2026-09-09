@@ -2,6 +2,7 @@ package com.muxiao.timart.domain.model.unlock
 
 import java.time.LocalDate
 import kotlin.math.acos
+import kotlin.math.asin
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
@@ -33,7 +34,7 @@ object SunCalc {
         val declination = sin(Math.toRadians(lambda)) * sin(Math.toRadians(23.44))
         // 8. 时角（-0.83° 考虑大气折射与太阳视半径）
         val cosOmega = (sin(Math.toRadians(-0.83)) - sin(Math.toRadians(lat)) * declination) /
-            (cos(Math.toRadians(lat)) * cos(Math.asin(declination)))
+            (cos(Math.toRadians(lat)) * cos(asin(declination)))
         if (cosOmega < -1.0 || cosOmega > 1.0) return null // 极昼 / 极夜
         val omegaDeg = Math.toDegrees(acos(cosOmega))
         // 9. 升落时刻（儒略日）

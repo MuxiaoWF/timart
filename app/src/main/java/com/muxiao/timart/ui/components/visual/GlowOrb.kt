@@ -69,7 +69,7 @@ fun GlowOrb(
         } else {
             // 微缩星球：暗边底盘 → 偏光内芯 → 左上高光弧
             drawCircle(
-                color = coreColor.copy(alpha = coreColor.alpha).let { lerp(it, Color.Black, 0.32f) },
+                color = lerp(coreColor.copy(alpha = coreColor.alpha), Color.Black, 0.32f),
                 radius = r,
                 center = Offset(cx, cy),
             )

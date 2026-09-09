@@ -60,7 +60,7 @@ object ConditionText {
             is UnlockCondition.YearlyDate -> w.yearlyFmt.format(condition.month, condition.day)
             is UnlockCondition.AwayFromLocation -> w.awayFromFmt.format(condition.radiusMeter)
             is UnlockCondition.SunPhase ->
-                w.sunEncounter + condition.phases.map { sunName(it, lang) }.joinToString(w.listSep)
+                w.sunEncounter + condition.phases.joinToString(w.listSep) { sunName(it, lang) }
             is UnlockCondition.WeatherMetric -> {
                 val name = metricName(condition.metric, lang)
                 val minV = condition.min?.let { formatMetric(condition.metric, it) }
@@ -73,13 +73,13 @@ object ConditionText {
                 }
             }
             is UnlockCondition.MoonPhase ->
-                w.moonEncounter + condition.phases.map { moonName(it, lang) }.joinToString(w.listSep)
+                w.moonEncounter + condition.phases.joinToString(w.listSep) { moonName(it, lang) }
             is UnlockCondition.BeforeNextAlarm -> w.beforeNextAlarm
             is UnlockCondition.PowerSaveMode -> if (condition.isActive) w.powerSaveOn else w.powerSaveOff
             is UnlockCondition.SilentMode -> if (condition.isSilent) w.silentOn else w.silentOff
             is UnlockCondition.HeadphoneConnected -> if (condition.isConnected) w.headphoneOn else w.headphoneOff
             is UnlockCondition.MotionActivity ->
-                w.motionEncounter + condition.kinds.map { motionName(it, lang) }.joinToString(w.listSep)
+                w.motionEncounter + condition.kinds.joinToString(w.listSep) { motionName(it, lang) }
             is UnlockCondition.CompassHeading -> w.compassFmt.format(condition.targetDeg, condition.toleranceDeg)
             is UnlockCondition.AltitudeRange -> when {
                 condition.minM != null && condition.maxM != null ->
@@ -236,21 +236,21 @@ object ConditionText {
         tempBelow = "气温低于 %s°C",
         tempAny = "气温不限",
         ssidAt = "连接到 Wi-Fi「%s」",
-        streakFmt = "连续 %1\$d 天每天超过 %2\$d 步",
+        streakFmt = $$"连续 %1$d 天每天超过 %2$d 步",
         momentAt = "到达 %s 及之后",
         elapsedMinutesFmt = "封存满 %d 分钟",
         monthlyDayFmt = "每逢每月 %d 号",
-        yearlyFmt = "每年 %1\$d 月 %2\$d 日",
+        yearlyFmt = $$"每年 %1$d 月 %2$d 日",
         awayFromFmt = "离开指定地点（半径 %d 米以外）",
         sunEncounter = "正值",
         sunRise = "日出时分",
         sunDay = "白天",
         sunSet = "日落时分",
         sunNight = "夜晚",
-        metricBetween = "%1\$s在 %2\$s 到 %3\$s 之间",
-        metricAbove = "%1\$s高于 %2\$s",
-        metricBelow = "%1\$s低于 %2\$s",
-        metricAny = "%1\$s不限",
+        metricBetween = $$"%1$s在 %2$s 到 %3$s 之间",
+        metricAbove = $$"%1$s高于 %2$s",
+        metricBelow = $$"%1$s低于 %2$s",
+        metricAny = $$"%1$s不限",
         metricHumidity = "湿度",
         metricWind = "风速",
         metricPressure = "气压",
@@ -274,7 +274,7 @@ object ConditionText {
         motionEncounter = "正在",
         motionStill = "静止",
         motionWalking = "步行",
-        compassFmt = "手机朝向 %1\$d°（±%2\$d°）",
+        compassFmt = $$"手机朝向 %1$d°（±%2$d°）",
         altitudeBetween = "海拔在 %s 到 %s 之间",
         altitudeAbove = "海拔高于 %s",
         altitudeBelow = "海拔低于 %s",
@@ -332,21 +332,21 @@ object ConditionText {
         tempBelow = "氣溫低於 %s°C",
         tempAny = "氣溫不限",
         ssidAt = "連接到 Wi-Fi「%s」",
-        streakFmt = "連續 %1\$d 天每天超過 %2\$d 步",
+        streakFmt = $$"連續 %1$d 天每天超過 %2$d 步",
         momentAt = "抵達 %s 及之後",
         elapsedMinutesFmt = "封存滿 %d 分鐘",
         monthlyDayFmt = "每逢每月 %d 號",
-        yearlyFmt = "每年 %1\$d 月 %2\$d 日",
+        yearlyFmt = $$"每年 %1$d 月 %2$d 日",
         awayFromFmt = "離開指定地點（半徑 %d 公尺以外）",
         sunEncounter = "正值",
         sunRise = "日出時分",
         sunDay = "白天",
         sunSet = "日落時分",
         sunNight = "夜晚",
-        metricBetween = "%1\$s在 %2\$s 到 %3\$s 之間",
-        metricAbove = "%1\$s高於 %2\$s",
-        metricBelow = "%1\$s低於 %2\$s",
-        metricAny = "%1\$s不限",
+        metricBetween = $$"%1$s在 %2$s 到 %3$s 之間",
+        metricAbove = $$"%1$s高於 %2$s",
+        metricBelow = $$"%1$s低於 %2$s",
+        metricAny = $$"%1$s不限",
         metricHumidity = "濕度",
         metricWind = "風速",
         metricPressure = "氣壓",
@@ -370,7 +370,7 @@ object ConditionText {
         motionEncounter = "正在",
         motionStill = "靜止",
         motionWalking = "步行",
-        compassFmt = "手機朝向 %1\$d°（±%2\$d°）",
+        compassFmt = $$"手機朝向 %1$d°（±%2$d°）",
         altitudeBetween = "海拔在 %s 到 %s 之間",
         altitudeAbove = "海拔高於 %s",
         altitudeBelow = "海拔低於 %s",
@@ -428,21 +428,21 @@ object ConditionText {
         tempBelow = "Temperature below %s°C",
         tempAny = "Any temperature",
         ssidAt = "Connected to Wi-Fi \"%s\"",
-        streakFmt = "Over %2\$d steps for %1\$d days in a row",
+        streakFmt = $$"Over %2$d steps for %1$d days in a row",
         momentAt = "From %s onward",
         elapsedMinutesFmt = "Sealed for %d minutes",
         monthlyDayFmt = "On day %d of every month",
-        yearlyFmt = "Every year on %1\$d/%2\$d",
+        yearlyFmt = $$"Every year on %1$d/%2$d",
         awayFromFmt = "Away from the spot (beyond %d m)",
         sunEncounter = "During ",
         sunRise = "sunrise",
         sunDay = "daytime",
         sunSet = "sunset",
         sunNight = "night",
-        metricBetween = "%1\$s between %2\$s and %3\$s",
-        metricAbove = "%1\$s above %2\$s",
-        metricBelow = "%1\$s below %2\$s",
-        metricAny = "Any %1\$s",
+        metricBetween = $$"%1$s between %2$s and %3$s",
+        metricAbove = $$"%1$s above %2$s",
+        metricBelow = $$"%1$s below %2$s",
+        metricAny = $$"Any %1$s",
         metricHumidity = "humidity ",
         metricWind = "wind speed ",
         metricPressure = "pressure ",
@@ -466,7 +466,7 @@ object ConditionText {
         motionEncounter = "While ",
         motionStill = "still",
         motionWalking = "walking",
-        compassFmt = "Phone facing %1\$d° (±%2\$d°)",
+        compassFmt = $$"Phone facing %1$d° (±%2$d°)",
         altitudeBetween = "Altitude between %s and %s",
         altitudeAbove = "Altitude above %s",
         altitudeBelow = "Altitude below %s",

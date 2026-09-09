@@ -1,6 +1,7 @@
-package com.muxiao.timart.ui.create
+package com.muxiao.timart.ui.create.write
 
 import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -34,16 +36,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.components.visual.SectionHeader
+import com.muxiao.timart.ui.create.CityPickerSheet
+import com.muxiao.timart.ui.create.CityWeatherSection
+import com.muxiao.timart.ui.create.CreateViewModel
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkDisabled
 import com.muxiao.timart.ui.theme.InkPrimary
@@ -72,14 +79,14 @@ fun WriteStep(
     var showCityPicker by remember { mutableStateOf(false) }
 
     // 正文光标坐标（根坐标系）：字段原点 + 光标矩形中心
-    var bodyFieldOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    var bodyLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    var bodyFieldOrigin by remember { mutableStateOf(Offset.Zero) }
+    var bodyLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
     /** 在正文光标处发射飘粒（布局为旧文本时按新文本长度钳制到末位） */
     fun sparkAtCaret(newTextLength: Int) {
         val layout = bodyLayout ?: return
         val text = layout.layoutInput.text
-        if (text.length == 0) return
+        if (text.isEmpty()) return
         val rect = layout.getCursorRect(newTextLength.coerceIn(0, text.length))
         onSpark(
             bodyFieldOrigin.x + rect.center.x,
@@ -100,7 +107,7 @@ fun WriteStep(
     ) { uris ->
         vm.addImagesFromUris(uris)
     }
-    val useModernPicker = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+    val useModernPicker = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
     // 信笺卡入场：页面转场落位前静置 70ms，再上浮淡入（与整页 scaleIn 错开，突出主角）
     val cardReveal = remember { Animatable(0f) }
@@ -176,7 +183,7 @@ fun WriteStep(
                     .fillMaxWidth()
                     .padding(top = 18.dp)
                     .height(280.dp)
-                    .onGloballyPositioned { bodyFieldOrigin = it.localToRoot(androidx.compose.ui.geometry.Offset.Zero) },
+                    .onGloballyPositioned { bodyFieldOrigin = it.localToRoot(Offset.Zero) },
             )
             Text(
                 text = "${vm.content.length} / ${CreateViewModel.CONTENT_MAX}",
@@ -310,7 +317,7 @@ private fun ImageThumb(bytes: ByteArray, onRemove: () -> Unit) {
     }
     Box(modifier = Modifier.size(76.dp)) {
         if (bitmap != null) {
-            androidx.compose.foundation.Image(
+            Image(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,

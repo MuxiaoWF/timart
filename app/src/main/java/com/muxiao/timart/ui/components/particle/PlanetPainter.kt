@@ -61,13 +61,11 @@ object PlanetPainter {
         val bmp = createBitmap(sizePx, sizePx)
         val c = Canvas(bmp)
         val r = sizePx / 2f
-        val cx = r
-        val cy = r
 
         // 1) 偏光径向渐变球核：受光中心偏左上（-0.10r / -0.13r，与原三层内芯偏移同位）
         val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                cx - r * 0.10f, cy - r * 0.13f, r * 1.18f,
+                r - r * 0.10f, r - r * 0.13f, r * 1.18f,
                 intArrayOf(
                     lighten(colorArgb, 0.30f),
                     colorArgb,
@@ -78,34 +76,34 @@ object PlanetPainter {
                 Shader.TileMode.CLAMP,
             )
         }
-        c.drawCircle(cx, cy, r, core)
+        c.drawCircle(r, r, r, core)
 
         // 2) 右下明暗终止线（背光面压暗）
         val term = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                cx + r * 0.46f, cy + r * 0.50f, r * 1.28f,
+                r + r * 0.46f, r + r * 0.50f, r * 1.28f,
                 intArrayOf(0x5F000000, 0x00000000),
                 null,
                 Shader.TileMode.CLAMP,
             )
         }
-        c.drawCircle(cx, cy, r, term)
+        c.drawCircle(r, r, r, term)
 
         // 3) 左上柔和高光斑
         val hl = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                cx - r * 0.34f, cy - r * 0.40f, r * 0.58f,
+                r - r * 0.34f, r - r * 0.40f, r * 0.58f,
                 intArrayOf(0x40EDE6D8, 0x00EDE6D8),
                 null,
                 Shader.TileMode.CLAMP,
             )
         }
-        c.drawCircle(cx, cy, r, hl)
+        c.drawCircle(r, r, r, hl)
 
         // 4) 表面细节：低对比尘带 ×2 + 烘焙微尘（clip 进球体；种子 = 颜色哈希，同一胶囊恒定）。
         //    小位图（r < 24px，如 11dp 依赖球）跳过——亚像素尘带只会变成噪声，渐变球核已足够
         if (r >= 24f) {
-            val clip = Path().apply { addCircle(cx, cy, r, Path.Direction.CW) }
+            val clip = Path().apply { addCircle(r, r, r, Path.Direction.CW) }
             c.withClip(clip) {
                 val band = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.STROKE
@@ -113,10 +111,10 @@ object PlanetPainter {
                 }
                 band.strokeWidth = r * 0.13f
                 drawArc(
-                    cx - r * 1.12f,
-                    cy - r * 0.50f,
-                    cx + r * 1.12f,
-                    cy + r * 0.10f,
+                    r - r * 1.12f,
+                    r - r * 0.50f,
+                    r + r * 1.12f,
+                    r + r * 0.10f,
                     12f,
                     156f,
                     false,
@@ -125,10 +123,10 @@ object PlanetPainter {
                 band.strokeWidth = r * 0.09f
                 band.color = 0x0DEDE6D8
                 drawArc(
-                    cx - r * 1.05f,
-                    cy + r * 0.30f,
-                    cx + r * 1.05f,
-                    cy + r * 0.86f,
+                    r - r * 1.05f,
+                    r + r * 0.30f,
+                    r + r * 1.05f,
+                    r + r * 0.86f,
                     192f,
                     156f,
                     false,
@@ -137,14 +135,14 @@ object PlanetPainter {
 
                 val rnd = java.util.Random(colorArgb.toLong())
                 val dust = Paint(Paint.ANTI_ALIAS_FLAG)
-                for (i in 0 until 9) {
+                repeat(9) {
                     val a = rnd.nextFloat() * 6.2832f
                     val d = r * (0.15f + rnd.nextFloat() * 0.62f)
                     dust.color = lighten(colorArgb, 0.45f)
                     dust.alpha = 26 + rnd.nextInt(30)
                     drawCircle(
-                        cx + cos(a) * d,
-                        cy + sin(a) * d,
+                        r + cos(a) * d,
+                        r + sin(a) * d,
                         r * (0.012f + rnd.nextFloat() * 0.014f),
                         dust
                     )
@@ -160,9 +158,13 @@ object PlanetPainter {
             strokeWidth = rimW
             color = 0x8CEDE6D8.toInt()
         }
-        c.drawArc(cx - r * 0.955f, cy - r * 0.955f, cx + r * 0.955f, cy + r * 0.955f, 188f, 64f, false, rimLit)
+        c.drawArc(
+            r - r * 0.955f, r - r * 0.955f,
+            r + r * 0.955f, r + r * 0.955f, 188f, 64f, false, rimLit)
         val rimBack = Paint(rimLit).apply { color = 0x33A89F92 }
-        c.drawArc(cx - r * 0.955f, cy - r * 0.955f, cx + r * 0.955f, cy + r * 0.955f, 16f, 52f, false, rimBack)
+        c.drawArc(
+            r - r * 0.955f, r - r * 0.955f,
+            r + r * 0.955f, r + r * 0.955f, 16f, 52f, false, rimBack)
         return bmp
     }
 

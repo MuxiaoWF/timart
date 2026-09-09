@@ -16,7 +16,7 @@ object CoordTransform {
 
     private const val X_PI = Math.PI * 3000.0 / 180.0
     private const val RADIUS = 6378245.0 // 克拉索夫斯基椭球长半轴
-    private const val EE = 0.00669342162296594323 // 第一偏心率平方
+    private const val EE = 0.006693421622965943 // 第一偏心率平方
 
     /** WGS-84 → BD-09（GPS 实际位置 → 百度地图展示点） */
     fun wgs84ToBd09(lat: Double, lng: Double): Pair<Double, Double> {
@@ -31,7 +31,7 @@ object CoordTransform {
     }
 
     private fun outOfChina(lat: Double, lng: Double): Boolean =
-        lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
+        lng !in 72.004..137.8347 || lat < 0.8293 || lat > 55.8271
 
     private fun wgs84ToGcj02(lat: Double, lng: Double): Pair<Double, Double> {
         if (outOfChina(lat, lng)) return lat to lng

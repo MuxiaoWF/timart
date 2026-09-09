@@ -160,10 +160,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private companion object {
-        val KEY_TIER = RuntimeSettings.KEY_TIER
-        val KEY_LANGUAGE = RuntimeSettings.KEY_LANGUAGE
-        val KEY_GYRO = RuntimeSettings.KEY_GYRO
-        val KEY_INPUT_SPARK = RuntimeSettings.KEY_INPUT_SPARK
-        val KEY_SOUND = RuntimeSettings.KEY_SOUND
+        const val KEY_TIER = RuntimeSettings.KEY_TIER
+        const val KEY_LANGUAGE = RuntimeSettings.KEY_LANGUAGE
+        const val KEY_GYRO = RuntimeSettings.KEY_GYRO
+        const val KEY_INPUT_SPARK = RuntimeSettings.KEY_INPUT_SPARK
+        const val KEY_SOUND = RuntimeSettings.KEY_SOUND
     }
 }

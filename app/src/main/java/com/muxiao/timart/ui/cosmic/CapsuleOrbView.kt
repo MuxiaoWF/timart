@@ -86,9 +86,9 @@ fun CapsuleOrbView(
         state == CapsuleState.UNLOCKED -> GlowGold
         else -> Color.Transparent
     }
-    val glowAlpha = when {
-        state == CapsuleState.UNLOCKED -> breath // breathing=false 时 breath 已是 0.4f 稳光
-        state == CapsuleState.DESTROYED -> 0f
+    val glowAlpha = when (state) {
+        CapsuleState.UNLOCKED -> breath // breathing=false 时 breath 已是 0.4f 稳光
+        CapsuleState.DESTROYED -> 0f
         else -> 0.3f
     }
 
