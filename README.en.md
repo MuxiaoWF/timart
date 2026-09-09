@@ -4,6 +4,10 @@
 
 **Timart** is a local-first Android time-capsule app: write a letter to the future, seal it behind real-world unlock conditions, and it can only be opened when those conditions are genuinely met.
 
+## Preview
+
+![preview_en](pic/preview_en.png)
+
 ## What it solves
 
 Write a letter and hand it over to time:
