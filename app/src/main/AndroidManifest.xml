@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- 网络行为仅两类：Open-Meteo 天气调用 + GPS 条件地址解析兜底（Nominatim/Photon，仅发送输入的地点文字） -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -39,15 +38,14 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Timart">
 
-        <!-- 竖屏锁定为产品形态决策（信笺/时间胶囊叙事界面按竖屏构图）；
-             Android 16 起系统在大屏设备将自动忽略该属性并按自适应运行，行为无碍 -->
+        <!-- 方向自适应（横屏适配）：旋转/自由窗口均可用，页面按 ui/theme/Adaptive.kt 的
+             窗口尺寸档位自行适配（高度紧凑 → 底栏换侧栏；宽屏 → 阅读面限宽/网格加列）。
+             原「竖屏锁定」产品决策已解除；Android 16 起大屏设备本就按自适应运行 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize"
-            tools:ignore="LockedOrientationActivity,Deprecated">
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -12,7 +12,7 @@ import org.junit.Test
 class OppositeStateTest {
 
     @Test
-    fun `六个状态类条件取反翻转布尔字段`() {
+    fun 六个状态类条件取反翻转布尔字段() {
         assertEquals(
             UnlockCondition.HeadphoneConnected(false),
             UnlockCondition.HeadphoneConnected(true).oppositeState(),
@@ -40,7 +40,7 @@ class OppositeStateTest {
     }
 
     @Test
-    fun `非状态类条件无否定态`() {
+    fun 非状态类条件无否定态() {
         assertNull(UnlockCondition.GoldenHour.oppositeState())
         assertNull(UnlockCondition.FixedDate(LocalDate.of(2026, 1, 1)).oppositeState())
         assertNull(UnlockCondition.StepCount(1000, 8000).oppositeState())

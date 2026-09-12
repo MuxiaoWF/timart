@@ -85,6 +85,7 @@ import com.muxiao.timart.ui.theme.SurfaceRaise
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TrackHairline
+import com.muxiao.timart.ui.theme.wideContentWidth
 import com.muxiao.timart.data.remote.update.UpdateChecker
 import com.muxiao.timart.utils.AppLanguage
 import com.muxiao.timart.utils.permission.PERM_ACTIVITY_RECOGNITION
@@ -164,8 +165,11 @@ fun SettingsScreen(container: AppContainer) {
     ) {
         ParticleCanvas(engine = engine, modifier = Modifier.matchParentSize())
 
+        // 宽屏限宽居中（横屏适配，见 ui/theme/Adaptive.kt）：卡片行宽过长伤可读性；窄窗下不生效
         Column(
             modifier = Modifier
+                .align(Alignment.TopCenter)
+                .wideContentWidth()
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 12.dp),

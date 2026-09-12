@@ -42,36 +42,3 @@ enum class ParticleFlow {
     ORBIT,
 }
 
-/**
- * 一次发射的行为参数（由引擎按预设 + 档位预算生成，UI 不直接构造）。
- * 单位：速度 px/s、尺寸 px、时长 ms；颜色为 ARGB int（避免持有 Compose/android Color 对象）。
- *
- * @param flow        运动方向语义
- * @param count       本次发射粒子数（引擎按池余量截断）
- * @param duration    单次动画时长（循环型为重生周期）
- * @param speedMin    初速下限
- * @param speedMax    初速上限
- * @param sizeMin     尺寸下限
- * @param sizeMax     尺寸上限
- * @param colors      颜色池（ARGB）
- * @param loop        生命尽后是否原地重生（背景 / 呼吸类为 true）
- */
-class PresetParams(
-    val flow: ParticleFlow,
-    val count: Int,
-    val duration: Long,
-    val speedMin: Float,
-    val speedMax: Float,
-    val sizeMin: Float,
-    val sizeMax: Float,
-    val colors: IntArray,
-    val loop: Boolean,
-) {
-    override fun equals(other: Any?): Boolean = other is PresetParams &&
-        flow == other.flow && count == other.count && duration == other.duration &&
-        speedMin == other.speedMin && speedMax == other.speedMax &&
-        sizeMin == other.sizeMin && sizeMax == other.sizeMax &&
-        colors.contentEquals(other.colors) && loop == other.loop
-
-    override fun hashCode(): Int = flow.hashCode() * 31 + count
-}

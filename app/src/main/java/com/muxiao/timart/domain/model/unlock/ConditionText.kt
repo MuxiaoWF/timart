@@ -161,12 +161,6 @@ object ConditionText {
             Triple(name, month, day)
         }
 
-    /** 农历月日 → 预设节日名称（未命中返回 null） */
-    fun lunarFestivalName(month: Int, day: Int, lang: Lang = Lang.ZH_HANS): String? {
-        val index = LUNAR_FESTIVAL_MONTH_DAYS.indexOf(month to day)
-        return if (index >= 0) words(lang).lunarFestNames[index] else null
-    }
-
     /** WeatherMetricKind → 名称 */
     fun metricName(kind: WeatherMetricKind, lang: Lang = Lang.ZH_HANS): String = when (kind) {
         WeatherMetricKind.HUMIDITY -> words(lang).metricHumidity

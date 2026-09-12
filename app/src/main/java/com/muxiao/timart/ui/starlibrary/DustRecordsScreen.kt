@@ -61,6 +61,7 @@ import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.SurfaceRaise
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TimartType
+import com.muxiao.timart.ui.theme.wideContentWidth
 import com.muxiao.timart.utils.format.TimeFormatter
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
@@ -96,8 +97,11 @@ fun DustRecordsScreen(container: AppContainer) {
     ) {
         ParticleCanvas(engine = engine, modifier = Modifier.matchParentSize())
 
+        // 宽屏限宽居中（横屏适配，见 ui/theme/Adaptive.kt）：档案行宽过长伤可读性；窄窗下不生效
         Column(
             modifier = Modifier
+                .align(Alignment.TopCenter)
+                .wideContentWidth()
                 .fillMaxSize()
                 .padding(horizontal = 24.dp, vertical = 12.dp),
         ) {

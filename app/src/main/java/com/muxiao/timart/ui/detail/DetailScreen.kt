@@ -48,6 +48,7 @@ import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.LockedSlate
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TimartType
+import com.muxiao.timart.ui.theme.wideContentWidth
 import com.muxiao.timart.utils.export.PosterComposer
 import com.muxiao.timart.utils.format.TimeFormatter
 import kotlinx.coroutines.Dispatchers
@@ -227,7 +228,9 @@ fun DetailScreen(
                         regretAvailable = state.regretAvailable,
                         onOrbLongPress = vm::onOrbLongPress,
                         overlayOrigin = overlayOrigin,
-                        modifier = Modifier.fillMaxSize(),
+                        // 宽屏限宽居中（横屏适配）：时间线行宽过长伤可读性；
+                        // 尘核锚点经 positionInRoot 实测换算，居中偏移不影响粒子定位
+                        modifier = Modifier.align(Alignment.TopCenter).wideContentWidth().fillMaxSize(),
                     )
                 }
             }

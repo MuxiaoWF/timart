@@ -48,6 +48,7 @@ import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TimeGold
+import com.muxiao.timart.ui.theme.rememberWindowAdaptive
 
 /**
  * 首页时轨（架构 §2.14）：
@@ -67,6 +68,7 @@ fun HomeScreen(
 ) {
     val L = LocalStrings.current
     val vm: HomeViewModel = viewModel { HomeViewModel(container) }
+    val adaptive = rememberWindowAdaptive()
     val capsules by vm.capsules.collectAsStateWithLifecycle()
     val unsealed by vm.unsealedIds.collectAsStateWithLifecycle()
     val pending by vm.pendingIds.collectAsStateWithLifecycle()
@@ -177,12 +179,16 @@ fun HomeScreen(
         ) {
             SectionHeader(title = L.tabTimeTrack, note = "HOME")
 
-            Text(
-                text = L.homeNarrative,
-                style = TimartType.body,
-                color = InkSecondary,
-                modifier = Modifier.padding(top = 14.dp),
-            )
+            // 叙事行仅在竖向充裕时显示：横屏（高度紧凑）收起，给时轨画布让竖向空间
+            // （轨道是圆形，半径受画布高度限制，见 TimeTrackLayout）
+            if (!adaptive.isCompactHeight) {
+                Text(
+                    text = L.homeNarrative,
+                    style = TimartType.body,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+            }
 
             // 时轨画布（占满剩余空间；空库引导文案叠加居中）
             Box(

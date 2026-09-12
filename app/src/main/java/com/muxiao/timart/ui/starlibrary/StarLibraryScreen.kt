@@ -197,9 +197,14 @@ fun StarLibraryScreen(
                 )
             }
         } else {
-            // 简化时间空间：两列球体卡（动画频率低于首页：仅第一颗呼吸）
+            // 简化时间空间：球体卡网格（动画频率低于首页：仅第一颗呼吸）
+            // 列数自适应窗口宽：GridCells.Adaptive 取整公式为
+            // (可用宽+间距) / (下限+间距) 向下取整 —— 两列门槛 = 2×(下限+间距)−间距。
+            // 下限 140dp + 间距 14dp ⇒ 可用宽 ≥294dp（窗口 ≥342dp）即两列，
+            // 覆盖 360dp 窄屏竖屏（内容宽 312dp）；窗口 ≥496dp 起自动加列。
+            // 注意：160dp 下限会让 360dp 窄屏（内容宽 312dp < 334dp 门槛）退化为单列。
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(STAR_CARD_MIN_WIDTH),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier
@@ -356,3 +361,10 @@ private fun StarCard(
         Spacer(modifier = Modifier.height(18.dp))
     }
 }
+
+/**
+ * 球体卡网格的单列最小宽度（GridCells.Adaptive）：竖屏窄窗（360dp）仍两列，横屏/宽窗自动加列。
+ * 取 140dp 而非 160dp：Adaptive 两列门槛 = 2×(下限+间距)−间距 = 294dp 可用宽，
+ * 160dp 时门槛 334dp > 360dp 窄屏的内容宽 312dp，会退化为单列。
+ */
+private val STAR_CARD_MIN_WIDTH = 140.dp

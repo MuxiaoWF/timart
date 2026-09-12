@@ -11,7 +11,7 @@ import org.junit.Test
 class MeteorCalendarTest {
 
     @Test
-    fun `每场流星雨峰值日命中且五天后不命中`() {
+    fun 每场流星雨峰值日命中且五天后不命中() {
         val peaks = mapOf(
             MeteorShowerKind.QUADRANTIDS to LocalDate.of(2026, 1, 4),
             MeteorShowerKind.LYRIDS to LocalDate.of(2026, 4, 22),
@@ -31,7 +31,7 @@ class MeteorCalendarTest {
     }
 
     @Test
-    fun `窗口为峰值日前后一天`() {
+    fun 窗口为峰值日前后一天() {
         // 英仙座峰值 8/13：8/12–8/14 满足，8/11 与 8/15 不满足
         assertTrue(MeteorCalendar.isPeakNight(MeteorShowerKind.PERSEIDS, LocalDate.of(2026, 8, 12)))
         assertTrue(MeteorCalendar.isPeakNight(MeteorShowerKind.PERSEIDS, LocalDate.of(2026, 8, 13)))
@@ -41,7 +41,7 @@ class MeteorCalendarTest {
     }
 
     @Test
-    fun `年复现_静态表在远期年份同样命中`() {
+    fun 年复现_静态表在远期年份同样命中() {
         // 月-日静态推算：2050 与 2100 年英仙座极大窗口同样命中（外推能力）
         assertTrue(MeteorCalendar.isPeakNight(MeteorShowerKind.PERSEIDS, LocalDate.of(2050, 8, 13)))
         assertTrue(MeteorCalendar.isPeakNight(MeteorShowerKind.PERSEIDS, LocalDate.of(2100, 8, 12)))

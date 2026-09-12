@@ -25,8 +25,8 @@ android {
         applicationId = "com.muxiao.timart"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.0.2"
         buildConfigField("String", "TIANDITU_TK", "\"$tiandituTk\"")
     }
 
@@ -108,6 +108,9 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    // biometric 1.1.0 传递的 fragment 仅 1.2.5（<1.3.0 触发「升级 Fragment 以使用
+    // ActivityResult API」检查告警），显式锁到最新稳定版 1.9.0
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)

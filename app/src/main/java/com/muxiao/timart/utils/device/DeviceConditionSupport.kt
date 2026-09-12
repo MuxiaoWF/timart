@@ -41,8 +41,9 @@ fun missingDeviceHardware(context: Context): Set<DeviceHardware> {
         }
         // 探测硬件存在性（不要求已录入指纹）：无生物识别硬件的条件在创建侧禁用
         val noBiometricHardware = runCatching {
-            androidx.biometric.BiometricManager.from(context).canAuthenticate() ==
-                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
+            androidx.biometric.BiometricManager.from(context).canAuthenticate(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK,
+            ) == androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
         }.getOrDefault(true)
         if (noBiometricHardware) add(DeviceHardware.BIOMETRIC)
         if (NfcAdapter.getDefaultAdapter(context) == null) add(DeviceHardware.NFC)
