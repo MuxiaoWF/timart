@@ -54,6 +54,7 @@ import com.muxiao.timart.domain.model.Lang
 import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.model.unlock.JudgeReasons
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
+import com.muxiao.timart.domain.model.unlock.oppositeState
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.l10n.stringsFor
 import com.muxiao.timart.ui.components.PermissionGuideDialog
@@ -565,7 +566,16 @@ private fun ConditionStatus.toTimelineItem(lang: Lang, todaySteps: Int? = null):
     } else {
         null
     }
-    val mergedDetail = listOfNotNull(detail, stepNote).joinToString(" · ")
+    // 状态类条件（耳机/充电/省电/静音/飞行模式/音乐）未满足 → 附注当前实际状态：
+    // 判定为二元等值比较（当前 == 要求），未满足 ⟺ 当前为要求之否定，与判定同源无需二次读取
+    val stateNote = if (!satisfied && !skipped) {
+        condition.oppositeState()?.let {
+            stringsFor(lang).condCurrentFmt.format(ConditionText.conditionSentence(it, lang))
+        }
+    } else {
+        null
+    }
+    val mergedDetail = listOfNotNull(detail, stepNote, stateNote).joinToString(" · ")
     return ConditionTimelineItem(
         title = ConditionText.conditionSentence(condition, lang),
         detail = mergedDetail.takeIf { it.isNotBlank() },

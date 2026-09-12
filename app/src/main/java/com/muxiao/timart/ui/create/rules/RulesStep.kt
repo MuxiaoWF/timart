@@ -32,7 +32,10 @@ import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.ui.create.CreateViewModel
 import com.muxiao.timart.utils.location.GeocodeResolver
 import com.muxiao.timart.ui.create.rules.condition.BatteryLevelForm
+import com.muxiao.timart.ui.create.rules.condition.BiometricForm
 import com.muxiao.timart.ui.create.rules.condition.AltitudeRangeForm
+import com.muxiao.timart.ui.create.rules.condition.AirplaneModeForm
+import com.muxiao.timart.ui.create.rules.condition.AmbientLightForm
 import com.muxiao.timart.ui.create.rules.condition.BeforeNextAlarmForm
 import com.muxiao.timart.ui.create.rules.condition.CapsuleCountForm
 import com.muxiao.timart.ui.create.rules.condition.ChargingStateForm
@@ -41,13 +44,19 @@ import com.muxiao.timart.ui.create.rules.condition.DaysSinceLastOpenForm
 import com.muxiao.timart.ui.create.rules.condition.FixedDateForm
 import com.muxiao.timart.ui.create.rules.condition.FixedDateTimeForm
 import com.muxiao.timart.ui.create.rules.condition.FlipOrHoldForm
+import com.muxiao.timart.ui.create.rules.condition.GoldenHourForm
+import com.muxiao.timart.ui.create.rules.condition.HoldPressForm
 import com.muxiao.timart.ui.create.rules.condition.GpsConditionForm
 import com.muxiao.timart.ui.create.rules.condition.HeadphoneConnectedForm
+import com.muxiao.timart.ui.create.rules.condition.LunarDateForm
+import com.muxiao.timart.ui.create.rules.condition.MeteorShowerForm
 import com.muxiao.timart.ui.create.rules.condition.MinElapsedDayForm
 import com.muxiao.timart.ui.create.rules.condition.MinElapsedMinutesForm
 import com.muxiao.timart.ui.create.rules.condition.MoonPhaseForm
 import com.muxiao.timart.ui.create.rules.condition.MotionActivityForm
 import com.muxiao.timart.ui.create.rules.condition.MonthlyDayForm
+import com.muxiao.timart.ui.create.rules.condition.MusicPlayingForm
+import com.muxiao.timart.ui.create.rules.condition.MovingSpeedForm
 import com.muxiao.timart.ui.create.rules.condition.NetworkTypeForm
 import com.muxiao.timart.ui.create.rules.condition.NfcTapForm
 import com.muxiao.timart.ui.create.rules.condition.OpenCountForm
@@ -64,6 +73,9 @@ import com.muxiao.timart.ui.create.rules.condition.StepStreakForm
 import com.muxiao.timart.ui.create.rules.condition.SunPhaseForm
 import com.muxiao.timart.ui.create.rules.condition.TemperatureThresholdForm
 import com.muxiao.timart.ui.create.rules.condition.TimeRangeForm
+import com.muxiao.timart.ui.create.rules.condition.TimezoneAwayForm
+import com.muxiao.timart.ui.create.rules.condition.ViewCountForm
+import com.muxiao.timart.ui.create.rules.condition.PhotoKeepsakeForm
 import com.muxiao.timart.ui.create.rules.condition.WeatherMetricForm
 import com.muxiao.timart.ui.create.rules.condition.WeatherTypeForm
 import com.muxiao.timart.ui.create.rules.condition.WeekDayForm
@@ -80,7 +92,7 @@ import com.muxiao.timart.ui.theme.TimartType
 /**
  * 第二步「开启方式」（架构 §2.15，对齐设计稿 03）：
  * 渐进披露——初始仅「什么时候可以打开？」一个入口；加首条后出现「再加一个现实条件」；
- * 39 种条件表单全实现；AND/OR 切换；依赖另一颗胶囊（走 DependencyGraphUseCase 校验）。
+ * 52 种条件表单全实现；AND/OR 切换；依赖另一颗胶囊（走 DependencyGraphUseCase 校验）。
  */
 @Composable
 fun RulesStep(
@@ -312,7 +324,7 @@ private fun DependencyEntry(
 
 // ================= 条件类型 =================
 
-/** 39 种条件类型（时间 / 设备 / 网络&环境 / 应用内 / 现场挑战） */
+/** 52 种条件类型（时间 / 设备 / 网络&环境 / 应用内 / 现场挑战） */
 internal enum class ConditionType {
     FIXED_DATE,
     MIN_ELAPSED_DAY,
@@ -322,6 +334,7 @@ internal enum class ConditionType {
     MIN_ELAPSED_MINUTES,
     MONTHLY_DAY,
     YEARLY_DATE,
+    LUNAR_DATE,
     BATTERY,
     CHARGING,
     STEP,
@@ -334,11 +347,18 @@ internal enum class ConditionType {
     TEMPERATURE,
     SUN_PHASE,
     MOON_PHASE,
+    METEOR_SHOWER,
+    GOLDEN_HOUR,
+    AMBIENT_LIGHT,
+    TIMEZONE_AWAY,
+    MOVING_SPEED,
     WEATHER_METRIC,
     BEFORE_ALARM,
     POWER_SAVE,
     SILENT,
     HEADPHONE,
+    AIRPLANE,
+    MUSIC,
     MOTION,
     COMPASS,
     ALTITUDE,
@@ -348,10 +368,15 @@ internal enum class ConditionType {
     CAPSULE_COUNT,
     OTHER_UNLOCKED,
     OTHER_DESTROYED,
+    OTHER_READ,
+    VIEW_COUNT,
     QUESTION,
     PUZZLE,
     SHAKE,
     FLIP_HOLD,
+    HOLD_PRESS,
+    BIOMETRIC,
+    PHOTO_KEEPSAKE,
     NFC,
 }
 
@@ -374,14 +399,22 @@ private fun ConditionType.label(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.MIN_ELAPSED_MINUTES -> L.condMinMinutes
     ConditionType.MONTHLY_DAY -> L.condMonthlyDay
     ConditionType.YEARLY_DATE -> L.condYearly
+    ConditionType.LUNAR_DATE -> L.condLunarDate
     ConditionType.AWAY_FROM -> L.condAwayFrom
     ConditionType.SUN_PHASE -> L.condSunPhase
     ConditionType.MOON_PHASE -> L.condMoonPhase
+    ConditionType.METEOR_SHOWER -> L.condMeteorShower
+    ConditionType.GOLDEN_HOUR -> L.condGoldenHour
+    ConditionType.AMBIENT_LIGHT -> L.condAmbientLight
+    ConditionType.TIMEZONE_AWAY -> L.condTimezoneAway
+    ConditionType.MOVING_SPEED -> L.condMoving
     ConditionType.WEATHER_METRIC -> L.condWeatherMetric
     ConditionType.BEFORE_ALARM -> L.condBeforeAlarm
     ConditionType.POWER_SAVE -> L.condPowerSave
     ConditionType.SILENT -> L.condSilent
     ConditionType.HEADPHONE -> L.condHeadphone
+    ConditionType.AIRPLANE -> L.condAirplane
+    ConditionType.MUSIC -> L.condMusic
     ConditionType.MOTION -> L.condMotion
     ConditionType.COMPASS -> L.condCompass
     ConditionType.ALTITUDE -> L.condAltitude
@@ -391,10 +424,15 @@ private fun ConditionType.label(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.CAPSULE_COUNT -> L.condCapsuleCount
     ConditionType.OTHER_UNLOCKED -> L.condOtherUnlocked
     ConditionType.OTHER_DESTROYED -> L.condOtherDestroyed
+    ConditionType.OTHER_READ -> L.condOtherRead
+    ConditionType.VIEW_COUNT -> L.condViewCount
     ConditionType.QUESTION -> L.condQuestion
     ConditionType.PUZZLE -> L.condPuzzle
     ConditionType.SHAKE -> L.condShake
     ConditionType.FLIP_HOLD -> L.condFlipHold
+    ConditionType.HOLD_PRESS -> L.condHoldPress
+    ConditionType.BIOMETRIC -> L.condBiometric
+    ConditionType.PHOTO_KEEPSAKE -> L.condPhotoKeepsake
     ConditionType.NFC -> L.condNfc
 }
 
@@ -408,6 +446,7 @@ private fun ConditionType.group(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.MIN_ELAPSED_MINUTES,
     ConditionType.MONTHLY_DAY,
     ConditionType.YEARLY_DATE,
+    ConditionType.LUNAR_DATE,
     -> L.catTime
 
     ConditionType.BATTERY,
@@ -418,6 +457,8 @@ private fun ConditionType.group(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.POWER_SAVE,
     ConditionType.SILENT,
     ConditionType.HEADPHONE,
+    ConditionType.AIRPLANE,
+    ConditionType.MUSIC,
     ConditionType.MOTION,
     ConditionType.COMPASS,
     ConditionType.ALTITUDE,
@@ -431,6 +472,11 @@ private fun ConditionType.group(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.TEMPERATURE,
     ConditionType.SUN_PHASE,
     ConditionType.MOON_PHASE,
+    ConditionType.METEOR_SHOWER,
+    ConditionType.GOLDEN_HOUR,
+    ConditionType.AMBIENT_LIGHT,
+    ConditionType.TIMEZONE_AWAY,
+    ConditionType.MOVING_SPEED,
     ConditionType.WEATHER_METRIC,
     -> L.catNet
 
@@ -440,12 +486,17 @@ private fun ConditionType.group(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.CAPSULE_COUNT,
     ConditionType.OTHER_UNLOCKED,
     ConditionType.OTHER_DESTROYED,
+    ConditionType.OTHER_READ,
+    ConditionType.VIEW_COUNT,
     -> L.catUsage
 
     ConditionType.QUESTION,
     ConditionType.PUZZLE,
     ConditionType.SHAKE,
     ConditionType.FLIP_HOLD,
+    ConditionType.HOLD_PRESS,
+    ConditionType.BIOMETRIC,
+    ConditionType.PHOTO_KEEPSAKE,
     ConditionType.NFC,
     -> L.catChallenge
 }
@@ -479,6 +530,9 @@ internal fun ConditionTypeSheet(
                 add(ConditionType.FLIP_HOLD)
             }
             if (com.muxiao.timart.utils.device.DeviceHardware.NFC in missing) add(ConditionType.NFC)
+            if (com.muxiao.timart.utils.device.DeviceHardware.LIGHT_SENSOR in missing) add(ConditionType.AMBIENT_LIGHT)
+            if (com.muxiao.timart.utils.device.DeviceHardware.CAMERA in missing) add(ConditionType.PHOTO_KEEPSAKE)
+            if (com.muxiao.timart.utils.device.DeviceHardware.BIOMETRIC in missing) add(ConditionType.BIOMETRIC)
         }
     }
     ModalBottomSheet(
@@ -488,7 +542,7 @@ internal fun ConditionTypeSheet(
         // 瞬间有一帧手势交接，表现为上滑滚动顿一下；跳过半展开后滚动全程由内层接管
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        // 39 种条件 × 5 组远超 sheet 最大高度：必须可滚动，否则底部组（现场挑战等）触不到
+            // 52 种条件 × 5 组远超 sheet 最大高度：必须可滚动，否则底部组（现场挑战等）触不到
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -662,6 +716,30 @@ internal fun ConditionFormSheet(
                     onConfirm = { onConfirm(it) },
                 )
 
+                ConditionType.METEOR_SHOWER -> MeteorShowerForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.GOLDEN_HOUR -> GoldenHourForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.LUNAR_DATE -> LunarDateForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.AMBIENT_LIGHT -> AmbientLightForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.TIMEZONE_AWAY -> TimezoneAwayForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.MOVING_SPEED -> MovingSpeedForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
                 ConditionType.WEATHER_METRIC -> WeatherMetricForm(
                     onConfirm = { onConfirm(it) },
                 )
@@ -679,6 +757,14 @@ internal fun ConditionFormSheet(
                 )
 
                 ConditionType.HEADPHONE -> HeadphoneConnectedForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.AIRPLANE -> AirplaneModeForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.MUSIC -> MusicPlayingForm(
                     onConfirm = { onConfirm(it) },
                 )
 
@@ -718,6 +804,14 @@ internal fun ConditionFormSheet(
                     OtherCapsuleStateForm(vm = it, onConfirm = onConfirm)
                 }
 
+                ConditionType.OTHER_READ -> vm?.let {
+                    OtherCapsuleStateForm(vm = it, onConfirm = onConfirm)
+                }
+
+                ConditionType.VIEW_COUNT -> ViewCountForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
                 ConditionType.QUESTION -> QuestionAnswerForm(
                     onConfirm = { onConfirm(it) },
                 )
@@ -731,6 +825,18 @@ internal fun ConditionFormSheet(
                 )
 
                 ConditionType.FLIP_HOLD -> FlipOrHoldForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.HOLD_PRESS -> HoldPressForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.BIOMETRIC -> BiometricForm(
+                    onConfirm = { onConfirm(it) },
+                )
+
+                ConditionType.PHOTO_KEEPSAKE -> PhotoKeepsakeForm(
                     onConfirm = { onConfirm(it) },
                 )
 

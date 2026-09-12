@@ -3,6 +3,7 @@ package com.muxiao.timart.data.local.db.mapper
 import android.util.Log
 import com.muxiao.timart.domain.model.unlock.GestureKind
 import com.muxiao.timart.domain.model.unlock.LogicType
+import com.muxiao.timart.domain.model.unlock.MeteorShowerKind
 import com.muxiao.timart.domain.model.unlock.MoonPhaseKind
 import com.muxiao.timart.domain.model.unlock.MotionKind
 import com.muxiao.timart.domain.model.unlock.NetType
@@ -36,6 +37,7 @@ data class ConditionDto(
     val max: Int? = null,
     val isCharging: Boolean? = null,
     val minTodaySteps: Int? = null,
+    val maxTodaySteps: Int? = null,
     val netTypes: List<String>? = null,
     val lat: Double? = null,
     val lng: Double? = null,
@@ -66,6 +68,10 @@ data class ConditionDto(
     val gesture: String? = null,
     val holdSeconds: Int? = null,
     val nfcPayload: String? = null,
+    val meteorTypes: List<String>? = null,
+    val maxLux: Int? = null,
+    val zoneId: String? = null,
+    val speedKmh: Int? = null,
 )
 
 /**
@@ -123,6 +129,21 @@ object UnlockRuleJson {
     private const val TYPE_SHAKE = "SHAKE_COUNT"
     private const val TYPE_FLIP_HOLD = "FLIP_OR_HOLD"
     private const val TYPE_NFC = "NFC_TAP"
+    // ---- 扩展条件第二批（金色时刻/农历/流星雨/飞行模式/音乐/步数区间/已读联动/凝视次数）----
+    private const val TYPE_GOLDEN_HOUR = "GOLDEN_HOUR"
+    private const val TYPE_LUNAR_DATE = "LUNAR_DATE"
+    private const val TYPE_METEOR_SHOWER = "METEOR_SHOWER"
+    private const val TYPE_AIRPLANE = "AIRPLANE_MODE"
+    private const val TYPE_MUSIC = "MUSIC_PLAYING"
+    private const val TYPE_OTHER_READ = "OTHER_CAPSULE_READ"
+    private const val TYPE_VIEW_COUNT = "VIEW_COUNT"
+    // ---- 扩展条件第三批（黑暗中/时区/移动中 + 长按/生物识别/拍照留念）----
+    private const val TYPE_AMBIENT_LIGHT = "AMBIENT_LIGHT"
+    private const val TYPE_TIMEZONE_AWAY = "TIMEZONE_AWAY"
+    private const val TYPE_MOVING_SPEED = "MOVING_SPEED"
+    private const val TYPE_HOLD_PRESS = "HOLD_PRESS"
+    private const val TYPE_BIOMETRIC = "BIOMETRIC_UNLOCK"
+    private const val TYPE_PHOTO_KEEPSAKE = "PHOTO_KEEPSAKE"
 
     /** 领域规则 → §5.1 JSON */
     fun toJson(rule: UnlockRule): String {
@@ -164,7 +185,11 @@ object UnlockRuleJson {
         is UnlockCondition.ChargingState ->
             ConditionDto(type = TYPE_CHARGING, isCharging = condition.isCharging)
         is UnlockCondition.StepCount ->
-            ConditionDto(type = TYPE_STEPS, minTodaySteps = condition.minTodayStep)
+            ConditionDto(
+                type = TYPE_STEPS,
+                minTodaySteps = condition.minTodayStep,
+                maxTodaySteps = condition.maxTodayStep,
+            )
         is UnlockCondition.NetworkType ->
             ConditionDto(type = TYPE_NETWORK, netTypes = condition.types.map { it.name })
         is UnlockCondition.GpsLocation ->
@@ -208,6 +233,22 @@ object UnlockRuleJson {
             )
         is UnlockCondition.MoonPhase ->
             ConditionDto(type = TYPE_MOON_PHASE, phases = condition.phases.map { it.name })
+        is UnlockCondition.MeteorShower ->
+            ConditionDto(type = TYPE_METEOR_SHOWER, meteorTypes = condition.showers.map { it.name })
+        is UnlockCondition.GoldenHour ->
+            ConditionDto(type = TYPE_GOLDEN_HOUR)
+        is UnlockCondition.LunarDate ->
+            ConditionDto(type = TYPE_LUNAR_DATE, month = condition.month, dayOfMonth = condition.day)
+        is UnlockCondition.AirplaneMode ->
+            ConditionDto(type = TYPE_AIRPLANE, flag = condition.isEnabled)
+        is UnlockCondition.MusicPlaying ->
+            ConditionDto(type = TYPE_MUSIC, flag = condition.isPlaying)
+        is UnlockCondition.AmbientLight ->
+            ConditionDto(type = TYPE_AMBIENT_LIGHT, maxLux = condition.maxLux)
+        is UnlockCondition.TimezoneChange ->
+            ConditionDto(type = TYPE_TIMEZONE_AWAY, zoneId = condition.homeZoneId)
+        is UnlockCondition.MovingAboveSpeed ->
+            ConditionDto(type = TYPE_MOVING_SPEED, speedKmh = condition.minSpeedKmh)
         is UnlockCondition.BeforeNextAlarm ->
             ConditionDto(type = TYPE_BEFORE_ALARM)
         is UnlockCondition.PowerSaveMode ->
@@ -234,6 +275,10 @@ object UnlockRuleJson {
             ConditionDto(type = TYPE_OTHER_UNLOCKED, capsuleId = condition.capsuleId)
         is UnlockCondition.OtherCapsuleDestroyed ->
             ConditionDto(type = TYPE_OTHER_DESTROYED, capsuleId = condition.capsuleId)
+        is UnlockCondition.OtherCapsuleRead ->
+            ConditionDto(type = TYPE_OTHER_READ, capsuleId = condition.capsuleId)
+        is UnlockCondition.ViewCountAtLeast ->
+            ConditionDto(type = TYPE_VIEW_COUNT, count = condition.count)
         is UnlockCondition.QuestionAnswer ->
             ConditionDto(
                 type = TYPE_QUESTION,
@@ -263,6 +308,12 @@ object UnlockRuleJson {
                 challengeId = condition.challengeId,
                 nfcPayload = condition.expectedPayload,
             )
+        is UnlockCondition.HoldPress ->
+            ConditionDto(type = TYPE_HOLD_PRESS, challengeId = condition.challengeId, holdSeconds = condition.holdSeconds)
+        is UnlockCondition.BiometricUnlock ->
+            ConditionDto(type = TYPE_BIOMETRIC, challengeId = condition.challengeId)
+        is UnlockCondition.PhotoKeepsake ->
+            ConditionDto(type = TYPE_PHOTO_KEEPSAKE, challengeId = condition.challengeId)
     }
 
     // ---- DTO → 领域（必填字段校验，缺失/非法返回 null 丢弃）----
@@ -288,9 +339,13 @@ object UnlockRuleJson {
             TYPE_CHARGING -> UnlockCondition.ChargingState(
                 isCharging = requireNotNull(isCharging) { "缺 isCharging" },
             )
-            TYPE_STEPS -> UnlockCondition.StepCount(
-                minTodayStep = requireNotNull(minTodaySteps) { "缺 minTodaySteps" },
-            )
+            TYPE_STEPS -> run {
+                // 区间条件：任一端可空，但至少一端有值
+                val minSteps = minTodaySteps
+                val maxSteps = maxTodaySteps
+                require(minSteps != null || maxSteps != null) { "minTodaySteps/maxTodaySteps 全空" }
+                UnlockCondition.StepCount(minTodayStep = minSteps, maxTodayStep = maxSteps)
+            }
             TYPE_NETWORK -> UnlockCondition.NetworkType(
                 types = requireNotNull(netTypes) { "缺 netTypes" }
                     .mapNotNull { name -> runCatching { NetType.valueOf(name) }.getOrNull() }
@@ -355,6 +410,32 @@ object UnlockRuleJson {
                     .toSet()
                     .also { require(it.isNotEmpty()) { "phases 全空" } },
             )
+            TYPE_METEOR_SHOWER -> UnlockCondition.MeteorShower(
+                showers = requireNotNull(meteorTypes) { "缺 meteorTypes" }
+                    .mapNotNull { runCatching { MeteorShowerKind.valueOf(it) }.getOrNull() }
+                    .toSet()
+                    .also { require(it.isNotEmpty()) { "meteorTypes 全空" } },
+            )
+            TYPE_GOLDEN_HOUR -> UnlockCondition.GoldenHour
+            TYPE_LUNAR_DATE -> UnlockCondition.LunarDate(
+                month = requireNotNull(month) { "缺 month" }.also { require(it in 1..12) { "month 非法" } },
+                day = requireNotNull(dayOfMonth) { "缺 day" }.also { require(it in 1..30) { "day 非法" } },
+            )
+            TYPE_AIRPLANE -> UnlockCondition.AirplaneMode(
+                isEnabled = requireNotNull(flag) { "缺 flag" },
+            )
+            TYPE_MUSIC -> UnlockCondition.MusicPlaying(
+                isPlaying = requireNotNull(flag) { "缺 flag" },
+            )
+            TYPE_AMBIENT_LIGHT -> UnlockCondition.AmbientLight(
+                maxLux = requireNotNull(maxLux) { "缺 maxLux" }.also { require(it in 1..50000) { "maxLux 非法" } },
+            )
+            TYPE_TIMEZONE_AWAY -> UnlockCondition.TimezoneChange(
+                homeZoneId = requireNotNull(zoneId) { "缺 zoneId" }.also { require(it.isNotBlank()) { "zoneId 空" } },
+            )
+            TYPE_MOVING_SPEED -> UnlockCondition.MovingAboveSpeed(
+                minSpeedKmh = requireNotNull(speedKmh) { "缺 speedKmh" }.also { require(it in 1..300) { "speedKmh 非法" } },
+            )
             TYPE_BEFORE_ALARM -> UnlockCondition.BeforeNextAlarm
             TYPE_POWER_SAVE -> UnlockCondition.PowerSaveMode(
                 isActive = requireNotNull(flag) { "缺 flag" },
@@ -395,6 +476,12 @@ object UnlockRuleJson {
             TYPE_OTHER_DESTROYED -> UnlockCondition.OtherCapsuleDestroyed(
                 capsuleId = requireNotNull(capsuleId) { "缺 capsuleId" },
             )
+            TYPE_OTHER_READ -> UnlockCondition.OtherCapsuleRead(
+                capsuleId = requireNotNull(capsuleId) { "缺 capsuleId" },
+            )
+            TYPE_VIEW_COUNT -> UnlockCondition.ViewCountAtLeast(
+                count = requireNotNull(count) { "缺 count" }.also { require(it >= 1) { "count 非法" } },
+            )
             TYPE_QUESTION -> UnlockCondition.QuestionAnswer(
                 challengeId = requireNotNull(challengeId) { "缺 challengeId" },
                 question = requireNotNull(question) { "缺 question" }.also { require(it.isNotBlank()) { "question 空" } },
@@ -417,6 +504,17 @@ object UnlockRuleJson {
             TYPE_NFC -> UnlockCondition.NfcTap(
                 challengeId = requireNotNull(challengeId) { "缺 challengeId" },
                 expectedPayload = nfcPayload?.takeIf { it.isNotBlank() },
+            )
+            TYPE_HOLD_PRESS -> UnlockCondition.HoldPress(
+                challengeId = requireNotNull(challengeId) { "缺 challengeId" },
+                holdSeconds = requireNotNull(holdSeconds) { "缺 holdSeconds" }
+                    .also { require(it in 1..60) { "holdSeconds 非法" } },
+            )
+            TYPE_BIOMETRIC -> UnlockCondition.BiometricUnlock(
+                challengeId = requireNotNull(challengeId) { "缺 challengeId" },
+            )
+            TYPE_PHOTO_KEEPSAKE -> UnlockCondition.PhotoKeepsake(
+                challengeId = requireNotNull(challengeId) { "缺 challengeId" },
             )
             else -> {
                 Log.w(TAG, "未知条件 type=$type，已丢弃（向前兼容）")

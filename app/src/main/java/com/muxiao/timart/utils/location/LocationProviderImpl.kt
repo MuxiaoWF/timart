@@ -32,6 +32,10 @@ class LocationProviderImpl(
     @Volatile
     private var freshFix: GeoPoint? = null
 
+    /** 异步刷新得到的速度分量（米/秒；与 freshFix 同源） */
+    @Volatile
+    private var freshSpeedMps: Float? = null
+
     override fun isPermitted(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED ||
@@ -41,7 +45,21 @@ class LocationProviderImpl(
     override fun lastKnown(): GeoPoint? {
         if (!isPermitted()) return null
         freshFix?.let { return it }
+        val best = bestKnownLocation() ?: return null
+        requestSingleRefresh()
+        return GeoPoint(best.latitude, best.longitude)
+    }
 
+    override fun speedMps(): Float? {
+        if (!isPermitted()) return null
+        freshSpeedMps?.let { return it }
+        val best = bestKnownLocation() ?: return null
+        requestSingleRefresh()
+        return if (best.hasSpeed()) best.speed else null
+    }
+
+    /** 最近定位中的更新者（GPS/NETWORK 按 time 取新）；null = 两 provider 均无缓存 */
+    private fun bestKnownLocation(): Location? {
         val candidates = mutableListOf<Location>()
         for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
             try {
@@ -54,9 +72,7 @@ class LocationProviderImpl(
                 // 设备无该 provider
             }
         }
-        val best = candidates.maxByOrNull { it.time } ?: return null
-        requestSingleRefresh()
-        return GeoPoint(best.latitude, best.longitude)
+        return candidates.maxByOrNull { it.time }
     }
 
     /** 异步预热下一次定位结果（失败静默，不影响本次同步返回） */
@@ -73,6 +89,7 @@ class LocationProviderImpl(
             }
             val listener = LocationListener { location ->
                 freshFix = GeoPoint(location.latitude, location.longitude)
+                if (location.hasSpeed()) freshSpeedMps = location.speed
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 locationManager.getCurrentLocation(
@@ -81,7 +98,10 @@ class LocationProviderImpl(
                     ContextCompat.getMainExecutor(context),
                 ) { location ->
                     // 平台约定：无法取得定位时以 null 回调（provider 超时/无 fix），必须判空
-                    location?.let { freshFix = GeoPoint(it.latitude, it.longitude) }
+                    location?.let {
+                        freshFix = GeoPoint(it.latitude, it.longitude)
+                        if (it.hasSpeed()) freshSpeedMps = it.speed
+                    }
                 }
             } else {
                 @Suppress("DEPRECATION")

@@ -21,6 +21,9 @@ enum class DeviceHardware {
     STEP_DETECTOR,
     ACCELEROMETER,
     NFC,
+    LIGHT_SENSOR,
+    CAMERA,
+    BIOMETRIC,
 }
 
 /** 本机缺失的硬件能力（每次调用即时读取，调用方按需 remember） */
@@ -32,6 +35,16 @@ fun missingDeviceHardware(context: Context): Set<DeviceHardware> {
         if (sm?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) == null) add(DeviceHardware.STEP_COUNTER)
         if (sm?.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) == null) add(DeviceHardware.STEP_DETECTOR)
         if (sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) == null) add(DeviceHardware.ACCELEROMETER)
+        if (sm?.getDefaultSensor(Sensor.TYPE_LIGHT) == null) add(DeviceHardware.LIGHT_SENSOR)
+        if (!context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)) {
+            add(DeviceHardware.CAMERA)
+        }
+        // 探测硬件存在性（不要求已录入指纹）：无生物识别硬件的条件在创建侧禁用
+        val noBiometricHardware = runCatching {
+            androidx.biometric.BiometricManager.from(context).canAuthenticate() ==
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
+        }.getOrDefault(true)
+        if (noBiometricHardware) add(DeviceHardware.BIOMETRIC)
         if (NfcAdapter.getDefaultAdapter(context) == null) add(DeviceHardware.NFC)
     }
 }
@@ -44,6 +57,9 @@ fun UnlockCondition.requiredHardware(): Set<DeviceHardware> = when (this) {
     is UnlockCondition.MotionActivity -> setOf(DeviceHardware.STEP_DETECTOR)
     is UnlockCondition.ShakeCount, is UnlockCondition.FlipOrHold -> setOf(DeviceHardware.ACCELEROMETER)
     is UnlockCondition.NfcTap -> setOf(DeviceHardware.NFC)
+    is UnlockCondition.AmbientLight -> setOf(DeviceHardware.LIGHT_SENSOR)
+    is UnlockCondition.PhotoKeepsake -> setOf(DeviceHardware.CAMERA)
+    is UnlockCondition.BiometricUnlock -> setOf(DeviceHardware.BIOMETRIC)
     else -> emptySet()
 }
 
@@ -72,6 +88,9 @@ fun unsupportedConditionNames(
             is UnlockCondition.ShakeCount -> L.condShake
             is UnlockCondition.FlipOrHold -> L.condFlipHold
             is UnlockCondition.NfcTap -> L.condNfc
+            is UnlockCondition.AmbientLight -> L.condAmbientLight
+            is UnlockCondition.PhotoKeepsake -> L.condPhotoKeepsake
+            is UnlockCondition.BiometricUnlock -> L.condBiometric
             else -> continue
         }
     }

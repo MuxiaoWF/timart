@@ -10,6 +10,8 @@ import com.muxiao.timart.domain.model.JudgeResult
 import com.muxiao.timart.domain.model.Lang
 import com.muxiao.timart.domain.model.unlock.JudgeReasons
 import com.muxiao.timart.domain.model.unlock.LogicType
+import com.muxiao.timart.domain.model.unlock.LunarCalendar
+import com.muxiao.timart.domain.model.unlock.MeteorCalendar
 import com.muxiao.timart.domain.model.unlock.MoonCalc
 import com.muxiao.timart.domain.model.unlock.SunCalc
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
@@ -161,7 +163,10 @@ class UnlockJudgeUseCase {
                     // 无计步硬件或无权限
                     Triple(false, false, r.stepUnavailable)
                 } else {
-                    Triple(steps >= condition.minTodayStep, false, null)
+                    // 与 BatteryLevel 同构：任一端可空，闭区间
+                    val byMin = condition.minTodayStep?.let { steps >= it } ?: true
+                    val byMax = condition.maxTodayStep?.let { steps <= it } ?: true
+                    Triple(byMin && byMax, false, null)
                 }
             }
 
@@ -283,6 +288,16 @@ class UnlockJudgeUseCase {
                 Triple(today.monthValue == condition.month && today.dayOfMonth == condition.day, false, null)
             }
 
+            is UnlockCondition.LunarDate -> {
+                // 闰月按同月同日处理（闰六月十五也满足"农历六月十五"）；表外日期 fail-closed
+                val lunar = LunarCalendar.solarToLunar(ctx.time.today())
+                Triple(
+                    lunar != null && lunar.month == condition.month && lunar.day == condition.day,
+                    false,
+                    null,
+                )
+            }
+
             is UnlockCondition.AwayFromLocation -> when {
                 !ctx.location.isPermitted() ->
                     Triple(false, false, r.gpsNoPermission)
@@ -317,6 +332,24 @@ class UnlockJudgeUseCase {
                 }
             }
 
+            // 金色时刻与 SunPhase 同通道：需要定位换取经纬度做天文计算
+            is UnlockCondition.GoldenHour -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                ctx.location.lastKnown() == null ->
+                    Triple(false, false, r.gpsNoFix)
+                else -> {
+                    val point = ctx.location.lastKnown()!!
+                    Triple(
+                        SunCalc.isGoldenHour(ctx.time.nowMillis(), point.lat, point.lng, ctx.time.today()),
+                        false,
+                        null,
+                    )
+                }
+            }
+
             is UnlockCondition.WeatherMetric -> {
                 val cityId = capsule.weather?.cityId
                 if (cityId == null) {
@@ -346,6 +379,37 @@ class UnlockJudgeUseCase {
             is UnlockCondition.MoonPhase ->
                 Triple(MoonCalc.phaseOf(ctx.time.today()) in condition.phases, false, null)
 
+            is UnlockCondition.MeteorShower ->
+                Triple(condition.showers.any { MeteorCalendar.isPeakNight(it, ctx.time.today()) }, false, null)
+
+            is UnlockCondition.AmbientLight -> {
+                val lux = ctx.ambientLight.lux()
+                if (lux == null) {
+                    Triple(false, false, r.ambientLightUnavailable)
+                } else {
+                    Triple(lux <= condition.maxLux, false, null)
+                }
+            }
+
+            is UnlockCondition.TimezoneChange ->
+                Triple(ctx.time.zoneId() != condition.homeZoneId, false, null)
+
+            // 与 GPS 同通道：权限拒绝给原因、后台 skipped、无定位给原因
+            is UnlockCondition.MovingAboveSpeed -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                else -> {
+                    val speed = ctx.location.speedMps()
+                    if (speed == null) {
+                        Triple(false, false, r.gpsNoFix)
+                    } else {
+                        Triple(speed * 3.6f >= condition.minSpeedKmh, false, null)
+                    }
+                }
+            }
+
             is UnlockCondition.BeforeNextAlarm -> {
                 val next = ctx.alarm.nextAlarmMillis()
                 if (next == null) {
@@ -360,6 +424,12 @@ class UnlockJudgeUseCase {
 
             is UnlockCondition.SilentMode ->
                 Triple(ctx.systemMode.isSilentRinger() == condition.isSilent, false, null)
+
+            is UnlockCondition.AirplaneMode ->
+                Triple(ctx.systemMode.isAirplaneModeOn() == condition.isEnabled, false, null)
+
+            is UnlockCondition.MusicPlaying ->
+                Triple(ctx.systemMode.isMusicPlaying() == condition.isPlaying, false, null)
 
             is UnlockCondition.HeadphoneConnected ->
                 Triple(ctx.systemMode.isHeadphoneConnected() == condition.isConnected, false, null)
@@ -413,6 +483,9 @@ class UnlockJudgeUseCase {
             is UnlockCondition.CapsuleCountAtLeast ->
                 Triple(ctx.meta.capsuleCount() >= condition.count, false, null)
 
+            is UnlockCondition.ViewCountAtLeast ->
+                Triple(ctx.meta.viewCount(capsule.id) >= condition.count, false, null)
+
             is UnlockCondition.OtherCapsuleUnlocked -> {
                 val status = ctx.dependency.statusOf(condition.capsuleId)
                 if (status == DependencyStatus.NOT_FOUND) {
@@ -430,6 +503,10 @@ class UnlockJudgeUseCase {
                     Triple(status == DependencyStatus.DESTROYED, false, null)
                 }
             }
+
+            // 已读状态取 meta 事实源（与首页三态一致）：读过即恒满足，含读后销毁的胶囊
+            is UnlockCondition.OtherCapsuleRead ->
+                Triple(ctx.meta.isRead(condition.capsuleId), false, null)
 
             is UnlockCondition.ChallengeCondition -> {
                 val answer = challengeAnswers[condition.challengeId]

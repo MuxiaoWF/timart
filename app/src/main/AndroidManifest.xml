@@ -22,6 +22,9 @@
 
     <!-- NFC 挑战条件：读取标签 ID（reader mode，无写卡） -->
     <uses-permission android:name="android.permission.NFC" />
+
+    <!-- 生物识别挑战（androidx.biometric；硬件缺失设备创建侧禁用该条件） -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <application

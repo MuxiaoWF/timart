@@ -38,7 +38,13 @@ object ConditionText {
             }
             is UnlockCondition.ChargingState ->
                 if (condition.isCharging) w.charging else w.notCharging
-            is UnlockCondition.StepCount -> w.stepsOver.format(condition.minTodayStep)
+            is UnlockCondition.StepCount -> when {
+                condition.minTodayStep != null && condition.maxTodayStep != null ->
+                    w.stepsBetween.format(condition.minTodayStep, condition.maxTodayStep)
+                condition.minTodayStep != null -> w.stepsOver.format(condition.minTodayStep)
+                condition.maxTodayStep != null -> w.stepsBelow.format(condition.maxTodayStep)
+                else -> w.stepsAny
+            }
             is UnlockCondition.NetworkType ->
                 condition.types.joinToString(w.netOr) { netName(it, lang) }.ifEmpty { w.netAny }
             is UnlockCondition.GpsLocation -> w.atLocation.format(condition.radiusMeter)
@@ -74,6 +80,17 @@ object ConditionText {
             }
             is UnlockCondition.MoonPhase ->
                 w.moonEncounter + condition.phases.joinToString(w.listSep) { moonName(it, lang) }
+            is UnlockCondition.MeteorShower ->
+                w.meteorEncounter + condition.showers.joinToString(w.listSep) { meteorName(it, lang) }
+            is UnlockCondition.AmbientLight -> w.ambientFmt.format(condition.maxLux)
+            is UnlockCondition.TimezoneChange -> w.timezoneAway
+            is UnlockCondition.MovingAboveSpeed -> w.movingFmt.format(condition.minSpeedKmh)
+            is UnlockCondition.GoldenHour -> w.goldenHour
+            is UnlockCondition.LunarDate -> w.lunarFmt.format(condition.month, condition.day)
+            is UnlockCondition.AirplaneMode ->
+                if (condition.isEnabled) w.airplaneOn else w.airplaneOff
+            is UnlockCondition.MusicPlaying ->
+                if (condition.isPlaying) w.musicOn else w.musicOff
             is UnlockCondition.BeforeNextAlarm -> w.beforeNextAlarm
             is UnlockCondition.PowerSaveMode -> if (condition.isActive) w.powerSaveOn else w.powerSaveOff
             is UnlockCondition.SilentMode -> if (condition.isSilent) w.silentOn else w.silentOff
@@ -94,6 +111,8 @@ object ConditionText {
             is UnlockCondition.CapsuleCountAtLeast -> w.capsuleCountFmt.format(condition.count)
             is UnlockCondition.OtherCapsuleUnlocked -> w.otherUnlocked
             is UnlockCondition.OtherCapsuleDestroyed -> w.otherDestroyed
+            is UnlockCondition.OtherCapsuleRead -> w.otherRead
+            is UnlockCondition.ViewCountAtLeast -> w.viewCountFmt.format(condition.count)
             is UnlockCondition.QuestionAnswer -> w.questionFmt.format(condition.question)
             is UnlockCondition.PuzzleAnswer -> w.puzzleFmt.format(condition.question)
             is UnlockCondition.ShakeCount -> w.shakeFmt.format(condition.shakes)
@@ -101,6 +120,9 @@ object ConditionText {
                 if (condition.gesture == GestureKind.FLIP) w.flip else w.holdFmt.format(condition.holdSeconds)
             is UnlockCondition.NfcTap ->
                 if (condition.expectedPayload != null) w.nfcTapPaired else w.nfcTap
+            is UnlockCondition.HoldPress -> w.holdPressFmt.format(condition.holdSeconds)
+            is UnlockCondition.BiometricUnlock -> w.biometric
+            is UnlockCondition.PhotoKeepsake -> w.photoKeepsake
         }
     }
 
@@ -122,6 +144,27 @@ object ConditionText {
         MoonPhaseKind.WANING_GIBBOUS -> words(lang).moonWanGib
         MoonPhaseKind.LAST_QUARTER -> words(lang).moonLastQ
         MoonPhaseKind.WANING_CRESCENT -> words(lang).moonWanCrescent
+    }
+
+    /** MeteorShowerKind → 名称（顺序即枚举序） */
+    fun meteorName(kind: MeteorShowerKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).meteorNames[kind.ordinal]
+
+    /** 农历节日预设（月, 日），顺序与词表 lunarFestNames 一致 */
+    private val LUNAR_FESTIVAL_MONTH_DAYS =
+        listOf(1 to 1, 1 to 15, 5 to 5, 7 to 7, 8 to 15, 9 to 9, 12 to 8)
+
+    /** 农历节日预设：名称 + 农历月日（创建表单预设用） */
+    fun lunarFestivals(lang: Lang = Lang.ZH_HANS): List<Triple<String, Int, Int>> =
+        words(lang).lunarFestNames.mapIndexed { index, name ->
+            val (month, day) = LUNAR_FESTIVAL_MONTH_DAYS[index]
+            Triple(name, month, day)
+        }
+
+    /** 农历月日 → 预设节日名称（未命中返回 null） */
+    fun lunarFestivalName(month: Int, day: Int, lang: Lang = Lang.ZH_HANS): String? {
+        val index = LUNAR_FESTIVAL_MONTH_DAYS.indexOf(month to day)
+        return if (index >= 0) words(lang).lunarFestNames[index] else null
     }
 
     /** WeatherMetricKind → 名称 */
@@ -214,6 +257,9 @@ object ConditionText {
         charging = "正在充电",
         notCharging = "未在充电",
         stepsOver = "今日步数超过 %d 步",
+        stepsBetween = "今日步数在 %d 步到 %d 步之间",
+        stepsBelow = "今日步数低于 %d 步",
+        stepsAny = "今日步数不限",
         netOr = " 或 ",
         netAny = "网络状态不限",
         netWifi = "连接 Wi-Fi",
@@ -264,6 +310,24 @@ object ConditionText {
         moonWanGib = "亏凸月",
         moonLastQ = "下弦月",
         moonWanCrescent = "残月",
+        meteorEncounter = "正值",
+        meteorNames = listOf(
+            "象限仪座流星雨", "天琴座流星雨", "宝瓶座η流星雨", "宝瓶座δ南流星雨", "英仙座流星雨",
+            "猎户座流星雨", "狮子座流星雨", "双子座流星雨", "小熊座流星雨",
+        ),
+        goldenHour = "正值金色时刻",
+        ambientFmt = "环境光照度低于 %d lux",
+        timezoneAway = "身处与封存时不同的时区",
+        movingFmt = "正在移动（速度超过 %d km/h）",
+        holdPressFmt = "长按屏幕不放 %d 秒",
+        biometric = "用生物识别（指纹/面容）验证身份",
+        photoKeepsake = "拍一张此刻的照片留念",
+        lunarFmt = "每逢农历 %d 月 %d 日",
+        lunarFestNames = listOf("春节", "元宵节", "端午节", "七夕节", "中秋节", "重阳节", "腊八节"),
+        airplaneOn = "手机处于飞行模式",
+        airplaneOff = "手机未开启飞行模式",
+        musicOn = "手机正在播放音乐",
+        musicOff = "手机没有在播放音乐",
         beforeNextAlarm = "下一个闹钟响起之前",
         powerSaveOn = "手机处于省电模式",
         powerSaveOff = "手机不在省电模式",
@@ -285,6 +349,8 @@ object ConditionText {
         capsuleCountFmt = "拥有至少 %d 颗胶囊",
         otherUnlocked = "另一颗胶囊已解锁",
         otherDestroyed = "另一颗胶囊已销毁",
+        otherRead = "另一颗胶囊已开启阅读",
+        viewCountFmt = "凝视这颗胶囊满 %d 次",
         questionFmt = "回答问题「%s」",
         puzzleFmt = "解开谜题「%s」",
         shakeFmt = "摇一摇手机 %d 下",
@@ -310,6 +376,9 @@ object ConditionText {
         charging = "正在充電",
         notCharging = "未在充電",
         stepsOver = "今日步數超過 %d 步",
+        stepsBetween = "今日步數在 %d 步到 %d 步之間",
+        stepsBelow = "今日步數低於 %d 步",
+        stepsAny = "今日步數不限",
         netOr = " 或 ",
         netAny = "網路狀態不限",
         netWifi = "連接 Wi-Fi",
@@ -360,6 +429,24 @@ object ConditionText {
         moonWanGib = "虧凸月",
         moonLastQ = "下弦月",
         moonWanCrescent = "殘月",
+        meteorEncounter = "正值",
+        meteorNames = listOf(
+            "象限儀座流星雨", "天琴座流星雨", "寶瓶座η流星雨", "寶瓶座δ南流星雨", "英仙座流星雨",
+            "獵戶座流星雨", "獅子座流星雨", "雙子座流星雨", "小熊座流星雨",
+        ),
+        goldenHour = "正值金色時刻",
+        ambientFmt = "環境光照度低於 %d lux",
+        timezoneAway = "身處與封存時不同的時區",
+        movingFmt = "正在移動（速度超過 %d km/h）",
+        holdPressFmt = "長按螢幕不放 %d 秒",
+        biometric = "用生物辨識（指紋/面孔）驗證身份",
+        photoKeepsake = "拍一張此刻的照片留念",
+        lunarFmt = "每逢農曆 %d 月 %d 日",
+        lunarFestNames = listOf("春節", "元宵節", "端午節", "七夕節", "中秋節", "重陽節", "臘八節"),
+        airplaneOn = "手機處於飛行模式",
+        airplaneOff = "手機未開啟飛行模式",
+        musicOn = "手機正在播放音樂",
+        musicOff = "手機沒有在播放音樂",
         beforeNextAlarm = "下一個鬧鐘響起之前",
         powerSaveOn = "手機處於省電模式",
         powerSaveOff = "手機不在省電模式",
@@ -381,6 +468,8 @@ object ConditionText {
         capsuleCountFmt = "擁有至少 %d 顆膠囊",
         otherUnlocked = "另一顆膠囊已解鎖",
         otherDestroyed = "另一顆膠囊已銷毀",
+        otherRead = "另一顆膠囊已開啟閱讀",
+        viewCountFmt = "凝視這顆膠囊滿 %d 次",
         questionFmt = "回答問題「%s」",
         puzzleFmt = "解開謎題「%s」",
         shakeFmt = "搖一搖手機 %d 下",
@@ -406,6 +495,9 @@ object ConditionText {
         charging = "While charging",
         notCharging = "While not charging",
         stepsOver = "Over %d steps today",
+        stepsBetween = "Steps today between %d and %d",
+        stepsBelow = "Under %d steps today",
+        stepsAny = "Any step count today",
         netOr = " or ",
         netAny = "Any network state",
         netWifi = "Connected to Wi-Fi",
@@ -456,6 +548,27 @@ object ConditionText {
         moonWanGib = "waning gibbous",
         moonLastQ = "last quarter",
         moonWanCrescent = "waning crescent",
+        meteorEncounter = "During ",
+        meteorNames = listOf(
+            "the Quadrantids", "the Lyrids", "the Eta Aquariids", "the Delta Aquariids", "the Perseids",
+            "the Orionids", "the Leonids", "the Geminids", "the Ursids",
+        ),
+        goldenHour = "During golden hour",
+        ambientFmt = "Ambient light below %d lux",
+        timezoneAway = "In a different timezone than when sealed",
+        movingFmt = "On the move (over %d km/h)",
+        holdPressFmt = "Press and hold the screen for %d seconds",
+        biometric = "Verify with biometrics (fingerprint/face)",
+        photoKeepsake = "Take a photo of this moment",
+        lunarFmt = "Every year on lunar month %d, day %d",
+        lunarFestNames = listOf(
+            "Chinese New Year", "Lantern Festival", "Dragon Boat Festival", "Qixi Festival",
+            "Mid-Autumn Festival", "Double Ninth Festival", "Laba Festival",
+        ),
+        airplaneOn = "Phone is in airplane mode",
+        airplaneOff = "Phone is not in airplane mode",
+        musicOn = "Music is playing",
+        musicOff = "No music is playing",
         beforeNextAlarm = "Before the next alarm goes off",
         powerSaveOn = "Phone is in power-save mode",
         powerSaveOff = "Phone is not in power-save mode",
@@ -477,6 +590,8 @@ object ConditionText {
         capsuleCountFmt = "Own at least %d capsules",
         otherUnlocked = "Another capsule has been unlocked",
         otherDestroyed = "Another capsule has been destroyed",
+        otherRead = "Another capsule has been opened and read",
+        viewCountFmt = "Gazed at this capsule %d times",
         questionFmt = "Answer the question \"%s\"",
         puzzleFmt = "Solve the riddle \"%s\"",
         shakeFmt = "Shake the phone %d times",
@@ -504,6 +619,9 @@ private data class ConditionWords(
     val charging: String,
     val notCharging: String,
     val stepsOver: String,
+    val stepsBetween: String,
+    val stepsBelow: String,
+    val stepsAny: String,
     val netOr: String,
     val netAny: String,
     val netWifi: String,
@@ -554,6 +672,21 @@ private data class ConditionWords(
     val moonWanGib: String,
     val moonLastQ: String,
     val moonWanCrescent: String,
+    val meteorEncounter: String,
+    val meteorNames: List<String>,
+    val goldenHour: String,
+    val ambientFmt: String,
+    val timezoneAway: String,
+    val movingFmt: String,
+    val holdPressFmt: String,
+    val biometric: String,
+    val photoKeepsake: String,
+    val lunarFmt: String,
+    val lunarFestNames: List<String>,
+    val airplaneOn: String,
+    val airplaneOff: String,
+    val musicOn: String,
+    val musicOff: String,
     val beforeNextAlarm: String,
     val powerSaveOn: String,
     val powerSaveOff: String,
@@ -575,6 +708,8 @@ private data class ConditionWords(
     val capsuleCountFmt: String,
     val otherUnlocked: String,
     val otherDestroyed: String,
+    val otherRead: String,
+    val viewCountFmt: String,
     val questionFmt: String,
     val puzzleFmt: String,
     val shakeFmt: String,
@@ -614,6 +749,7 @@ object JudgeReasons {
     const val COMPASS_UNAVAILABLE = "指南针不可用（设备无磁力计）"
     const val ALTITUDE_UNAVAILABLE = "海拔不可用（设备无气压计）"
     const val NO_OPEN_RECORD = "还没有打开时粒的记录"
+    const val AMBIENT_LIGHT_UNAVAILABLE = "环境光传感器不可用（设备无光线传感器）"
 
     /** 按界面语言取判定原因词表（判定入口与展示比较两侧同源） */
     fun forLang(lang: Lang): JudgeReasonTexts = when (lang) {
@@ -645,6 +781,7 @@ object JudgeReasons {
         compassUnavailable = COMPASS_UNAVAILABLE,
         altitudeUnavailable = ALTITUDE_UNAVAILABLE,
         noOpenRecord = NO_OPEN_RECORD,
+        ambientLightUnavailable = AMBIENT_LIGHT_UNAVAILABLE,
     )
 
     private val ZH_HANT = JudgeReasonTexts(
@@ -670,6 +807,7 @@ object JudgeReasons {
         compassUnavailable = "指南針不可用（裝置無磁力計）",
         altitudeUnavailable = "海拔不可用（裝置無氣壓計）",
         noOpenRecord = "還沒有開啟時粒的記錄",
+        ambientLightUnavailable = "環境光感測器不可用（裝置無光線感測器）",
     )
 
     private val EN = JudgeReasonTexts(
@@ -695,6 +833,7 @@ object JudgeReasons {
         compassUnavailable = "Compass unavailable (no magnetometer on this device)",
         altitudeUnavailable = "Altitude unavailable (no barometer on this device)",
         noOpenRecord = "No record of opening the app yet",
+        ambientLightUnavailable = "Ambient light sensor unavailable (no light sensor on this device)",
     )
 }
 
@@ -722,4 +861,5 @@ data class JudgeReasonTexts(
     val compassUnavailable: String,
     val altitudeUnavailable: String,
     val noOpenRecord: String,
+    val ambientLightUnavailable: String,
 )

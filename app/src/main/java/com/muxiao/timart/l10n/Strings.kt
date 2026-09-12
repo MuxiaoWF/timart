@@ -130,6 +130,45 @@ interface Strings {
     val condPowerSave: String
     val condSilent: String
     val condHeadphone: String
+
+    /** 扩展条件第二批（金色时刻/农历/流星雨/飞行模式/音乐/已读联动/凝视次数） */
+    val condGoldenHour: String
+    val condLunarDate: String
+    val condMeteorShower: String
+    val condAirplane: String
+    val condMusic: String
+    val condOtherRead: String
+    val condViewCount: String
+
+    /** 扩展条件第三批（黑暗中/时区/移动中 + 长按/生物识别/拍照留念） */
+    val condAmbientLight: String
+    val condTimezoneAway: String
+    val condMoving: String
+    val condHoldPress: String
+    val condBiometric: String
+    val condPhotoKeepsake: String
+
+    /** 表单/挑战提示 */
+    val ambientLightNote: String
+    val movingNote: String
+    val biometricFormHint: String
+    val photoFormHint: String
+    val challengeHoldButton: String
+    val challengeBiometricTitle: String
+    val challengeBiometricStart: String
+    val challengeBiometricCancel: String
+    val challengePhotoStart: String
+    val challengePhotoNote: String
+
+    /** 农历条件表单：今日农历对照 + 闰月口径说明 */
+    val lunarTodayFmt: String
+    val lunarLeapNote: String
+
+    /** 流星雨条件：极大期 ±1 天窗口说明 */
+    val meteorWindowNote: String
+
+    /** 凝视计数条件：计数口径说明 */
+    val viewCountNote: String
     val condMotion: String
     val condCompass: String
     val condAltitude: String
@@ -157,8 +196,18 @@ interface Strings {
     val condFormDesc: String
     val condAtLeast: String
     val condAtMost: String
-    val condStateOn: String
-    val condStateOff: String
+    /** 状态类条件表单的选项文案（按条件定制，替代早期通用"是/否"） */
+    val pillOn: String
+    val pillOff: String
+    val pillConnected: String
+    val pillDisconnected: String
+    val pillMuted: String
+    val pillNotMuted: String
+    val pillPlaying: String
+    val pillNotPlaying: String
+
+    /** 详情页时间线：状态类条件未满足时附注当前实际状态（%s = 条件句） */
+    val condCurrentFmt: String
     val condMotionNote: String
     val condNoOtherCapsule: String
     val condHoldOption: String
@@ -268,6 +317,9 @@ interface Strings {
     val dfStepTitle: String
     val dfStepDesc: String
     val dfStepValueFmt: String
+
+    /** 步数条件可选上限滑条标签 */
+    val dfStepMaxValueFmt: String
     val dfNetTitle: String
     val dfNetDesc: String
 

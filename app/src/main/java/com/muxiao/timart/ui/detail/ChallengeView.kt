@@ -8,6 +8,15 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.nfc.NfcAdapter
 import android.nfc.Tag
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,8 +35,12 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -36,6 +49,8 @@ import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.model.unlock.GestureKind
 import com.muxiao.timart.domain.model.unlock.NfcPairing
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkPrimary
@@ -52,7 +67,8 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * 现场挑战区（LOCKED 态渲染；架构 §2.16 增补）：
  * 挑战条件不参与周期快照判定（fail-closed），在本区当场完成：
- * 问答/谜题（文本应答）· 摇一摇（加速度峰值计数）· 翻面/静置（重力朝向 + 计时）· NFC（reader mode 贴卡）。
+ * 问答/谜题（文本应答）· 摇一摇（加速度峰值计数）· 翻面/静置（重力朝向 + 计时）· NFC（reader mode 贴卡）·
+ * 长按（按压计时）· 生物识别（BiometricPrompt）· 拍照留念（当场拍摄、不保存）。
  * 完成即回调 [onAnswer]，由 VM 携带应答复判；全部条件满足 → 解锁。
  */
 @Composable
@@ -131,6 +147,9 @@ private fun ChallengeCard(
                 is UnlockCondition.ShakeCount -> ShakeChallenge(condition.shakes) { onAnswer(condition, DONE) }
                 is UnlockCondition.FlipOrHold -> FlipHoldChallenge(condition) { onAnswer(condition, DONE) }
                 is UnlockCondition.NfcTap -> NfcChallenge(condition) { onAnswer(condition, DONE) }
+                is UnlockCondition.HoldPress -> HoldPressChallenge(condition) { onAnswer(condition, DONE) }
+                is UnlockCondition.BiometricUnlock -> BiometricChallenge { onAnswer(condition, DONE) }
+                is UnlockCondition.PhotoKeepsake -> PhotoKeepsakeChallenge { onAnswer(condition, DONE) }
             }
         }
     }
@@ -287,6 +306,148 @@ private fun FlipHoldChallenge(condition: UnlockCondition.FlipOrHold, onDone: () 
                 color = InkSecondary,
                 modifier = Modifier.padding(top = 2.dp),
             )
+        }
+    }
+}
+
+// ---- 长按 N 秒不放 ----
+
+@Composable
+private fun HoldPressChallenge(condition: UnlockCondition.HoldPress, onDone: () -> Unit) {
+    val L = LocalStrings.current
+    var progressSec by remember { mutableIntStateOf(0) }
+    var holding by remember { mutableStateOf(false) }
+    var done by remember { mutableStateOf(false) }
+
+    // 按住期间 1s 步进计时；中途松手归零重来（与 FlipHold 静置计时同节奏）
+    LaunchedEffect(holding) {
+        if (!holding) {
+            progressSec = 0
+            return@LaunchedEffect
+        }
+        while (holding && !done && progressSec < condition.holdSeconds) {
+            delay(1000.milliseconds)
+            progressSec++
+            if (progressSec >= condition.holdSeconds) {
+                done = true
+                onDone()
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .background(DeepCharcoal, RoundedCornerShape(22.dp))
+            .pointerInput(condition.challengeId) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    holding = true
+                    waitForUpOrCancellation()
+                    holding = false
+                }
+            }
+            .padding(vertical = 22.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (holding) "$progressSec / ${condition.holdSeconds} s" else L.challengeHoldButton,
+            style = TimartType.titleSerif.copy(color = TimeGold),
+        )
+    }
+}
+
+// ---- 生物识别（BiometricPrompt：指纹/面容/设备凭据） ----
+
+@Composable
+private fun BiometricChallenge(onDone: () -> Unit) {
+    val L = LocalStrings.current
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    if (activity == null) {
+        // 理论不可达（MainActivity 是 FragmentActivity）；真兜底：明示不可用而非静默
+        Text(
+            text = L.condDeviceUnsupported,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        return
+    }
+    Button(
+        onClick = {
+            val prompt = BiometricPrompt(
+                activity,
+                ContextCompat.getMainExecutor(context),
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        onDone()
+                    }
+                },
+            )
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(L.challengeBiometricTitle)
+                .setNegativeButtonText(L.challengeBiometricCancel)
+                .build()
+            prompt.authenticate(info)
+        },
+        colors = ButtonDefaults.buttonColors(
+            containerColor = TimeGold,
+            contentColor = DeepCharcoal,
+        ),
+        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth(),
+    ) {
+        Text(text = L.challengeBiometricStart, style = TimartType.caption)
+    }
+}
+
+// ---- 拍照留念（当场拍摄、当场展示、不保存） ----
+
+@Composable
+private fun PhotoKeepsakeChallenge(onDone: () -> Unit) {
+    val L = LocalStrings.current
+    var shot by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    // TakePicturePreview 委托系统相机拍摄，宿主应用无需相机权限；返回小图（缩略图级）
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) {
+            shot = bitmap
+            onDone()
+        }
+    }
+    val bitmap = shot
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = L.challengePhotoStart,
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp)),
+        )
+        Text(
+            text = L.challengePhotoNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        DoneTag()
+    } else {
+        Button(
+            onClick = { launcher.launch(null) },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = TimeGold,
+                contentColor = DeepCharcoal,
+            ),
+            shape = RoundedCornerShape(22.dp),
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth(),
+        ) {
+            Text(text = L.challengePhotoStart, style = TimartType.caption)
         }
     }
 }

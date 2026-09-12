@@ -19,6 +19,8 @@ import com.muxiao.timart.domain.model.CapsuleState
 import com.muxiao.timart.domain.model.WeatherSnapshot
 import com.muxiao.timart.domain.model.WeatherType
 import com.muxiao.timart.domain.model.unlock.GeoPoint
+import com.muxiao.timart.domain.model.unlock.LunarCalendar
+import com.muxiao.timart.domain.model.unlock.MeteorShowerKind
 import com.muxiao.timart.domain.model.unlock.MoonCalc
 import com.muxiao.timart.domain.model.unlock.MoonPhaseKind
 import com.muxiao.timart.domain.model.unlock.MotionKind
@@ -54,10 +56,12 @@ class UnlockJudgeUseCaseTest {
     private class FakeTime(
         private val fixedToday: LocalDate,
         private val hour: Int = 10,
+        private val zone: String = "Asia/Shanghai",
     ) : TimeProvider {
         override fun nowMillis(): Long = 1_786_000_000_000
         override fun today(): LocalDate = fixedToday
         override fun nowHour(): Int = hour
+        override fun zoneId(): String = zone
     }
 
     private class FakeBattery(private val info: BatteryInfo) : BatteryProvider {
@@ -80,10 +84,16 @@ class UnlockJudgeUseCaseTest {
         private val permitted: Boolean = true,
         fgOnly: Boolean = false,
         private val point: GeoPoint? = null,
+        private val speedMpsValue: Float? = null,
     ) : LocationProvider {
         override val foregroundOnly: Boolean = fgOnly
         override fun isPermitted(): Boolean = permitted
         override fun lastKnown(): GeoPoint? = point
+        override fun speedMps(): Float? = speedMpsValue
+    }
+
+    private class FakeAmbientLight(private val lux: Float?) : com.muxiao.timart.domain.context.AmbientLightProvider {
+        override fun lux(): Float? = lux
     }
 
     private class FakeDependency(private val statuses: Map<String, DependencyStatus>) : DependencyChecker {
@@ -106,10 +116,14 @@ class UnlockJudgeUseCaseTest {
         private val powerSave: Boolean = false,
         private val silent: Boolean = false,
         private val headphone: Boolean = false,
+        private val airplane: Boolean = false,
+        private val music: Boolean = false,
     ) : com.muxiao.timart.domain.context.SystemModeProvider {
         override fun isPowerSave(): Boolean = powerSave
         override fun isSilentRinger(): Boolean = silent
         override fun isHeadphoneConnected(): Boolean = headphone
+        override fun isAirplaneModeOn(): Boolean = airplane
+        override fun isMusicPlaying(): Boolean = music
     }
 
     private class FakeMotion(private val kind: MotionKind?) :
@@ -135,8 +149,14 @@ class UnlockJudgeUseCaseTest {
         override fun lastOpenMillis(): Long? = lastOpen
     }
 
-    private class FakeMeta(private val total: Int) : com.muxiao.timart.domain.context.CapsuleMetaProvider {
+    private class FakeMeta(
+        private val total: Int = 0,
+        private val readIds: Set<String> = emptySet(),
+        private val viewCounts: Map<String, Int> = emptyMap(),
+    ) : com.muxiao.timart.domain.context.CapsuleMetaProvider {
         override fun capsuleCount(): Int = total
+        override fun isRead(capsuleId: String): Boolean = capsuleId in readIds
+        override fun viewCount(capsuleId: String): Int = viewCounts[capsuleId] ?: 0
     }
 
     private fun context(
@@ -160,9 +180,10 @@ class UnlockJudgeUseCaseTest {
         altitude: com.muxiao.timart.domain.context.AltitudeProvider = FakeAltitude(50.0),
         usage: com.muxiao.timart.domain.context.UsageStatsProvider = FakeUsage(5, 3, 1_000_000_000_000L),
         meta: com.muxiao.timart.domain.context.CapsuleMetaProvider = FakeMeta(4),
+        ambientLight: com.muxiao.timart.domain.context.AmbientLightProvider = FakeAmbientLight(null),
     ) = ConditionContext(
         time, battery, step, network, weather, location, dependency, wifi, stepHistory,
-        alarm, systemMode, motion, compass, altitude, usage, meta,
+        alarm, systemMode, motion, compass, altitude, usage, meta, ambientLight,
     )
 
     private fun capsule(
@@ -659,9 +680,152 @@ class UnlockJudgeUseCaseTest {
         val times = SunCalc.sunTimesUtcMillis(35.6812, 139.7671, LocalDate.of(2026, 6, 21))!!
         val (rise, set) = times
         assertTrue(set > rise)
-        assertTrue(set - rise < 86_400_000L / 2 + 3_600_000L) // 夏至昼长 < 15h（东京纬度）
+        assertTrue(set - rise < 86_400_000L / 2 + 3 * 3_600_000L) // 夏至昼长 < 15h（东京纬度）
         // 2026-01-01（北半球冬季昼短）昼长 < 夏至
         val winter = SunCalc.sunTimesUtcMillis(35.6812, 139.7671, LocalDate.of(2026, 1, 1))!!
         assertTrue(winter.second - winter.first < set - rise)
+    }
+
+    @Test
+    fun `天文 - 金色时刻高度角窗口`() {
+        val date = LocalDate.of(2026, 8, 12)
+        val (rise, set) = SunCalc.sunTimesUtcMillis(35.6812, 139.7671, date)!!
+        // 日出/日落前后数分钟：太阳已升起且高度角 ≤ 6° → 金色时刻
+        assertTrue(SunCalc.isGoldenHour(rise + 10 * 60_000L, 35.6812, 139.7671, date))
+        assertTrue(SunCalc.isGoldenHour(set - 10 * 60_000L, 35.6812, 139.7671, date))
+        // 中天附近高度角远超 6° → 非金色时刻
+        assertFalse(SunCalc.isGoldenHour((rise + set) / 2, 35.6812, 139.7671, date))
+        // 太阳未升（日出前 1 小时）→ 非金色时刻
+        assertFalse(SunCalc.isGoldenHour(rise - 3_600_000L, 35.6812, 139.7671, date))
+    }
+
+    // ================= 扩展条件第二批 =================
+
+    @Test
+    fun `扩展 - 步数区间两端`() {
+        val ctx = context(step = FakeStep(5000))
+        assertTrue(judgeOne(UnlockCondition.StepCount(3000, 8000), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.StepCount(5001, 8000), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.StepCount(1000, 4999), ctx).satisfied)
+        // 任一端可空（与 BatteryLevel 同构）
+        assertTrue(judgeOne(UnlockCondition.StepCount(null, 6000), ctx).satisfied)
+        assertTrue(judgeOne(UnlockCondition.StepCount(4000, null), ctx).satisfied)
+        // 无计步数据 → 专用原因
+        assertEquals(
+            JudgeReasons.STEP_UNAVAILABLE,
+            judgeOne(UnlockCondition.StepCount(null, 6000), context(step = FakeStep(null))).reason,
+        )
+    }
+
+    @Test
+    fun `扩展 - 飞行模式与音乐播放匹配`() {
+        val ctx = context(systemMode = FakeSystemMode(airplane = true, music = false))
+        assertTrue(judgeOne(UnlockCondition.AirplaneMode(true), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.AirplaneMode(false), ctx).satisfied)
+        assertTrue(judgeOne(UnlockCondition.MusicPlaying(false), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.MusicPlaying(true), ctx).satisfied)
+    }
+
+    @Test
+    fun `扩展 - 已读联动与凝视次数`() {
+        // 本胶囊 id = "cap-1"，meta 假实现：read-1 已读、cap-1 凝视 5 次
+        val ctx = context(meta = FakeMeta(4, readIds = setOf("read-1"), viewCounts = mapOf("cap-1" to 5)))
+        assertTrue(judgeOne(UnlockCondition.OtherCapsuleRead("read-1"), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.OtherCapsuleRead("fresh"), ctx).satisfied)
+        assertTrue(judgeOne(UnlockCondition.ViewCountAtLeast(5), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.ViewCountAtLeast(6), ctx).satisfied)
+    }
+
+    @Test
+    fun `扩展 - 流星雨极大期判定`() {
+        // 英仙座极大 8/12-13（±1 天窗口）：默认 today = 2026-08-12 → 满足
+        val ctx = context()
+        assertTrue(judgeOne(UnlockCondition.MeteorShower(setOf(MeteorShowerKind.PERSEIDS)), ctx).satisfied)
+        // 双子座极大 12/13-14 → 8 月不满足
+        assertFalse(judgeOne(UnlockCondition.MeteorShower(setOf(MeteorShowerKind.GEMINIDS)), ctx).satisfied)
+        // 多选任一命中即满足
+        assertTrue(
+            judgeOne(
+                UnlockCondition.MeteorShower(setOf(MeteorShowerKind.GEMINIDS, MeteorShowerKind.PERSEIDS)),
+                ctx,
+            ).satisfied,
+        )
+    }
+
+    @Test
+    fun `扩展 - 农历日期随当日农历判定`() {
+        val ctx = context()
+        val lunarToday = LunarCalendar.solarToLunar(ctx.time.today())!!
+        assertTrue(judgeOne(UnlockCondition.LunarDate(lunarToday.month, lunarToday.day), ctx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.LunarDate(lunarToday.month, lunarToday.day + 1), ctx).satisfied)
+    }
+
+    @Test
+    fun `扩展 - 金色时刻随定位与权限判定`() {
+        // 默认假时刻（nowMillis 距中天远）在东京为白天高角度 → 非金色时刻
+        assertFalse(judgeOne(UnlockCondition.GoldenHour, context()).satisfied)
+        // 权限拒绝 → 原因文案；Worker 后台 → skipped（与 SunPhase 同通道）
+        assertEquals(
+            JudgeReasons.GPS_NO_PERMISSION,
+            judgeOne(UnlockCondition.GoldenHour, context(location = FakeLocation(permitted = false, point = GeoPoint(35.6812, 139.7671)))).reason,
+        )
+        val bg = judgeOne(
+            UnlockCondition.GoldenHour,
+            context(location = FakeLocation(fgOnly = true, point = GeoPoint(35.6812, 139.7671))),
+        )
+        assertTrue(bg.skipped)
+    }
+
+    // ================= 扩展条件第三批 =================
+
+    @Test
+    fun `扩展 - 黑暗中随环境光判定`() {
+        assertTrue(judgeOne(UnlockCondition.AmbientLight(10), context(ambientLight = FakeAmbientLight(3f))).satisfied)
+        // 阈值边界：≤ 阈值即满足
+        assertTrue(judgeOne(UnlockCondition.AmbientLight(10), context(ambientLight = FakeAmbientLight(10f))).satisfied)
+        assertFalse(judgeOne(UnlockCondition.AmbientLight(10), context(ambientLight = FakeAmbientLight(300f))).satisfied)
+        // 无光感 → 专用原因
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).ambientLightUnavailable,
+            judgeOne(UnlockCondition.AmbientLight(10), context()).reason,
+        )
+    }
+
+    @Test
+    fun `扩展 - 时区变更随当前时区判定`() {
+        assertTrue(judgeOne(UnlockCondition.TimezoneChange("Asia/Shanghai"), context(time = FakeTime(today, zone = "Europe/Paris"))).satisfied)
+        assertFalse(judgeOne(UnlockCondition.TimezoneChange("Asia/Shanghai"), context(time = FakeTime(today, zone = "Asia/Shanghai"))).satisfied)
+    }
+
+    @Test
+    fun `扩展 - 移动中速度通道与GPS同语义`() {
+        val moving = UnlockCondition.MovingAboveSpeed(20)
+        // 前台 + 速度达标（36 km/h）→ 满足
+        val ok = judgeOne(moving, context(location = FakeLocation(point = GeoPoint(35.6812, 139.7671), speedMpsValue = 10f)))
+        assertTrue(ok.satisfied)
+        // 速度不足（18 km/h）→ 不满足
+        assertFalse(judgeOne(moving, context(location = FakeLocation(point = GeoPoint(35.6812, 139.7671), speedMpsValue = 5f))).satisfied)
+        // 无定位 → gpsNoFix
+        assertEquals(JudgeReasons.GPS_NO_FIX, judgeOne(moving, context(location = FakeLocation())).reason)
+        // 权限拒绝 → gpsNoPermission
+        assertEquals(
+            JudgeReasons.GPS_NO_PERMISSION,
+            judgeOne(moving, context(location = FakeLocation(permitted = false, speedMpsValue = 10f))).reason,
+        )
+        // 后台巡检 → skipped
+        val bg = judgeOne(moving, context(location = FakeLocation(fgOnly = true, speedMpsValue = 10f)))
+        assertTrue(bg.skipped)
+    }
+
+    @Test
+    fun `扩展 - 长按生物识别拍照按DONE应答`() {
+        val ctx = context()
+        val hold = UnlockCondition.HoldPress("c5", 5)
+        assertFalse(judgeOne(hold, ctx).satisfied)
+        assertTrue(judgeOne(hold, ctx, answers = mapOf("c5" to "DONE")).satisfied)
+        val bio = UnlockCondition.BiometricUnlock("c6")
+        assertTrue(judgeOne(bio, ctx, answers = mapOf("c6" to "DONE")).satisfied)
+        val photo = UnlockCondition.PhotoKeepsake("c7")
+        assertTrue(judgeOne(photo, ctx, answers = mapOf("c7" to "DONE")).satisfied)
     }
 }

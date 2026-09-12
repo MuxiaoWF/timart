@@ -193,7 +193,7 @@ internal fun ConditionEditSheet(
                 activeForm = type
             },
             onDismiss = { showTypeSheet = false },
-            excluded = setOf(ConditionType.OTHER_UNLOCKED, ConditionType.OTHER_DESTROYED),
+            excluded = setOf(ConditionType.OTHER_UNLOCKED, ConditionType.OTHER_DESTROYED, ConditionType.OTHER_READ),
         )
     }
     activeForm?.let { type ->

@@ -127,6 +127,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.biometric)
     implementation(libs.bcprov.jdk18on)
 
     testImplementation(libs.junit)

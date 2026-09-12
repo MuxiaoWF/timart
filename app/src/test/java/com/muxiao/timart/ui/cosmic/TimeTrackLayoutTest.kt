@@ -145,9 +145,18 @@ class TimeTrackLayoutTest {
     fun fitZoomShrinksForMoreCapsulesAndStaysWithinBounds() {
         // 单轨无需收拢（0.98/0.30 > 1 → 钳到 1）
         assertEquals(1f, TimeTrackLayout.fitZoom(6), 0.0001f)
-        // 胶囊越多 fitZoom 越小（外轨半径越大，需要更小的 zoom 才能全量可见）
+        // 胶囊越多 fitZoom 越小：密度维度（数量每 ×4 → zoom ×0.71）+ 半径适配取更严者
         assertTrue(TimeTrackLayout.fitZoom(16) < TimeTrackLayout.fitZoom(6))
         assertTrue(TimeTrackLayout.fitZoom(60) < TimeTrackLayout.fitZoom(16))
+        // 密度公式锚点：24 = 6×4 → zoom = 4^-0.25 = 1/√2
+        assertEquals(0.7071f, TimeTrackLayout.fitZoom(24), 0.001f)
+        // 全程单调不增（密度单调降、半径适配随轨数单调降，取 min 仍单调）
+        var prev = TimeTrackLayout.fitZoom(6)
+        for (count in 7..100 step 7) {
+            val zoom = TimeTrackLayout.fitZoom(count)
+            assertTrue("count=$count 应单调不增", zoom <= prev + 0.0001f)
+            prev = zoom
+        }
         // 永不低于缩放下限、不高于 1
         assertTrue(TimeTrackLayout.fitZoom(10000) >= TimeTrackLayout.MIN_ZOOM)
         assertTrue(TimeTrackLayout.fitZoom(10000) <= 1f)

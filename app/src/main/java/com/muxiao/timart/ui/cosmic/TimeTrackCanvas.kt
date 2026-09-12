@@ -216,7 +216,7 @@ fun TimeTrackCanvas(
                     index = i,
                     x = dx + p.x + pan.x + shift.x,
                     y = dy + p.y + pan.y + shift.y,
-                    radius = orbitDotRadius(p.orbitRadius, density),
+                    radius = orbitDotRadius(p.orbitRadius, zoom, density),
                     colorArgb = dustWhitened(
                         when {
                             p.id in unsealedIds -> ParticleEngine.TIME_GOLD
@@ -246,7 +246,7 @@ fun TimeTrackCanvas(
                 com.muxiao.timart.ui.components.particle.ParticlePreset.PENDING,
                 dx + placed.x + pan.x + shift.x,
                 dy + placed.y + pan.y + shift.y,
-                orbitDotRadius(placed.orbitRadius, density),
+                orbitDotRadius(placed.orbitRadius, zoom, density),
                 ParticleEngine.TIME_GOLD,
             )
         }
@@ -264,7 +264,7 @@ fun TimeTrackCanvas(
             val dx = p.x - c.x
             val dyy = p.y - dy
             val d = sqrt(dx * dx + dyy * dyy)
-            val touch = orbitDotRadius(c.orbitRadius, density) + with(density) { 16.dp.toPx() }
+            val touch = orbitDotRadius(c.orbitRadius, zoom, density) + with(density) { 16.dp.toPx() }
             if (d <= touch && (best == null || d < best.dist)) {
                 best = PlacedHit(c.id, d, c.x, dy)
             }
@@ -386,7 +386,7 @@ fun TimeTrackCanvas(
                 // 已读金球余温降档：金相保留（身份不变），亮度/光晕/环带/尘埃整体弱化——
                 // 金球三档：UNSEAL 待点击（最亮）> 未读金球（满亮度，引导开启）> 已读（余温，不再催点）
                 val isReadGold = !isUnsealed && state == CapsuleState.UNLOCKED && p.id in readIds
-                val r = orbitDotRadius(p.orbitRadius, density)
+                val r = orbitDotRadius(p.orbitRadius, zoom, density)
                 val coreColor = when {
                     isUnsealed -> TimeGold
                     state == CapsuleState.UNLOCKED -> if (isReadGold) ReadGoldDraw else TimeGold
@@ -519,9 +519,10 @@ private fun orbBobY(id: String, dragId: String?, nowSec: Double, density: androi
 
 private data class PlacedHit(val id: String, val dist: Float, val cx: Float, val cy: Float)
 
-/** 球半径随轨道微缩（外圈略小，视觉聚拢） */
-private fun orbitDotRadius(orbitRadius: Float, density: androidx.compose.ui.unit.Density): Float =
-    with(density) { (18 - (orbitRadius / 220f).toInt().coerceIn(0, 6)).dp.toPx() }
+/** 球半径随轨道微缩（外圈略小，视觉聚拢），并随 zoom（≤1）等比联动：
+ *  自动收拢/捏合缩小时轨道与球整体等比缩放，圈距压缩不致球体压叠；zoom ≥1 保持原大小 */
+private fun orbitDotRadius(orbitRadius: Float, zoom: Float, density: androidx.compose.ui.unit.Density): Float =
+    with(density) { ((18 - (orbitRadius / 220f).toInt().coerceIn(0, 6)) * minOf(zoom, 1f)).dp.toPx() }
 
 /** PENDING 球 lerp 色（LockedSlate → TimeGold 定值近似，精确进度由详情页承担） */
 private fun pendingColor(id: String): androidx.compose.ui.graphics.Color {

@@ -3,7 +3,7 @@ package com.muxiao.timart
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,7 +33,9 @@ import kotlinx.coroutines.withContext
  * 判定结果经 Room Flow 自然刷新 UI，Activity 不持有判定状态。
  * T14：通知权限引导（33+，说明先于系统弹窗，仅引导一次，拒绝不影响判定）。
  */
-class MainActivity : ComponentActivity() {
+// BiometricPrompt（androidx.biometric）要求宿主为 FragmentActivity；
+// FragmentActivity 继承 ComponentActivity，Compose 承载方式不变
+class MainActivity : FragmentActivity() {
 
     /** 前台判定作用域（独立于 UI 重组，ON_DESTROY 取消） */
     private val judgeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

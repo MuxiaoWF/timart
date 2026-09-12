@@ -44,7 +44,7 @@ import java.util.UUID
 
 /**
  * 使用统计 + 现场挑战条件表单（架构 §2.15 增补）：
- * 打开次数 / 连续打开 / 好久不见 / 胶囊数量 / 联动解锁销毁 /
+ * 打开次数 / 连续打开 / 好久不见 / 胶囊数量 / 凝视次数 / 联动解锁销毁已读 / 长按 / 生物识别 / 拍照留念 /
  * 回答问题 / 谜题 / 摇一摇 / 翻面静置 / NFC。
  */
 
@@ -94,7 +94,25 @@ fun CapsuleCountForm(onConfirm: (UnlockCondition.CapsuleCountAtLeast) -> Unit) {
     }
 }
 
-/** 「某颗已解锁 / 已销毁」表单：选择一枚胶囊 + 选择期望状态 */
+/** 凝视次数：打开这颗胶囊详情页（含锁定态）累计 ≥ N 次 */
+@Composable
+fun ViewCountForm(onConfirm: (UnlockCondition.ViewCountAtLeast) -> Unit) {
+    val L = LocalStrings.current
+    var count by remember { mutableIntStateOf(3) }
+    val condition = UnlockCondition.ViewCountAtLeast(count)
+
+    ExtendFormScaffold(title = L.condViewCount, valueCondition = condition, onConfirm = { onConfirm(condition) }) {
+        IntSlider(value = count, range = 2f..50f, steps = 47) { count = it }
+        Text(
+            text = L.viewCountNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+/** 「某颗已解锁 / 已销毁 / 已开启阅读」表单：选择一枚胶囊 + 选择期望状态 */
 @Composable
 fun OtherCapsuleStateForm(
     vm: CreateViewModel,
@@ -104,35 +122,55 @@ fun OtherCapsuleStateForm(
     var capsules by remember { mutableStateOf<List<Capsule>>(emptyList()) }
     var pickedId by remember { mutableStateOf<String?>(null) }
     var wantDestroyed by remember { mutableStateOf(false) }
+    var wantRead by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         capsules = vm.allCapsules()
     }
 
     val condition: UnlockCondition? = pickedId?.let {
-        if (wantDestroyed) {
-            UnlockCondition.OtherCapsuleDestroyed(it)
-        } else {
-            UnlockCondition.OtherCapsuleUnlocked(it)
+        when {
+            wantDestroyed -> UnlockCondition.OtherCapsuleDestroyed(it)
+            wantRead -> UnlockCondition.OtherCapsuleRead(it)
+            else -> UnlockCondition.OtherCapsuleUnlocked(it)
         }
     }
 
     ExtendFormScaffold(
-        title = if (wantDestroyed) L.condOtherDestroyed else L.condOtherUnlocked,
+        title = when {
+            wantDestroyed -> L.condOtherDestroyed
+            wantRead -> L.condOtherRead
+            else -> L.condOtherUnlocked
+        },
         valueCondition = condition,
         enabled = pickedId != null,
         onConfirm = { condition?.let(onConfirm) },
     ) {
         FilterChip(
-            selected = !wantDestroyed,
-            onClick = { wantDestroyed = false },
+            selected = !wantDestroyed && !wantRead,
+            onClick = {
+                wantDestroyed = false
+                wantRead = false
+            },
             label = { Text(text = L.condOtherUnlocked, style = TimartType.caption) },
             modifier = Modifier.padding(top = 8.dp),
         )
         FilterChip(
             selected = wantDestroyed,
-            onClick = { wantDestroyed = true },
+            onClick = {
+                wantDestroyed = true
+                wantRead = false
+            },
             label = { Text(text = L.condOtherDestroyed, style = TimartType.caption) },
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        FilterChip(
+            selected = wantRead,
+            onClick = {
+                wantRead = true
+                wantDestroyed = false
+            },
+            label = { Text(text = L.condOtherRead, style = TimartType.caption) },
             modifier = Modifier.padding(top = 4.dp),
         )
         Column(modifier = Modifier.padding(top = 10.dp)) {
@@ -150,6 +188,57 @@ fun OtherCapsuleStateForm(
                 )
             }
         }
+    }
+}
+
+// ================= 现场挑战第三批：长按 / 生物识别 / 拍照留念 =================
+
+@Composable
+fun HoldPressForm(onConfirm: (UnlockCondition.HoldPress) -> Unit) {
+    val L = LocalStrings.current
+    var seconds by remember { mutableIntStateOf(5) }
+    val condition = UnlockCondition.HoldPress("preview", seconds)
+
+    ExtendFormScaffold(title = L.condHoldPress, valueCondition = condition, onConfirm = {
+        onConfirm(UnlockCondition.HoldPress(UUID.randomUUID().toString(), seconds))
+    }) {
+        IntSlider(value = seconds, range = 3f..30f, steps = 26) { seconds = it }
+    }
+}
+
+@Composable
+fun BiometricForm(onConfirm: (UnlockCondition.BiometricUnlock) -> Unit) {
+    val L = LocalStrings.current
+    val challengeId = remember { UUID.randomUUID().toString() }
+    val condition = UnlockCondition.BiometricUnlock(challengeId)
+
+    ExtendFormScaffold(title = L.condBiometric, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        Text(
+            text = L.biometricFormHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+fun PhotoKeepsakeForm(onConfirm: (UnlockCondition.PhotoKeepsake) -> Unit) {
+    val L = LocalStrings.current
+    val challengeId = remember { UUID.randomUUID().toString() }
+    val condition = UnlockCondition.PhotoKeepsake(challengeId)
+
+    ExtendFormScaffold(title = L.condPhotoKeepsake, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        Text(
+            text = L.photoFormHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 

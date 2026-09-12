@@ -137,13 +137,27 @@ class AppContainer(context: Context) {
     /** 运动状态（无 GMS 启发式：计步检测 → 步行/静止） */
     val motionActivityReader: MotionActivityReader by lazy { MotionActivityReader(appContext) }
 
+    /** 环境光（AmbientLight 条件判定通道；无光感设备返回 null） */
+    val lightSensorReader: com.muxiao.timart.utils.sensor.LightSensorReader by lazy {
+        com.muxiao.timart.utils.sensor.LightSensorReader(appContext)
+    }
+
     /** 应用内使用统计（打开次数 / 连击 / 上次打开；MainActivity ON_RESUME 记录会话） */
     val usageStatsTracker: UsageStatsTracker by lazy { UsageStatsTracker(appContext) }
 
-    /** 胶囊库元信息（总数） */
+    /** 胶囊库元信息（总数 / 已读标记 / 凝视计数，均为 meta 表 key-value） */
     val capsuleMetaProvider: CapsuleMetaProvider by lazy {
         object : CapsuleMetaProvider {
             override fun capsuleCount(): Int = runCatching { allCapsulesSnapshot().size }.getOrDefault(0)
+
+            // 读失败按 false/0 处理（fail-closed）：条件按不满足，不抛异常打断判定链
+            override fun isRead(capsuleId: String): Boolean = runCatching {
+                metaDao.getSync("capsule.read.$capsuleId") == "true"
+            }.getOrDefault(false)
+
+            override fun viewCount(capsuleId: String): Int = runCatching {
+                metaDao.getSync("capsule.views.$capsuleId")?.toIntOrNull() ?: 0
+            }.getOrDefault(0)
         }
     }
 
@@ -249,5 +263,6 @@ class AppContainer(context: Context) {
         altitude = compassAltitudeReader,
         usage = usageStatsTracker,
         meta = capsuleMetaProvider,
+        ambientLight = lightSensorReader,
     )
 }

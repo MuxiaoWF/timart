@@ -34,6 +34,9 @@ interface TimeProvider {
     fun nowMillis(): Long
     fun today(): LocalDate
     fun nowHour(): Int
+
+    /** 当前系统时区 ID（如 Asia/Shanghai；时区变更条件判定通道） */
+    fun zoneId(): String
 }
 
 /** 电池状态提供者 */
@@ -95,6 +98,14 @@ interface LocationProvider {
     val foregroundOnly: Boolean
     fun isPermitted(): Boolean
     fun lastKnown(): GeoPoint?
+
+    /** 最近一次定位的速度（米/秒）；null = 无定位或该定位无速度分量（移动中条件通道） */
+    fun speedMps(): Float?
+}
+
+/** 环境光提供者（照度 lux）；null = 设备无光线传感器 */
+interface AmbientLightProvider {
+    fun lux(): Float?
 }
 
 /** 依赖胶囊状态查询者 */
@@ -107,7 +118,7 @@ interface AlarmProvider {
     fun nextAlarmMillis(): Long?
 }
 
-/** 系统模式提供者：省电 / 静音（含振动）/ 耳机连接 */
+/** 系统模式提供者：省电 / 静音（含振动）/ 耳机 / 飞行模式 / 媒体播放 */
 interface SystemModeProvider {
     fun isPowerSave(): Boolean
 
@@ -116,6 +127,12 @@ interface SystemModeProvider {
 
     /** 有线或蓝牙音频输出已连接 */
     fun isHeadphoneConnected(): Boolean
+
+    /** 系统飞行模式已开启（读系统设置，零权限） */
+    fun isAirplaneModeOn(): Boolean
+
+    /** 有音乐等媒体音频正在播放（快照语义：判定瞬间活跃即算） */
+    fun isMusicPlaying(): Boolean
 }
 
 /** 当前运动状态提供者；null = 无数据 / 无权限 / 设备不支持 */
@@ -148,6 +165,12 @@ interface UsageStatsProvider {
 /** 胶囊库元信息提供者 */
 interface CapsuleMetaProvider {
     fun capsuleCount(): Int
+
+    /** 指定胶囊是否已开启阅读过（meta `capsule.read.<id>`；写入点 DetailViewModel.markAsRead） */
+    fun isRead(capsuleId: String): Boolean
+
+    /** 指定胶囊详情页累计被打开次数（meta `capsule.views.<id>`；无记录为 0，写入点 DetailViewModel） */
+    fun viewCount(capsuleId: String): Int
 }
 
 /**
@@ -170,4 +193,5 @@ data class ConditionContext(
     val altitude: AltitudeProvider,
     val usage: UsageStatsProvider,
     val meta: CapsuleMetaProvider,
+    val ambientLight: AmbientLightProvider,
 )

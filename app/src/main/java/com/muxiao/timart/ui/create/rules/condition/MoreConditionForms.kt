@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.unlock.ConditionText
+import com.muxiao.timart.domain.model.unlock.LunarCalendar
+import com.muxiao.timart.domain.model.unlock.MeteorShowerKind
 import com.muxiao.timart.domain.model.unlock.MoonPhaseKind
 import com.muxiao.timart.domain.model.unlock.MotionKind
 import com.muxiao.timart.domain.model.unlock.SunPhaseKind
@@ -36,7 +38,8 @@ import java.time.ZoneOffset
 
 /**
  * 扩展条件表单（架构 §2.15 增补）：精确时刻 / 满 N 分钟 / 每月 N 号 / 每年纪念日 /
- * 日出日落 / 天气指标 / 月相 / 闹钟之前 / 省电 / 静音 / 耳机 / 运动状态 / 指南针 / 海拔。
+ * 日出日落 / 流星雨 / 金色时刻 / 黑暗中 / 时区 / 移动中 / 农历节日 / 天气指标 / 月相 / 闹钟之前 / 省电 / 静音 /
+ * 耳机 / 飞行模式 / 音乐 / 运动状态 / 指南针 / 海拔。
  * 表单只产出条件对象；动态值文案统一走 ConditionText（三语同源），不重复维护。
  */
 
@@ -323,7 +326,168 @@ fun MoonPhaseForm(onConfirm: (UnlockCondition.MoonPhase) -> Unit) {
     }
 }
 
-// ================= 下一个闹钟之前 / 省电 / 静音 / 耳机 =================
+// ================= 流星雨 / 金色时刻 / 农历日期 =================
+
+@Composable
+fun MeteorShowerForm(onConfirm: (UnlockCondition.MeteorShower) -> Unit) {
+    val L = LocalStrings.current
+    var selected by remember { mutableStateOf(setOf(MeteorShowerKind.PERSEIDS)) }
+
+    ExtendFormScaffold(
+        title = L.condMeteorShower,
+        valueCondition = UnlockCondition.MeteorShower(selected),
+        enabled = selected.isNotEmpty(),
+        onConfirm = { onConfirm(UnlockCondition.MeteorShower(selected)) },
+    ) {
+        MeteorShowerKind.entries.chunked(2).forEach { rowKinds ->
+            Row(modifier = Modifier
+                .padding(top = 10.dp)
+                .fillMaxWidth()) {
+                rowKinds.forEach { kind ->
+                    SelectPill(
+                        label = ConditionText.meteorName(kind, RuntimeSettings.resolvedLang),
+                        selected = kind in selected,
+                        onClick = {
+                            selected = if (kind in selected) selected - kind else selected + kind
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp),
+                    )
+                }
+                repeat(2 - rowKinds.size) { androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
+        Text(
+            text = L.meteorWindowNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+fun GoldenHourForm(onConfirm: (UnlockCondition.GoldenHour) -> Unit) {
+    val L = LocalStrings.current
+    ExtendFormScaffold(
+        title = L.condGoldenHour,
+        valueCondition = UnlockCondition.GoldenHour,
+        onConfirm = { onConfirm(UnlockCondition.GoldenHour) },
+    ) {}
+}
+
+@Composable
+fun LunarDateForm(onConfirm: (UnlockCondition.LunarDate) -> Unit) {
+    val L = LocalStrings.current
+    var month by remember { mutableIntStateOf(1) }
+    var day by remember { mutableIntStateOf(1) }
+    val condition = UnlockCondition.LunarDate(month, day)
+
+    ExtendFormScaffold(title = L.condLunarDate, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        // 节日预设：一键选中对应农历月日
+        ConditionText.lunarFestivals(RuntimeSettings.resolvedLang).chunked(2).forEach { rowFest ->
+            Row(modifier = Modifier
+                .padding(top = 10.dp)
+                .fillMaxWidth()) {
+                rowFest.forEach { (name, festMonth, festDay) ->
+                    SelectPill(
+                        label = name,
+                        selected = month == festMonth && day == festDay,
+                        onClick = {
+                            month = festMonth
+                            day = festDay
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp),
+                    )
+                }
+                repeat(2 - rowFest.size) { androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
+        IntSlider(value = month, range = 1f..12f, steps = 10) { month = it }
+        IntSlider(value = day, range = 1f..30f, steps = 28) { day = it }
+        val todayLunar = remember { LunarCalendar.solarToLunar(LocalDate.now()) }
+        if (todayLunar != null) {
+            Text(
+                text = L.lunarTodayFmt.format(todayLunar.month, todayLunar.day),
+                style = TimartType.caption,
+                color = InkSecondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        Text(
+            text = L.lunarLeapNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+// ================= 黑暗中 / 另一个时区 / 移动中 =================
+
+@Composable
+fun AmbientLightForm(onConfirm: (UnlockCondition.AmbientLight) -> Unit) {
+    val L = LocalStrings.current
+    var lux by remember { mutableIntStateOf(10) }
+    val condition = UnlockCondition.AmbientLight(lux)
+
+    ExtendFormScaffold(title = L.condAmbientLight, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        IntSlider(value = lux, range = 1f..50f, steps = 48) { lux = it }
+        Text(
+            text = L.ambientLightNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+fun TimezoneAwayForm(onConfirm: (UnlockCondition.TimezoneChange) -> Unit) {
+    val L = LocalStrings.current
+    // 封存时刻的时区即「家乡时区」：判定时系统时区与其不同即满足
+    val homeZoneId = remember { java.time.ZoneId.systemDefault().id }
+    val condition = UnlockCondition.TimezoneChange(homeZoneId)
+
+    ExtendFormScaffold(title = L.condTimezoneAway, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        Text(
+            text = homeZoneId,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+fun MovingSpeedForm(onConfirm: (UnlockCondition.MovingAboveSpeed) -> Unit) {
+    val L = LocalStrings.current
+    var speedKmh by remember { mutableIntStateOf(15) }
+    val condition = UnlockCondition.MovingAboveSpeed(speedKmh)
+
+    ExtendFormScaffold(title = L.condMoving, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        IntSlider(value = speedKmh, range = 3f..120f, steps = 116) { speedKmh = it }
+        Text(
+            text = L.movingNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+// ================= 下一个闹钟之前 / 省电 / 静音 / 耳机 / 飞行模式 / 音乐 =================
 
 @Composable
 fun BeforeNextAlarmForm(onConfirm: (UnlockCondition.BeforeNextAlarm) -> Unit) {
@@ -343,9 +507,9 @@ fun PowerSaveModeForm(onConfirm: (UnlockCondition.PowerSaveMode) -> Unit) {
 
     ExtendFormScaffold(title = L.condPowerSave, valueCondition = condition, onConfirm = { onConfirm(condition) }) {
         Row(modifier = Modifier.padding(top = 12.dp)) {
-            SelectPill(label = L.condStateOn, selected = active, onClick = { active = true }, modifier = Modifier.weight(1f))
+            SelectPill(label = L.pillOn, selected = active, onClick = { active = true }, modifier = Modifier.weight(1f))
             SelectPill(
-                label = L.condStateOff,
+                label = L.pillOff,
                 selected = !active,
                 onClick = { active = false },
                 modifier = Modifier
@@ -364,9 +528,9 @@ fun SilentModeForm(onConfirm: (UnlockCondition.SilentMode) -> Unit) {
 
     ExtendFormScaffold(title = L.condSilent, valueCondition = condition, onConfirm = { onConfirm(condition) }) {
         Row(modifier = Modifier.padding(top = 12.dp)) {
-            SelectPill(label = L.condStateOn, selected = silent, onClick = { silent = true }, modifier = Modifier.weight(1f))
+            SelectPill(label = L.pillMuted, selected = silent, onClick = { silent = true }, modifier = Modifier.weight(1f))
             SelectPill(
-                label = L.condStateOff,
+                label = L.pillNotMuted,
                 selected = !silent,
                 onClick = { silent = false },
                 modifier = Modifier
@@ -385,11 +549,53 @@ fun HeadphoneConnectedForm(onConfirm: (UnlockCondition.HeadphoneConnected) -> Un
 
     ExtendFormScaffold(title = L.condHeadphone, valueCondition = condition, onConfirm = { onConfirm(condition) }) {
         Row(modifier = Modifier.padding(top = 12.dp)) {
-            SelectPill(label = L.condStateOn, selected = connected, onClick = { connected = true }, modifier = Modifier.weight(1f))
+            SelectPill(label = L.pillConnected, selected = connected, onClick = { connected = true }, modifier = Modifier.weight(1f))
             SelectPill(
-                label = L.condStateOff,
+                label = L.pillDisconnected,
                 selected = !connected,
                 onClick = { connected = false },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun AirplaneModeForm(onConfirm: (UnlockCondition.AirplaneMode) -> Unit) {
+    val L = LocalStrings.current
+    var enabled by remember { mutableStateOf(true) }
+    val condition = UnlockCondition.AirplaneMode(enabled)
+
+    ExtendFormScaffold(title = L.condAirplane, valueCondition = condition, onConfirm = { onConfirm(condition) }) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            SelectPill(label = L.pillOn, selected = enabled, onClick = { enabled = true }, modifier = Modifier.weight(1f))
+            SelectPill(
+                label = L.pillOff,
+                selected = !enabled,
+                onClick = { enabled = false },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun MusicPlayingForm(onConfirm: (UnlockCondition.MusicPlaying) -> Unit) {
+    val L = LocalStrings.current
+    var playing by remember { mutableStateOf(true) }
+    val condition = UnlockCondition.MusicPlaying(playing)
+
+    ExtendFormScaffold(title = L.condMusic, valueCondition = condition, onConfirm = { onConfirm(condition) }) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            SelectPill(label = L.pillPlaying, selected = playing, onClick = { playing = true }, modifier = Modifier.weight(1f))
+            SelectPill(
+                label = L.pillNotPlaying,
+                selected = !playing,
+                onClick = { playing = false },
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 8.dp),

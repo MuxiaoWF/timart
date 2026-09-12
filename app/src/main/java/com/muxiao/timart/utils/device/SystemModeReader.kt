@@ -6,15 +6,17 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.PowerManager
+import android.provider.Settings
 import com.muxiao.timart.domain.context.AlarmProvider
 import com.muxiao.timart.domain.context.SystemModeProvider
 
 /**
- * 系统模式快照读取（闹钟/省电/静音/耳机）：全部同步零回调，
+ * 系统模式快照读取（闹钟/省电/静音/耳机/飞行模式/媒体播放）：全部同步零回调，
  * 每次判定即时读取，无缓存陈旧问题。任何服务缺失按安全默认值返回。
  */
 class SystemModeReader(context: Context) : AlarmProvider, SystemModeProvider {
 
+    private val appContext = context.applicationContext
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -34,6 +36,13 @@ class SystemModeReader(context: Context) : AlarmProvider, SystemModeProvider {
             device.type in HEADPHONE_TYPES
         }
     }
+
+    override fun isAirplaneModeOn(): Boolean = runCatching {
+        Settings.Global.getInt(appContext.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+    }.getOrDefault(false)
+
+    @Suppress("DEPRECATION") // isMusicActive 在 API 26 起被标记弃用但功能正常，且为唯一零权限同步查询通道
+    override fun isMusicPlaying(): Boolean = audioManager?.isMusicActive ?: false
 
     private companion object {
         // TYPE_BLE_HEADSET 为 API 31 新增字段（编译期常量内联，运行时本就安全）；

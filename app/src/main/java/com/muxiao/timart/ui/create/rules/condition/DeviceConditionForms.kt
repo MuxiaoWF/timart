@@ -191,6 +191,8 @@ fun StepCountForm(
     val L = LocalStrings.current
     val context = LocalContext.current
     var steps by remember { mutableIntStateOf(5000) }
+    var useMax by remember { mutableStateOf(false) }
+    var maxSteps by remember { mutableIntStateOf(10000) }
 
     // 活动记录权限引导（T14）：说明先于系统弹窗。
     // 此前全工程从未申请过 ACTIVITY_RECOGNITION（manifest 已声明），导致 API 29+
@@ -236,6 +238,7 @@ fun StepCountForm(
             color = InkDisabled,
             modifier = Modifier.padding(top = 4.dp),
         )
+        // 下限（必选）+ 上限（可选开关，"步数区间"语义与 BatteryLevel 同构）
         Text(
             text = L.dfStepValueFmt.format(steps),
             style = TimartType.body.copy(color = TimeGold),
@@ -254,8 +257,41 @@ fun StepCountForm(
             ),
             modifier = Modifier.fillMaxWidth(),
         )
-        FormConfirmButton(enabled = true, label = L.confirm) {
-            onConfirm(UnlockCondition.StepCount(minTodayStep = steps))
+        Row(modifier = Modifier.padding(top = 8.dp)) {
+            SelectPill(
+                label = L.condAtMost,
+                selected = useMax,
+                onClick = { useMax = !useMax },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (useMax) {
+            Text(
+                text = L.dfStepMaxValueFmt.format(maxSteps),
+                style = TimartType.body.copy(color = TimeGold),
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .align(Alignment.CenterHorizontally),
+            )
+            Slider(
+                value = maxSteps.toFloat(),
+                onValueChange = { maxSteps = (it / 500).toInt() * 500 },
+                valueRange = 1000f..30000f,
+                colors = SliderDefaults.colors(
+                    thumbColor = TimeGold,
+                    activeTrackColor = TimeGold,
+                    inactiveTrackColor = com.muxiao.timart.ui.theme.SurfaceRaise,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        FormConfirmButton(enabled = !useMax || maxSteps > steps, label = L.confirm) {
+            onConfirm(
+                UnlockCondition.StepCount(
+                    minTodayStep = steps,
+                    maxTodayStep = if (useMax) maxSteps else null,
+                ),
+            )
         }
     }
 }

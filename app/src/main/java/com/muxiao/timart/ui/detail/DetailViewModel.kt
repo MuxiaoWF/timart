@@ -138,6 +138,15 @@ class DetailViewModel(
             }.getOrDefault(true)
             _state.update { it.copy(regretAvailable = !used) }
         }
+        // 凝视计数：每次进入详情页（含锁定态）计一次（meta `capsule.views.<id>`，
+        // 与 read/condEdit 同属跨 VM meta 契约，判定侧 AppContainer.capsuleMetaProvider.viewCount）
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val dao = container.database.metaDao()
+                val current = dao.get(viewCountKey())?.toIntOrNull() ?: 0
+                dao.put(com.muxiao.timart.data.local.db.entity.MetaEntity(viewCountKey(), (current + 1).toString()))
+            }
+        }
     }
 
     // ================= 胶囊状态回流 =================
@@ -202,6 +211,9 @@ class DetailViewModel(
     }
 
     private fun readMarkKey() = "capsule.read.$capsuleId"
+
+    /** 凝视计数键（跨 VM meta 契约：写入点本类 init，读取点 AppContainer.capsuleMetaProvider.viewCount） */
+    private fun viewCountKey() = "capsule.views.$capsuleId"
 
     /** 归尘时间：领域模型不含销毁时间戳，从尘迹档案记录一次性读取 */
     private fun loadDestroyedAt() {

@@ -1,6 +1,8 @@
 package com.muxiao.timart.ui.cosmic
 
 import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -32,6 +34,12 @@ object TimeTrackLayout {
     /** 最外轨允许占 baseRadius 的最大比例（留 2% 边距防裁边） */
     private const val OUTER_FIT_RATIO = 0.98f
 
+    /** 密度基准数量：单轨满员（6 颗）及更少时不因密度收拢 */
+    private const val DENSITY_BASE_COUNT = 6
+
+    /** 密度幂次：数量每 ×4，自动 zoom ×0.71——温和的「越多越小」（16 颗 ≈0.78，约 47 颗起触 [MIN_ZOOM] 下限） */
+    private const val DENSITY_EXPONENT = 0.25f
+
     /**
      * 容量推算：count 颗胶囊所需的轨道数（第 n 轨容量 = 6 + 3n，与 [layout] 分配规则一致）。
      */
@@ -47,13 +55,16 @@ object TimeTrackLayout {
     }
 
     /**
-     * 自动缩放兜底：让 count 颗胶囊的最外轨完整落在画布内所需的最大 zoom。
+     * 自动缩放兜底：让 count 颗胶囊的最外轨完整落在画布内所需的最大 zoom；
+     * 并叠加密度维度——数量增多时星图整体温和缩小（轨道+球联动等比缩放，
+     * 球侧见 TimeTrackCanvas.orbitDotRadius），数量每 ×4，zoom ×0.71。
      * 结果钳制在 [MIN_ZOOM, 1]——自动适配只收拢不放大，用户手动缩放不受限。
      */
     fun fitZoom(count: Int): Float {
         val orbits = orbitCountFor(count)
-        val need = OUTER_FIT_RATIO / (ORBIT_INNER_RATIO + ORBIT_GAP_RATIO * (orbits - 1))
-        return need.coerceIn(MIN_ZOOM, 1f)
+        val radiusNeed = OUTER_FIT_RATIO / (ORBIT_INNER_RATIO + ORBIT_GAP_RATIO * (orbits - 1))
+        val density = (DENSITY_BASE_COUNT.toFloat() / count.coerceAtLeast(1)).pow(DENSITY_EXPONENT)
+        return min(radiusNeed, density).coerceIn(MIN_ZOOM, 1f)
     }
 
     /** 布局输入条目（轻量纯数据，测试构造方便） */

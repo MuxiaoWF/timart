@@ -30,8 +30,8 @@ sealed class UnlockCondition {
     /** 充电 / 非充电 */
     data class ChargingState(val isCharging: Boolean) : UnlockCondition()
 
-    /** 今日步数大于阈值 */
-    data class StepCount(val minTodayStep: Int) : UnlockCondition()
+    /** 今日步数处于 [minTodayStep, maxTodayStep]（任一端可空，与 [BatteryLevel] 同构） */
+    data class StepCount(val minTodayStep: Int?, val maxTodayStep: Int? = null) : UnlockCondition()
 
     // ---- 网络 & 环境 ----
 
@@ -67,6 +67,9 @@ sealed class UnlockCondition {
     /** 每年 [month] 月 [day] 日（纪念日，每年当天满足） */
     data class YearlyDate(val month: Int, val day: Int) : UnlockCondition()
 
+    /** 每年农历 [month] 月 [day] 日（春节/中秋等传统节日；遇闰月按同月同日处理） */
+    data class LunarDate(val month: Int, val day: Int) : UnlockCondition()
+
     // ---- 网络 & 环境扩展 ----
 
     /** 离开指定坐标半径之外（[GpsLocation] 的反向语义） */
@@ -75,11 +78,26 @@ sealed class UnlockCondition {
     /** 当前太阳相位属于指定集合（日出/日落按 ±30 分钟窗口，昼夜按日出日落分界） */
     data class SunPhase(val phases: Set<SunPhaseKind>) : UnlockCondition()
 
+    /** 金色时刻：太阳已升起且高度角 ≤ 6°（摄影黄金时段，随纬度/季节自然伸缩） */
+    data object GoldenHour : UnlockCondition()
+
     /** 湿度/风速/气压/紫外线处于 [min, max]（任一端可空；复用天气链路） */
     data class WeatherMetric(val metric: WeatherMetricKind, val min: Double?, val max: Double?) : UnlockCondition()
 
     /** 当前月相属于指定集合（纯天文计算，零权限离线可判） */
     data class MoonPhase(val phases: Set<MoonPhaseKind>) : UnlockCondition()
+
+    /** 今日位于指定流星雨的极大期（公历月-日年复推算，长期误差 ≤1 天，窗口 ±1 天吸收） */
+    data class MeteorShower(val showers: Set<MeteorShowerKind>) : UnlockCondition()
+
+    /** 环境光照度 ≤ [maxLux]（黑暗中打开；光线传感器，硬件门控） */
+    data class AmbientLight(val maxLux: Int) : UnlockCondition()
+
+    /** 当前系统时区 ≠ 封存时所在时区（到另一个时区/国家；零权限） */
+    data class TimezoneChange(val homeZoneId: String) : UnlockCondition()
+
+    /** 定位速度 ≥ [minSpeedKmh] km/h（移动中；GPS 前台通道，权限/后台语义与 [GpsLocation] 一致） */
+    data class MovingAboveSpeed(val minSpeedKmh: Int) : UnlockCondition()
 
     // ---- 设备状态扩展 ----
 
@@ -91,6 +109,12 @@ sealed class UnlockCondition {
 
     /** 系统静音（含振动）状态匹配 */
     data class SilentMode(val isSilent: Boolean) : UnlockCondition()
+
+    /** 系统飞行模式开关状态匹配（零权限，读系统设置） */
+    data class AirplaneMode(val isEnabled: Boolean) : UnlockCondition()
+
+    /** 是否有音乐等媒体音频正在播放（快照语义：判定瞬间活跃即算） */
+    data class MusicPlaying(val isPlaying: Boolean) : UnlockCondition()
 
     /** 耳机（有线或蓝牙音频）连接状态匹配 */
     data class HeadphoneConnected(val isConnected: Boolean) : UnlockCondition()
@@ -123,6 +147,12 @@ sealed class UnlockCondition {
 
     /** 指定胶囊已销毁（"另一颗销毁后解锁"的快照语义：销毁后恒满足） */
     data class OtherCapsuleDestroyed(val capsuleId: String) : UnlockCondition()
+
+    /** 指定胶囊已开启阅读过（meta `capsule.read.<id>`，与首页三态同一事实源；快照语义恒满足） */
+    data class OtherCapsuleRead(val capsuleId: String) : UnlockCondition()
+
+    /** 打开过这颗胶囊详情 ≥ [count] 次（meta `capsule.views.<id>` 计数，含锁定态凝视） */
+    data class ViewCountAtLeast(val count: Int) : UnlockCondition()
 
     // ---- 即时挑战（打开胶囊当场完成；周期巡检 fail-closed，不影响自动解锁） ----
 
@@ -163,6 +193,22 @@ sealed class UnlockCondition {
         override val challengeId: String,
         val expectedPayload: String? = null,
     ) : UnlockCondition(), ChallengeCondition
+
+    /** 长按屏幕不放 [holdSeconds] 秒（打开时当场完成） */
+    data class HoldPress(
+        override val challengeId: String,
+        val holdSeconds: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 用生物识别（指纹/面容）验证（打开时当场完成；无硬件设备创建侧禁用） */
+    data class BiometricUnlock(
+        override val challengeId: String,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 拍一张此刻的照片留念（打开时当场拍摄；照片仅当场展示，不保存） */
+    data class PhotoKeepsake(
+        override val challengeId: String,
+    ) : UnlockCondition(), ChallengeCondition
 }
 
 /** 太阳相位 */
@@ -183,6 +229,12 @@ enum class MoonPhaseKind {
     WANING_CRESCENT,
 }
 
+/**
+ * 年周期流星雨（极大日期按公历月-日静态推算，每年复现，长期误差 ≤1 天）。
+ * 极大日期为天顶小时率（ZHR）峰值日的国际通行中值，详见 [MeteorCalendar]。
+ */
+enum class MeteorShowerKind { QUADRANTIDS, LYRIDS, ETA_AQUARIIDS, DELTA_AQUARIIDS, PERSEIDS, ORIONIDS, LEONIDS, GEMINIDS, URSIDS }
+
 /** 运动状态（受系统限制：无 GMS 仅能识别步行/静止，故只保留两态） */
 enum class MotionKind { STILL, WALKING }
 
@@ -194,6 +246,21 @@ enum class NetType { WIFI, CELLULAR, NONE }
 
 /** 条件合并逻辑：AND 全部满足；OR 任意满足 */
 enum class LogicType { AND, OR }
+
+/**
+ * 状态类条件（判定语义 = 当前状态 == 要求状态 的六种二元开关）取否定态：
+ * 结果即"当前实际状态"，详情页时间线在条件未满足时用它展示现状句。
+ * 其余条件（区间/集合/挑战等）没有唯一否定态，返回 null。
+ */
+fun UnlockCondition.oppositeState(): UnlockCondition? = when (this) {
+    is UnlockCondition.HeadphoneConnected -> copy(isConnected = !isConnected)
+    is UnlockCondition.ChargingState -> copy(isCharging = !isCharging)
+    is UnlockCondition.PowerSaveMode -> copy(isActive = !isActive)
+    is UnlockCondition.SilentMode -> copy(isSilent = !isSilent)
+    is UnlockCondition.AirplaneMode -> copy(isEnabled = !isEnabled)
+    is UnlockCondition.MusicPlaying -> copy(isPlaying = !isPlaying)
+    else -> null
+}
 
 /** 地理坐标点（GPS 条件与地图画布共用） */
 data class GeoPoint(val lat: Double, val lng: Double)

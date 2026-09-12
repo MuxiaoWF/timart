@@ -21,14 +21,13 @@ Until the conditions are met, the content stays encrypted on-device — even the
 
 ## Key Features
 
-- **39 unlock condition types**, combined with AND ("all must be met") or OR ("any will do") semantics:
-  - **Time** (8): fixed date / fixed date-time / N days elapsed / N minutes elapsed / day of week / time range / monthly day / yearly date
-  - **Device state** (7): battery level / charging state / power-save mode / silent mode / headphone connected / network type / Wi-Fi SSID
-  - **Behavior & steps** (5): daily step count / step streak / total open count / consecutive open days / days since last open
-  - **Location & environment** (9): arrive at a place / leave a place (radius-based) / weather type / temperature range / humidity·wind·pressure·UV / sun phase / moon phase / before the next alarm / motion state (walking/still)
-  - **Capsule-linked** (5): another capsule unlocked / another capsule destroyed / capsule count reached / compass heading / altitude range
-  - **Live challenges** (5): question / riddle / shake / flip-and-hold / NFC tap — completed on the spot when opening the capsule, never counted by automatic checks
-- **Device-capability gating**: conditions your hardware can't support (e.g. altitude without a barometer, NFC tap without an NFC chip) are disabled at creation time with a stated reason; importing a backup also flags conditions this device can never meet
+- **52 unlock condition types**, combined with AND ("all must be met") or OR ("any will do") semantics:
+  - **Time** (9): fixed date / fixed date-time / N days elapsed / N minutes elapsed / day of week / time range / monthly day / yearly date / lunar festivals (Chinese New Year, Mid-Autumn…)
+  - **Device state** (11): battery level / charging state / power-save mode / silent mode / headphone connected / airplane mode / music playing / before the next alarm / motion state (walking/still) / compass heading / altitude range
+  - **Location & environment** (14): arrive at a place / leave a place (radius-based) / weather type / temperature range / humidity·wind·pressure·UV / network type / Wi-Fi SSID / sun phase / golden hour / moon phase / meteor-shower peak night / darkness (light sensor) / another timezone / on the move (GPS speed)
+  - **In-app stats & links** (10): daily step count / step streak / total open count / consecutive open days / days since last open / capsule count reached / another capsule unlocked / destroyed / opened & read / gazed at this capsule N times
+  - **Live challenges** (8): question / riddle / shake / flip-and-hold / long-press / biometric (fingerprint/face) / photo keepsake / NFC tap — completed on the spot when opening the capsule, never counted by automatic checks
+- **Device-capability gating**: conditions your hardware can't support (e.g. altitude without a barometer, NFC tap without an NFC chip, biometrics without a fingerprint sensor, darkness without a light sensor) are disabled at creation time with a stated reason; importing a backup also flags conditions this device can never meet
 - **"Regret pill" — one-time rule edit**: each capsule carries exactly one chance — long-press the dust core for 3 seconds (or tap it 5 times quickly) to reveal a hidden editor for its unlock conditions (deliberately hidden; you only find it when you truly want to open it)
 - **Capsule dependencies**: a capsule can require another capsule to be unlocked first, with automatic cycle detection, dead-link and self-dependency validation
 - **Destroy after reading**: optional "return to dust" — at the end of a reading, ciphertext and images are physically deleted and only a metadata record remains. Destruction always requires explicit confirmation; there is no silent path. In the star library you can also batch "destroy" (leaves a dust record) or "delete" (removes completely)
