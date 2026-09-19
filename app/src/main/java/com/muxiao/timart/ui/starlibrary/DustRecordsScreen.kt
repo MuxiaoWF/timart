@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +64,7 @@ import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.SurfaceRaise
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TimartType
+import com.muxiao.timart.ui.theme.TrackHairline
 import com.muxiao.timart.ui.theme.wideContentWidth
 import com.muxiao.timart.utils.format.TimeFormatter
 import kotlinx.coroutines.delay
@@ -75,13 +79,21 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun DustRecordsScreen(container: AppContainer) {
     val L = LocalStrings.current
-    val vm: DustRecordsViewModel = viewModel { DustRecordsViewModel(container.destroyedRepository) }
+    val vm: DustRecordsViewModel = viewModel {
+        DustRecordsViewModel(
+            destroyedRepository = container.destroyedRepository,
+            capsuleRepository = container.capsuleRepository,
+            metaDao = container.database.metaDao(),
+        )
+    }
     val records by vm.records.collectAsStateWithLifecycle()
     val engine = container.particleEngine
     val density = LocalDensity.current
 
     // 待确认删除的记录（非 null 时显示确认弹窗）
     var pendingDelete by remember { mutableStateOf<DestroyRecord?>(null) }
+    // 「胶囊的一生」生平弹层（体验储备池 §5）：行点击按需加载
+    var biography by remember { mutableStateOf<DustRecordsViewModel.Biography?>(null) }
     // 长按进入批量删除：selection 非空即为选择态，点击在 选中/取消 间切换；确认后移除档案
     var selection by remember { mutableStateOf(setOf<String>()) }
     var confirmBatch by remember { mutableStateOf(false) }
@@ -152,11 +164,27 @@ fun DustRecordsScreen(container: AppContainer) {
                             },
                             onLongPress = { selection = selection + record.id },
                             onDeleteRequest = { pendingDelete = record },
+                            onOpen = {
+                                if (selection.isNotEmpty()) {
+                                    // 选择态下点击 = 选中/取消（与 onToggle 同语义，此处就地展开）
+                                    selection = if (record.id in selection) {
+                                        selection - record.id
+                                    } else {
+                                        selection + record.id
+                                    }
+                                } else {
+                                    vm.loadBiography(record) { biography = it }
+                                }
+                            },
                         )
                     }
                 }
             }
         }
+    }
+
+    biography?.let { bio ->
+        BiographyDialog(biography = bio, onDismiss = { biography = null })
     }
 
     pendingDelete?.let { record ->
@@ -247,7 +275,7 @@ fun DustRecordsScreen(container: AppContainer) {
     }
 }
 
-/** 尘迹档案行：250ms 文字浮现（按序号轻 stagger）+ 灰调档案卡；长按进入批量选择 */
+/** 尘迹档案行：250ms 文字浮现（按序号轻 stagger）+ 灰调档案卡；长按进入批量选择，点击开启生平 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DustRow(
@@ -257,6 +285,7 @@ private fun DustRow(
     inSelection: Boolean,
     onPositioned: (IntOffset) -> Unit,
     onToggle: () -> Unit,
+    onOpen: () -> Unit,
     onLongPress: () -> Unit,
     onDeleteRequest: () -> Unit,
 ) {
@@ -312,7 +341,8 @@ private fun DustRow(
                 },
             )
             .combinedClickable(
-                onClick = { if (inSelection) onToggle() },
+                // 选择态点击 = 选中/取消；非选择态点击 = 展开「胶囊的一生」（调用方分流）
+                onClick = { if (inSelection) onToggle() else onOpen() },
                 onLongClick = onLongPress,
             )
             .onGloballyPositioned { coords ->
@@ -371,4 +401,200 @@ private fun DustRow(
             modifier = Modifier.padding(top = 6.dp),
         )
     }
+}
+
+/**
+ * 「胶囊的一生」生平弹层（体验储备池 §5 尘迹生平页）：
+ * 时间线 = 封存 → 条件逐个达成（meta `capsule.condMet.*` 刻度）→ 开启 → 归尘，
+ * 附凝视次数与时长（`capsule.views.*` / `capsule.watch.*`）与封存笔记。
+ * 销毁只删内容不删元信息；胶囊行被物理删除时仅存时间跨度并明示。
+ */
+@Composable
+private fun BiographyDialog(
+    biography: DustRecordsViewModel.Biography,
+    onDismiss: () -> Unit,
+) {
+    val L = LocalStrings.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceRaise,
+        title = { Text(text = L.bioTitle, style = TimartType.titleSerif) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = biography.record.title,
+                    style = TimartType.body.copy(fontSize = 15.sp),
+                    color = InkPrimary,
+                )
+                Text(
+                    text = L.dustRecordSpanFmt.format(
+                        TimeFormatter.date(biography.record.createdAt),
+                        TimeFormatter.date(biography.record.destroyedAt),
+                    ),
+                    style = TimartType.caption,
+                    color = InkDisabled,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                BiographyDivider()
+
+                if (!biography.capsuleExists) {
+                    Text(
+                        text = L.bioRowGone,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                    )
+                } else {
+                    BiographyMoment(
+                        label = L.bioSealLabel,
+                        value = TimeFormatter.dateTime(biography.record.createdAt),
+                    )
+                    if (biography.conditions.isNotEmpty()) {
+                        Text(
+                            text = L.bioConditionsLabel,
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                        biography.conditions.forEach { moment ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                            ) {
+                                Text(
+                                    text = "·",
+                                    style = TimartType.caption,
+                                    color = TimeGold,
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 8.dp),
+                                ) {
+                                    moment.sentence?.let { sentence ->
+                                        Text(
+                                            text = sentence,
+                                            style = TimartType.caption,
+                                            color = InkPrimary,
+                                        )
+                                    }
+                                    Text(
+                                        text = moment.metAt?.let { L.bioMomentFmt.format(TimeFormatter.dateTime(it)) }
+                                            ?: L.bioMomentUnrecorded,
+                                        style = TimartType.caption,
+                                        color = InkDisabled,
+                                        modifier = Modifier.padding(top = 1.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    BiographyMoment(
+                        label = L.bioOpenLabel,
+                        value = biography.unlockedAt?.let { TimeFormatter.dateTime(it) }
+                            ?: L.bioNeverOpened,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    BiographyMoment(
+                        label = L.bioDustLabel,
+                        value = TimeFormatter.dateTime(biography.record.destroyedAt),
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    BiographyDivider()
+                    biography.viewCount?.let { views ->
+                        val watchLine = biography.watchSeconds?.let { seconds ->
+                            if (seconds >= 60) L.bioWatchMinFmt.format(seconds / 60) else L.bioWatchSecFmt.format(seconds)
+                        }
+                        Text(
+                            text = listOf(L.bioViewsFmt.format(views), watchLine)
+                                .filterNotNull()
+                                .joinToString(" · "),
+                            style = TimartType.caption,
+                            color = InkSecondary,
+                        )
+                    }
+                    biography.note?.let { note ->
+                        Text(
+                            text = L.bioNoteLabel,
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        Text(
+                            text = note,
+                            style = TimartType.caption,
+                            color = InkPrimary,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    biography.reply?.let { reply ->
+                        Text(
+                            text = L.replyLabel,
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        Text(
+                            text = reply,
+                            style = TimartType.caption,
+                            color = InkPrimary,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    if (biography.tags.isNotEmpty()) {
+                        Text(
+                            text = biography.tags.joinToString(" · "),
+                            style = TimartType.caption,
+                            color = TimeGold,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = L.ok, color = TimeGold)
+            }
+        },
+    )
+}
+
+/** 生平时间线单行：阶段标签 + 时刻（可选上下间距） */
+@Composable
+private fun BiographyMoment(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = label,
+            style = TimartType.caption,
+            color = TimeGold,
+        )
+        Text(
+            text = value,
+            style = TimartType.caption,
+            color = InkPrimary,
+            modifier = Modifier.padding(start = 12.dp),
+        )
+    }
+}
+
+/** 生平弹层内分段细线 */
+@Composable
+private fun BiographyDivider() {
+    Box(
+        modifier = Modifier
+            .padding(vertical = 12.dp)
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(TrackHairline),
+    )
 }

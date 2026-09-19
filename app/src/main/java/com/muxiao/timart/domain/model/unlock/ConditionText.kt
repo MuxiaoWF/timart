@@ -123,6 +123,115 @@ object ConditionText {
             is UnlockCondition.HoldPress -> w.holdPressFmt.format(condition.holdSeconds)
             is UnlockCondition.BiometricUnlock -> w.biometric
             is UnlockCondition.PhotoKeepsake -> w.photoKeepsake
+
+            // ---- 储备池 v4：时间 / 天文 ----
+            is UnlockCondition.SolarTerm ->
+                w.solarEncounter + condition.solarTerms.joinToString(w.listSep) { solarTermName(it, lang) }
+            is UnlockCondition.RoundDaysElapsed -> w.roundDaysFmt.format(condition.modulus)
+            is UnlockCondition.Season ->
+                w.seasonEncounter + condition.seasons.sorted().joinToString(w.listSep) { seasonName(it, lang) }
+            is UnlockCondition.MinElapsedMonths -> w.elapsedMonthsFmt.format(condition.months)
+            is UnlockCondition.NthWeekdayOfMonth -> w.nthWeekdayFmt.format(condition.nth, dayName(condition.dayOfWeek, lang))
+            is UnlockCondition.YearlyNthWeekday ->
+                w.yearlyNthFmt.format(condition.month, condition.nth, dayName(condition.dayOfWeek, lang))
+            is UnlockCondition.LeapDay -> w.leapDay
+            is UnlockCondition.LastDayOfMonth -> w.lastDayOfMonth
+            is UnlockCondition.NthWeekdaySince ->
+                w.nthWeekdaySinceFmt.format(condition.minDays, dayName(condition.dayOfWeek, lang))
+            is UnlockCondition.ZodiacSeason -> w.zodiacEncounter + zodiacName(condition.zodiac, lang)
+            is UnlockCondition.DayLength -> when {
+                condition.minHours != null && condition.maxHours != null ->
+                    w.dayLenBetween.format(formatTemp(condition.minHours), formatTemp(condition.maxHours))
+                condition.minHours != null -> w.dayLenAbove.format(formatTemp(condition.minHours))
+                condition.maxHours != null -> w.dayLenBelow.format(formatTemp(condition.maxHours))
+                else -> w.dayLenAny
+            }
+            is UnlockCondition.SunriseTimeRange -> when {
+                condition.minMinute != null && condition.maxMinute != null ->
+                    w.sunriseBetween.format(formatMinuteOfDay(condition.minMinute), formatMinuteOfDay(condition.maxMinute))
+                condition.minMinute != null -> w.sunriseAfter.format(formatMinuteOfDay(condition.minMinute))
+                condition.maxMinute != null -> w.sunriseBefore.format(formatMinuteOfDay(condition.maxMinute))
+                else -> w.sunriseAny
+            }
+            is UnlockCondition.LunarMonthRange -> w.lunarMonthFmt.format(condition.month)
+            is UnlockCondition.MonthlyDaySet -> w.monthlyDaysFmt.format(condition.days.sorted().joinToString(w.listSep))
+
+            // ---- 储备池 v4：设备 / 系统 ----
+            is UnlockCondition.DarkTheme -> if (condition.isDark) w.darkOn else w.darkOff
+            is UnlockCondition.DoNotDisturb -> if (condition.isActive) w.dndOn else w.dndOff
+            is UnlockCondition.DevicePose ->
+                w.poseEncounter + condition.kinds.sorted().joinToString(w.listSep) { poseName(it, lang) }
+            is UnlockCondition.ScreenBrightness -> w.brightnessFmt.format(condition.maxLevel)
+            is UnlockCondition.MediaVolume -> if (condition.isMuted) w.volumeMuted else w.volumeNotMuted
+            is UnlockCondition.VpnActive -> if (condition.isActive) w.vpnOn else w.vpnOff
+            is UnlockCondition.PlugType ->
+                w.plugEncounter + condition.kinds.sorted().joinToString(w.listSep) { plugName(it, lang) }
+            is UnlockCondition.BatteryTemp -> when {
+                condition.minC != null && condition.maxC != null ->
+                    w.bTempBetween.format(formatTemp(condition.minC), formatTemp(condition.maxC))
+                condition.minC != null -> w.bTempAbove.format(formatTemp(condition.minC))
+                condition.maxC != null -> w.bTempBelow.format(formatTemp(condition.maxC))
+                else -> w.bTempAny
+            }
+            is UnlockCondition.Orientation -> if (condition.isLandscape) w.landscape else w.portrait
+            is UnlockCondition.SpeedRange -> when {
+                condition.minKmh != null && condition.maxKmh != null ->
+                    w.speedBetweenFmt.format(condition.minKmh, condition.maxKmh)
+                condition.minKmh != null -> w.speedAboveFmt.format(condition.minKmh)
+                condition.maxKmh != null -> w.speedBelowFmt.format(condition.maxKmh)
+                else -> w.speedAny
+            }
+            is UnlockCondition.SsidBssidMatch -> w.bssidAt.format(condition.bssids.sorted().joinToString(w.listSep))
+            is UnlockCondition.BluetoothDevice -> w.btAt.format(condition.deviceNames.sorted().joinToString(w.listSep))
+            is UnlockCondition.ProximityCovered -> w.proximity
+            is UnlockCondition.FreshBoot -> w.freshBootFmt.format(condition.withinMinutes)
+            is UnlockCondition.InstalledApp -> w.installedFmt.format(condition.packageName)
+
+            // ---- 储备池 v4：位置 / 天气 ----
+            is UnlockCondition.AirQuality -> w.aqiFmt.format(condition.maxAqi)
+            is UnlockCondition.WindDirection ->
+                w.windEncounter + condition.dirs.sorted().joinToString(w.listSep) { windDirName(it, lang) }
+            is UnlockCondition.Hemisphere -> if (condition.north) w.hemisphereNorth else w.hemisphereSouth
+            is UnlockCondition.TempDelta -> w.tempDropFmt.format(formatTemp(condition.minDropC))
+            is UnlockCondition.CityLocation -> w.cityAtFmt.format(condition.cityName, condition.radiusMeter)
+            is UnlockCondition.RelativeAltitude ->
+                if (condition.direction == LiftDirection.UP) {
+                    w.relAltUpFmt.format(formatTemp(condition.deltaM))
+                } else {
+                    w.relAltDownFmt.format(formatTemp(condition.deltaM))
+                }
+            is UnlockCondition.PrecipitationProbability -> w.precipProbFmt.format(condition.minProb)
+
+            // ---- 储备池 v4：应用内 ----
+            is UnlockCondition.WatchDurationAtLeast -> w.watchFmt.format(condition.seconds / 60)
+            is UnlockCondition.ReadCountAtLeast -> w.readCountFmt.format(condition.count)
+            is UnlockCondition.DestroyCountAtLeast -> w.destroyCountFmt.format(condition.count)
+            is UnlockCondition.OtherCapsuleStillLocked -> w.otherStillLocked
+            is UnlockCondition.BackupDone -> w.backupDone
+            is UnlockCondition.TotalCreatedCount -> w.totalCreatedFmt.format(condition.count)
+            is UnlockCondition.SameDayAsCapsuleRead -> w.sameDayRead
+            is UnlockCondition.DaysSinceCapsuleRead -> w.daysSinceReadFmt.format(condition.days)
+            is UnlockCondition.WidgetBound -> w.widgetBound
+            is UnlockCondition.TodayOpenCount -> w.todayOpenFmt.format(condition.count)
+
+            // ---- 储备池 v4：现场挑战 ----
+            is UnlockCondition.GesturePattern -> w.gesturePattern
+            is UnlockCondition.WalkStepsNow -> w.walkNowFmt.format(condition.steps)
+            is UnlockCondition.SpinPhone -> w.spinFmt.format(condition.degrees)
+            is UnlockCondition.VolumeKeyCombo -> w.volumeKeysFmt.format(condition.holdSeconds)
+            is UnlockCondition.StayStill -> w.stayStillFmt.format(condition.holdSeconds)
+            is UnlockCondition.LiftHighLowerLow ->
+                if (condition.direction == LiftDirection.UP) {
+                    w.liftUpFmt.format(formatTemp(condition.meters))
+                } else {
+                    w.liftDownFmt.format(formatTemp(condition.meters))
+                }
+            is UnlockCondition.VoicePassword -> w.voiceFmt
+            is UnlockCondition.TapCount -> w.tapFmt.format(condition.taps)
+            is UnlockCondition.ClimbFloors -> w.climbFmt.format(condition.floors)
+            is UnlockCondition.ScanQr ->
+                if (condition.expectedPayload != null) w.scanQrPaired else w.scanQr
+            is UnlockCondition.ProofOfWork -> w.powFmt.format(condition.difficulty)
         }
     }
 
@@ -185,6 +294,34 @@ object ConditionText {
         MotionKind.STILL -> words(lang).motionStill
         MotionKind.WALKING -> words(lang).motionWalking
     }
+
+    /** SolarTermKind → 名称（顺序即黄经 15° 分档序，0 = 春分） */
+    fun solarTermName(kind: SolarTermKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).solarTermNames[kind.ordinal]
+
+    /** ZodiacKind → 名称 */
+    fun zodiacName(kind: ZodiacKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).zodiacNames[kind.ordinal]
+
+    /** SeasonKind → 名称 */
+    fun seasonName(kind: SeasonKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).seasonNames[kind.ordinal]
+
+    /** PlugKind → 名称 */
+    fun plugName(kind: PlugKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).plugNames[kind.ordinal]
+
+    /** WindDirKind → 名称（顺序即枚举序 N/NE/E/SE/S/SW/W/NW） */
+    fun windDirName(kind: WindDirKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).windDirNames[kind.ordinal]
+
+    /** PoseKind → 名称 */
+    fun poseName(kind: PoseKind, lang: Lang = Lang.ZH_HANS): String =
+        words(lang).poseNames[kind.ordinal]
+
+    /** 当日分钟数 → "HH:mm"（日出钟点区间句用） */
+    fun formatMinuteOfDay(minuteOfDay: Int): String =
+        "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
 
     /** 气温 → 整数省小数（30.0 → "30"，-5.5 → "-5.5"） */
     fun formatTemp(c: Double): String =
@@ -354,6 +491,99 @@ object ConditionText {
         nfcTapPaired = "触碰绑定的那枚 NFC 卡",
         weekdayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日"),
         weekdayShorts = listOf("一", "二", "三", "四", "五", "六", "日"),
+        // ---- 储备池 v4 ----
+        solarEncounter = "正值",
+        solarTermNames = listOf(
+            "立春", "雨水", "惊蛰", "春分", "清明", "谷雨",
+            "立夏", "小满", "芒种", "夏至", "小暑", "大暑",
+            "立秋", "处暑", "白露", "秋分", "寒露", "霜降",
+            "立冬", "小雪", "大雪", "冬至", "小寒", "大寒",
+        ),
+        roundDaysFmt = "封存天数恰逢 %d 的整数倍",
+        seasonEncounter = "正值",
+        seasonNames = listOf("春季", "夏季", "秋季", "冬季"),
+        elapsedMonthsFmt = "封存满 %d 个月",
+        nthWeekdayFmt = $$"每逢每月第 %1$d 个%2$s",
+        yearlyNthFmt = $$"每年 %1$d 月第 %2$d 个%3$s",
+        leapDay = "每逢 2 月 29 日（四年一遇）",
+        lastDayOfMonth = "每逢每月最后一天",
+        nthWeekdaySinceFmt = $$"封存满 %1$d 天后的第一个%2$s",
+        zodiacEncounter = "太阳行至",
+        zodiacNames = listOf(
+            "白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座",
+            "天秤座", "天蝎座", "射手座", "摩羯座", "水瓶座", "双鱼座",
+        ),
+        dayLenBetween = "白昼在 %s 到 %s 小时之间",
+        dayLenAbove = "白昼长于 %s 小时",
+        dayLenBelow = "白昼短于 %s 小时",
+        dayLenAny = "白昼长度不限",
+        sunriseBetween = "日出在 %s 到 %s 之间",
+        sunriseAfter = "日出晚于 %s",
+        sunriseBefore = "日出早于 %s",
+        sunriseAny = "日出钟点不限",
+        lunarMonthFmt = "每逢农历 %d 月整月",
+        monthlyDaysFmt = "每逢每月 %s 号",
+        darkOn = "手机处于深色模式",
+        darkOff = "手机未处于深色模式",
+        dndOn = "手机处于勿扰模式",
+        dndOff = "手机未开启勿扰模式",
+        poseEncounter = "手机",
+        poseNames = listOf("平放着", "直立着", "倒置着"),
+        brightnessFmt = "屏幕亮度低于 %d",
+        volumeMuted = "手机媒体音量为静音",
+        volumeNotMuted = "手机媒体音量未静音",
+        vpnOn = "VPN 已连接",
+        vpnOff = "VPN 未连接",
+        plugEncounter = "充电方式为",
+        plugNames = listOf("电源适配器充电", "USB 充电", "无线充电"),
+        bTempBetween = "电池温度在 %s°C 到 %s°C 之间",
+        bTempAbove = "电池温度高于 %s°C",
+        bTempBelow = "电池温度低于 %s°C",
+        bTempAny = "电池温度不限",
+        landscape = "手机处于横屏",
+        portrait = "手机处于竖屏",
+        speedBetweenFmt = $$"移动速度在 %1$d 到 %2$d km/h 之间",
+        speedAboveFmt = "移动速度超过 %d km/h",
+        speedBelowFmt = "移动速度低于 %d km/h",
+        speedAny = "移动速度不限",
+        bssidAt = "连接到指定路由器「%s」",
+        btAt = "蓝牙连接到「%s」",
+        proximity = "手捂住手机顶部（接近传感器被遮挡）",
+        freshBootFmt = "距上次开机不足 %d 分钟",
+        installedFmt = "已安装应用「%s」",
+        aqiFmt = "空气质量指数（AQI）低于 %d",
+        windEncounter = "刮",
+        windDirNames = listOf("北风", "东北风", "东风", "东南风", "南风", "西南风", "西风", "西北风"),
+        hemisphereNorth = "身处北半球",
+        hemisphereSouth = "身处南半球",
+        tempDropFmt = "气温比昨日低 %s°C 以上",
+        cityAtFmt = "身处 %s（半径 %d 米）",
+        relAltUpFmt = "身处比封存时高 %s 米以上",
+        relAltDownFmt = "身处比封存时低 %s 米以上",
+        precipProbFmt = "今日降水概率超过 %d%%",
+        watchFmt = "凝视这颗胶囊累计满 %d 分钟",
+        readCountFmt = "已开启阅读过 %d 颗胶囊",
+        destroyCountFmt = "已送走（销毁）%d 颗胶囊",
+        otherStillLocked = "另一颗指定胶囊仍处于锁定",
+        backupDone = "完成过一次备份导出",
+        totalCreatedFmt = "累计封存过 %d 颗胶囊",
+        sameDayRead = "另一颗指定胶囊今日被开启阅读",
+        daysSinceReadFmt = "另一颗指定胶囊被开启已满 %d 天",
+        widgetBound = "时粒的小组件已钉在桌面上",
+        todayOpenFmt = "今日打开时粒 %d 次",
+        gesturePattern = "画出正确的手势图案（连接九宫格点位）",
+        walkNowFmt = "当场走 %d 步",
+        spinFmt = "把手机水平旋转累计 %d 度",
+        volumeKeysFmt = "同时按住两个音量键 %d 秒",
+        stayStillFmt = "让手机保持静止 %d 秒",
+        liftUpFmt = "把手机举高 %s 米",
+        liftDownFmt = "把手机放低 %s 米",
+        voiceFmt = "说出正确的口令（语音识别）",
+        tapFmt = "连续点击屏幕 %d 下",
+        climbFmt = "当场爬上 %d 层楼",
+        scanQr = "扫一枚二维码",
+        scanQrPaired = "扫出约定的那枚二维码",
+        powFmt = "完成算力挑战（%d 位前导零）",
     )
 
     private val ZH_HANT_WORDS = ConditionWords(
@@ -473,6 +703,99 @@ object ConditionText {
         nfcTapPaired = "觸碰綁定的那枚 NFC 卡",
         weekdayNames = listOf("週一", "週二", "週三", "週四", "週五", "週六", "週日"),
         weekdayShorts = listOf("一", "二", "三", "四", "五", "六", "日"),
+        // ---- 儲備池 v4 ----
+        solarEncounter = "正值",
+        solarTermNames = listOf(
+            "立春", "雨水", "驚蟄", "春分", "清明", "穀雨",
+            "立夏", "小滿", "芒種", "夏至", "小暑", "大暑",
+            "立秋", "處暑", "白露", "秋分", "寒露", "霜降",
+            "立冬", "小雪", "大雪", "冬至", "小寒", "大寒",
+        ),
+        roundDaysFmt = "封存天數恰逢 %d 的整數倍",
+        seasonEncounter = "正值",
+        seasonNames = listOf("春季", "夏季", "秋季", "冬季"),
+        elapsedMonthsFmt = "封存滿 %d 個月",
+        nthWeekdayFmt = $$"每逢每月第 %1$d 個%2$s",
+        yearlyNthFmt = $$"每年 %1$d 月第 %2$d 個%3$s",
+        leapDay = "每逢 2 月 29 日（四年一遇）",
+        lastDayOfMonth = "每逢每月最後一天",
+        nthWeekdaySinceFmt = $$"封存滿 %1$d 天後的第一個%2$s",
+        zodiacEncounter = "太陽行至",
+        zodiacNames = listOf(
+            "白羊座", "金牛座", "雙子座", "巨蟹座", "獅子座", "處女座",
+            "天秤座", "天蠍座", "射手座", "摩羯座", "水瓶座", "雙魚座",
+        ),
+        dayLenBetween = "白晝在 %s 到 %s 小時之間",
+        dayLenAbove = "白晝長於 %s 小時",
+        dayLenBelow = "白晝短於 %s 小時",
+        dayLenAny = "白晝長度不限",
+        sunriseBetween = "日出在 %s 到 %s 之間",
+        sunriseAfter = "日出晚於 %s",
+        sunriseBefore = "日出早於 %s",
+        sunriseAny = "日出鐘點不限",
+        lunarMonthFmt = "每逢農曆 %d 月整月",
+        monthlyDaysFmt = "每逢每月 %s 號",
+        darkOn = "手機處於深色模式",
+        darkOff = "手機未處於深色模式",
+        dndOn = "手機處於勿擾模式",
+        dndOff = "手機未開啟勿擾模式",
+        poseEncounter = "手機",
+        poseNames = listOf("平放著", "直立著", "倒置著"),
+        brightnessFmt = "螢幕亮度低於 %d",
+        volumeMuted = "手機媒體音量為靜音",
+        volumeNotMuted = "手機媒體音量未靜音",
+        vpnOn = "VPN 已連接",
+        vpnOff = "VPN 未連接",
+        plugEncounter = "充電方式為",
+        plugNames = listOf("電源轉接器充電", "USB 充電", "無線充電"),
+        bTempBetween = "電池溫度在 %s°C 到 %s°C 之間",
+        bTempAbove = "電池溫度高於 %s°C",
+        bTempBelow = "電池溫度低於 %s°C",
+        bTempAny = "電池溫度不限",
+        landscape = "手機處於橫向",
+        portrait = "手機處於直向",
+        speedBetweenFmt = $$"移動速度在 %1$d 到 %2$d km/h 之間",
+        speedAboveFmt = "移動速度超過 %d km/h",
+        speedBelowFmt = "移動速度低於 %d km/h",
+        speedAny = "移動速度不限",
+        bssidAt = "連接到指定路由器「%s」",
+        btAt = "藍牙連接到「%s」",
+        proximity = "手摀住手機頂部（接近感測器被遮擋）",
+        freshBootFmt = "距上次開機不足 %d 分鐘",
+        installedFmt = "已安裝應用「%s」",
+        aqiFmt = "空氣品質指標（AQI）低於 %d",
+        windEncounter = "颳",
+        windDirNames = listOf("北風", "東北風", "東風", "東南風", "南風", "西南風", "西風", "西北風"),
+        hemisphereNorth = "身處北半球",
+        hemisphereSouth = "身處南半球",
+        tempDropFmt = "氣溫比昨日低 %s°C 以上",
+        cityAtFmt = "身處 %s（半徑 %d 公尺）",
+        relAltUpFmt = "身處比封存時高 %s 公尺以上",
+        relAltDownFmt = "身處比封存時低 %s 公尺以上",
+        precipProbFmt = "今日降水機率超過 %d%%",
+        watchFmt = "凝視這顆膠囊累計滿 %d 分鐘",
+        readCountFmt = "已開啟閱讀過 %d 顆膠囊",
+        destroyCountFmt = "已送走（銷毀）%d 顆膠囊",
+        otherStillLocked = "另一顆指定膠囊仍處於鎖定",
+        backupDone = "完成過一次備份匯出",
+        totalCreatedFmt = "累計封存過 %d 顆膠囊",
+        sameDayRead = "另一顆指定膠囊今日被開啟閱讀",
+        daysSinceReadFmt = "另一顆指定膠囊被開啟已滿 %d 天",
+        widgetBound = "時粒的小工具已釘在桌面上",
+        todayOpenFmt = "今日開啟時粒 %d 次",
+        gesturePattern = "畫出正確的手勢圖案（連接九宮格點位）",
+        walkNowFmt = "當場走 %d 步",
+        spinFmt = "把手機水平旋轉累計 %d 度",
+        volumeKeysFmt = "同時按住兩個音量鍵 %d 秒",
+        stayStillFmt = "讓手機保持靜止 %d 秒",
+        liftUpFmt = "把手機舉高 %s 公尺",
+        liftDownFmt = "把手機放低 %s 公尺",
+        voiceFmt = "說出正確的通關密語（語音辨識）",
+        tapFmt = "連續點擊螢幕 %d 下",
+        climbFmt = "當場爬上 %d 層樓",
+        scanQr = "掃一枚 QR 碼",
+        scanQrPaired = "掃出約定的那枚 QR 碼",
+        powFmt = "完成算力挑戰（%d 位前導零）",
     )
 
     private val EN_WORDS = ConditionWords(
@@ -595,6 +918,102 @@ object ConditionText {
         nfcTapPaired = "Tap the paired NFC card",
         weekdayNames = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
         weekdayShorts = listOf("M", "T", "W", "T", "F", "S", "S"),
+        // ---- Reserve pool v4 ----
+        solarEncounter = "During ",
+        solarTermNames = listOf(
+            "Start of Spring", "Rain Water", "Awakening of Insects", "Spring Equinox", "Pure Brightness", "Grain Rain",
+            "Start of Summer", "Grain Buds", "Grain in Ear", "Summer Solstice", "Minor Heat", "Major Heat",
+            "Start of Autumn", "End of Heat", "White Dew", "Autumn Equinox", "Cold Dew", "Frost's Descent",
+            "Start of Winter", "Minor Snow", "Major Snow", "Winter Solstice", "Minor Cold", "Major Cold",
+        ),
+        roundDaysFmt = "On a day a multiple of %d since sealing",
+        seasonEncounter = "During ",
+        seasonNames = listOf("spring", "summer", "autumn", "winter"),
+        elapsedMonthsFmt = "Sealed for %d months",
+        nthWeekdayFmt = $$"Every month on the %1$d-th %2$s",
+        yearlyNthFmt = $$"Every year in month %1$d on the %2$d-th %3$s",
+        leapDay = "On February 29 (once every four years)",
+        lastDayOfMonth = "On the last day of every month",
+        nthWeekdaySinceFmt = $$"On the first %2$s after %1$d days sealed",
+        zodiacEncounter = "While the sun is in ",
+        zodiacNames = listOf(
+            "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+            "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+        ),
+        dayLenBetween = "Daylight between %s and %s hours",
+        dayLenAbove = "Daylight longer than %s hours",
+        dayLenBelow = "Daylight shorter than %s hours",
+        dayLenAny = "Any daylight length",
+        sunriseBetween = "Sunrise between %s and %s",
+        sunriseAfter = "Sunrise after %s",
+        sunriseBefore = "Sunrise before %s",
+        sunriseAny = "Any sunrise time",
+        lunarMonthFmt = "During lunar month %d",
+        monthlyDaysFmt = "On day %s of every month",
+        darkOn = "Phone is in dark theme",
+        darkOff = "Phone is not in dark theme",
+        dndOn = "Do-not-disturb is on",
+        dndOff = "Do-not-disturb is off",
+        poseEncounter = "While the phone is ",
+        poseNames = listOf("lying flat", "upright", "upside down"),
+        brightnessFmt = "Screen brightness below %d",
+        volumeMuted = "Media volume is muted",
+        volumeNotMuted = "Media volume is not muted",
+        vpnOn = "VPN is connected",
+        vpnOff = "VPN is not connected",
+        plugEncounter = "While charging via ",
+        plugNames = listOf("wall adapter", "USB", "wireless charger"),
+        bTempBetween = "Battery temperature between %s°C and %s°C",
+        bTempAbove = "Battery temperature above %s°C",
+        bTempBelow = "Battery temperature below %s°C",
+        bTempAny = "Any battery temperature",
+        landscape = "Phone is in landscape",
+        portrait = "Phone is in portrait",
+        speedBetweenFmt = $$"Moving between %1$d and %2$d km/h",
+        speedAboveFmt = "Moving over %d km/h",
+        speedBelowFmt = "Moving under %d km/h",
+        speedAny = "Any moving speed",
+        bssidAt = "Connected to the designated router (%s)",
+        btAt = "Bluetooth connected to %s",
+        proximity = "Palm covering the top of the phone (proximity sensor blocked)",
+        freshBootFmt = "Within %d minutes of the last reboot",
+        installedFmt = "App \"%s\" is installed",
+        aqiFmt = "Air quality index (AQI) below %d",
+        windEncounter = "While the wind blows from ",
+        windDirNames = listOf(
+            "the north", "the northeast", "the east", "the southeast",
+            "the south", "the southwest", "the west", "the northwest",
+        ),
+        hemisphereNorth = "In the northern hemisphere",
+        hemisphereSouth = "In the southern hemisphere",
+        tempDropFmt = "Temperature %s°C below yesterday",
+        cityAtFmt = "In %s (within %d m)",
+        relAltUpFmt = "%s m higher than when sealed",
+        relAltDownFmt = "%s m lower than when sealed",
+        precipProbFmt = "Precipitation probability today over %d%%",
+        watchFmt = "Gazed at this capsule for %d minutes in total",
+        readCountFmt = "Opened and read %d capsules",
+        destroyCountFmt = "Sent off (destroyed) %d capsules",
+        otherStillLocked = "Another designated capsule is still locked",
+        backupDone = "A backup has been exported at least once",
+        totalCreatedFmt = "Sealed %d capsules in total",
+        sameDayRead = "Another designated capsule was opened today",
+        daysSinceReadFmt = "Another designated capsule was opened over %d days ago",
+        widgetBound = "The Timart widget is pinned to the home screen",
+        todayOpenFmt = "Opened Timart %d times today",
+        gesturePattern = "Draw the right gesture pattern (connect the grid dots)",
+        walkNowFmt = "Walk %d steps on the spot",
+        spinFmt = "Spin the phone a total of %d degrees",
+        volumeKeysFmt = "Hold both volume keys for %d seconds",
+        stayStillFmt = "Keep the phone perfectly still for %d seconds",
+        liftUpFmt = "Lift the phone %s m higher",
+        liftDownFmt = "Lower the phone %s m",
+        voiceFmt = "Speak the right passphrase (voice recognition)",
+        tapFmt = "Tap the screen %d times in a row",
+        climbFmt = "Climb %d floors on the spot",
+        scanQr = "Scan a QR code",
+        scanQrPaired = "Scan the agreed QR code",
+        powFmt = "Complete the proof-of-work (%d leading zeros)",
     )
 }
 
@@ -713,6 +1132,91 @@ private data class ConditionWords(
     val nfcTapPaired: String,
     val weekdayNames: List<String>,
     val weekdayShorts: List<String>,
+    // ---- 储备池 v4 ----
+    val solarEncounter: String,
+    val solarTermNames: List<String>,
+    val roundDaysFmt: String,
+    val seasonEncounter: String,
+    val seasonNames: List<String>,
+    val elapsedMonthsFmt: String,
+    val nthWeekdayFmt: String,
+    val yearlyNthFmt: String,
+    val leapDay: String,
+    val lastDayOfMonth: String,
+    val nthWeekdaySinceFmt: String,
+    val zodiacEncounter: String,
+    val zodiacNames: List<String>,
+    val dayLenBetween: String,
+    val dayLenAbove: String,
+    val dayLenBelow: String,
+    val dayLenAny: String,
+    val sunriseBetween: String,
+    val sunriseAfter: String,
+    val sunriseBefore: String,
+    val sunriseAny: String,
+    val lunarMonthFmt: String,
+    val monthlyDaysFmt: String,
+    val darkOn: String,
+    val darkOff: String,
+    val dndOn: String,
+    val dndOff: String,
+    val poseEncounter: String,
+    val poseNames: List<String>,
+    val brightnessFmt: String,
+    val volumeMuted: String,
+    val volumeNotMuted: String,
+    val vpnOn: String,
+    val vpnOff: String,
+    val plugEncounter: String,
+    val plugNames: List<String>,
+    val bTempBetween: String,
+    val bTempAbove: String,
+    val bTempBelow: String,
+    val bTempAny: String,
+    val landscape: String,
+    val portrait: String,
+    val speedBetweenFmt: String,
+    val speedAboveFmt: String,
+    val speedBelowFmt: String,
+    val speedAny: String,
+    val bssidAt: String,
+    val btAt: String,
+    val proximity: String,
+    val freshBootFmt: String,
+    val installedFmt: String,
+    val aqiFmt: String,
+    val windEncounter: String,
+    val windDirNames: List<String>,
+    val hemisphereNorth: String,
+    val hemisphereSouth: String,
+    val tempDropFmt: String,
+    val cityAtFmt: String,
+    val relAltUpFmt: String,
+    val relAltDownFmt: String,
+    val precipProbFmt: String,
+    val watchFmt: String,
+    val readCountFmt: String,
+    val destroyCountFmt: String,
+    val otherStillLocked: String,
+    val backupDone: String,
+    val totalCreatedFmt: String,
+    val sameDayRead: String,
+    val daysSinceReadFmt: String,
+    val widgetBound: String,
+    val todayOpenFmt: String,
+    val gesturePattern: String,
+    val walkNowFmt: String,
+    val spinFmt: String,
+    val volumeKeysFmt: String,
+    val stayStillFmt: String,
+    val liftUpFmt: String,
+    val liftDownFmt: String,
+    val voiceFmt: String,
+    val tapFmt: String,
+    val climbFmt: String,
+    val scanQr: String,
+    val scanQrPaired: String,
+    val powFmt: String,
 )
 
 /**
@@ -745,6 +1249,12 @@ object JudgeReasons {
     const val NO_OPEN_RECORD = "还没有打开时粒的记录"
     const val AMBIENT_LIGHT_UNAVAILABLE = "环境光传感器不可用（设备无光线传感器）"
 
+    /** 储备池 v4 新增判定原因 */
+    const val DEVICE_STATE_UNAVAILABLE = "系统状态不可用（设备不支持或读取失败）"
+    const val ENV_SENSOR_UNAVAILABLE = "传感器不可用（设备无对应硬件）"
+    const val BT_NO_PERMISSION = "附近设备权限未授予，无法识别蓝牙设备，请到系统设置中开启"
+    const val AIR_QUALITY_FAILED = "暂时无法获取空气质量，请检查网络后重试"
+
     /** 按界面语言取判定原因词表（判定入口与展示比较两侧同源） */
     fun forLang(lang: Lang): JudgeReasonTexts = when (lang) {
         Lang.ZH_HANS -> ZH
@@ -776,6 +1286,10 @@ object JudgeReasons {
         altitudeUnavailable = ALTITUDE_UNAVAILABLE,
         noOpenRecord = NO_OPEN_RECORD,
         ambientLightUnavailable = AMBIENT_LIGHT_UNAVAILABLE,
+        deviceStateUnavailable = DEVICE_STATE_UNAVAILABLE,
+        envSensorUnavailable = ENV_SENSOR_UNAVAILABLE,
+        btNoPermission = BT_NO_PERMISSION,
+        airQualityFailed = AIR_QUALITY_FAILED,
     )
 
     private val ZH_HANT = JudgeReasonTexts(
@@ -802,6 +1316,10 @@ object JudgeReasons {
         altitudeUnavailable = "海拔不可用（裝置無氣壓計）",
         noOpenRecord = "還沒有開啟時粒的記錄",
         ambientLightUnavailable = "環境光感測器不可用（裝置無光線感測器）",
+        deviceStateUnavailable = "系統狀態不可用（裝置不支援或讀取失敗）",
+        envSensorUnavailable = "感測器不可用（裝置無對應硬體）",
+        btNoPermission = "附近裝置權限未授予，無法識別藍牙裝置，請到系統設定中開啟",
+        airQualityFailed = "暫時無法取得空氣品質，請檢查網路後重試",
     )
 
     private val EN = JudgeReasonTexts(
@@ -828,6 +1346,10 @@ object JudgeReasons {
         altitudeUnavailable = "Altitude unavailable (no barometer on this device)",
         noOpenRecord = "No record of opening the app yet",
         ambientLightUnavailable = "Ambient light sensor unavailable (no light sensor on this device)",
+        deviceStateUnavailable = "System state unavailable (unsupported device or read failure)",
+        envSensorUnavailable = "Sensor unavailable (missing hardware on this device)",
+        btNoPermission = "Nearby devices permission not granted; Bluetooth devices can't be identified. Enable it in system settings",
+        airQualityFailed = "Couldn't fetch air quality; check your network and retry",
     )
 }
 
@@ -856,4 +1378,149 @@ data class JudgeReasonTexts(
     val altitudeUnavailable: String,
     val noOpenRecord: String,
     val ambientLightUnavailable: String,
+    val deviceStateUnavailable: String,
+    val envSensorUnavailable: String,
+    val btNoPermission: String,
+    val airQualityFailed: String,
 )
+
+/**
+ * 条件大类（体验储备池 §5 年度星图报告用）：与创建页条件选择面板的分组口径一致
+ * （分组归属对照 RulesStep.ConditionType.group；l10n 的 cat* 词条同语义——
+ * domain 不得 import l10n，故此处自持一份三语名，见 [conditionKindName]）。
+ */
+enum class ConditionKind {
+    TIME,
+    DEVICE,
+    NET,
+    USAGE,
+    CHALLENGE,
+}
+
+/** UnlockCondition → 大类归属（与选择面板分组同口径，新增条件须同步补分支） */
+fun conditionKind(condition: UnlockCondition): ConditionKind = when (condition) {
+    is UnlockCondition.FixedDate,
+    is UnlockCondition.MinElapsedDay,
+    is UnlockCondition.WeekDay,
+    is UnlockCondition.TimeRange,
+    is UnlockCondition.FixedDateTime,
+    is UnlockCondition.MinElapsedMinutes,
+    is UnlockCondition.MonthlyDay,
+    is UnlockCondition.YearlyDate,
+    is UnlockCondition.LunarDate,
+    is UnlockCondition.SolarTerm,
+    is UnlockCondition.RoundDaysElapsed,
+    is UnlockCondition.Season,
+    is UnlockCondition.MinElapsedMonths,
+    is UnlockCondition.NthWeekdayOfMonth,
+    is UnlockCondition.YearlyNthWeekday,
+    is UnlockCondition.LeapDay,
+    is UnlockCondition.LastDayOfMonth,
+    is UnlockCondition.NthWeekdaySince,
+    is UnlockCondition.ZodiacSeason,
+    is UnlockCondition.LunarMonthRange,
+    is UnlockCondition.MonthlyDaySet,
+    -> ConditionKind.TIME
+
+    is UnlockCondition.BatteryLevel,
+    is UnlockCondition.ChargingState,
+    is UnlockCondition.StepCount,
+    is UnlockCondition.StepStreak,
+    is UnlockCondition.BeforeNextAlarm,
+    is UnlockCondition.PowerSaveMode,
+    is UnlockCondition.SilentMode,
+    is UnlockCondition.HeadphoneConnected,
+    is UnlockCondition.AirplaneMode,
+    is UnlockCondition.MusicPlaying,
+    is UnlockCondition.MotionActivity,
+    is UnlockCondition.CompassHeading,
+    is UnlockCondition.AltitudeRange,
+    is UnlockCondition.DarkTheme,
+    is UnlockCondition.DoNotDisturb,
+    is UnlockCondition.DevicePose,
+    is UnlockCondition.ScreenBrightness,
+    is UnlockCondition.MediaVolume,
+    is UnlockCondition.VpnActive,
+    is UnlockCondition.PlugType,
+    is UnlockCondition.BatteryTemp,
+    is UnlockCondition.Orientation,
+    is UnlockCondition.SsidBssidMatch,
+    is UnlockCondition.ProximityCovered,
+    is UnlockCondition.FreshBoot,
+    is UnlockCondition.InstalledApp,
+    is UnlockCondition.BluetoothDevice,
+    -> ConditionKind.DEVICE
+
+    is UnlockCondition.NetworkType,
+    is UnlockCondition.SsidMatch,
+    is UnlockCondition.GpsLocation,
+    is UnlockCondition.AwayFromLocation,
+    is UnlockCondition.WeatherType,
+    is UnlockCondition.TemperatureThreshold,
+    is UnlockCondition.SunPhase,
+    is UnlockCondition.MoonPhase,
+    is UnlockCondition.MeteorShower,
+    is UnlockCondition.GoldenHour,
+    is UnlockCondition.AmbientLight,
+    is UnlockCondition.TimezoneChange,
+    is UnlockCondition.MovingAboveSpeed,
+    is UnlockCondition.WeatherMetric,
+    is UnlockCondition.SpeedRange,
+    is UnlockCondition.DayLength,
+    is UnlockCondition.SunriseTimeRange,
+    is UnlockCondition.Hemisphere,
+    is UnlockCondition.CityLocation,
+    is UnlockCondition.RelativeAltitude,
+    is UnlockCondition.AirQuality,
+    is UnlockCondition.WindDirection,
+    is UnlockCondition.TempDelta,
+    is UnlockCondition.PrecipitationProbability,
+    -> ConditionKind.NET
+
+    is UnlockCondition.OpenCountAtLeast,
+    is UnlockCondition.OpenStreak,
+    is UnlockCondition.DaysSinceLastOpen,
+    is UnlockCondition.CapsuleCountAtLeast,
+    is UnlockCondition.OtherCapsuleUnlocked,
+    is UnlockCondition.OtherCapsuleDestroyed,
+    is UnlockCondition.OtherCapsuleRead,
+    is UnlockCondition.ViewCountAtLeast,
+    is UnlockCondition.WatchDurationAtLeast,
+    is UnlockCondition.ReadCountAtLeast,
+    is UnlockCondition.DestroyCountAtLeast,
+    is UnlockCondition.OtherCapsuleStillLocked,
+    is UnlockCondition.BackupDone,
+    is UnlockCondition.TotalCreatedCount,
+    is UnlockCondition.SameDayAsCapsuleRead,
+    is UnlockCondition.DaysSinceCapsuleRead,
+    is UnlockCondition.WidgetBound,
+    is UnlockCondition.TodayOpenCount,
+    -> ConditionKind.USAGE
+
+    else -> ConditionKind.CHALLENGE
+}
+
+/** 大类显示名（三语；语义对齐 l10n 的 cat* 词条，改名须两处同步） */
+fun conditionKindName(kind: ConditionKind, lang: Lang): String = when (lang) {
+    Lang.ZH_HANS -> when (kind) {
+        ConditionKind.TIME -> "时间"
+        ConditionKind.DEVICE -> "设备"
+        ConditionKind.NET -> "网络与环境"
+        ConditionKind.USAGE -> "应用内"
+        ConditionKind.CHALLENGE -> "现场挑战"
+    }
+    Lang.ZH_HANT -> when (kind) {
+        ConditionKind.TIME -> "時間"
+        ConditionKind.DEVICE -> "裝置"
+        ConditionKind.NET -> "網路與環境"
+        ConditionKind.USAGE -> "應用內"
+        ConditionKind.CHALLENGE -> "現場挑戰"
+    }
+    Lang.EN -> when (kind) {
+        ConditionKind.TIME -> "Time"
+        ConditionKind.DEVICE -> "Device"
+        ConditionKind.NET -> "Network & environment"
+        ConditionKind.USAGE -> "In-app"
+        ConditionKind.CHALLENGE -> "Live challenge"
+    }
+}

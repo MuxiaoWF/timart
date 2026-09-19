@@ -47,6 +47,8 @@ fun HomePreviewCard(
     val L = LocalStrings.current
     val ready = preview.unlocked && !preview.read
     val opened = preview.unlocked && preview.read
+    // 盲盒封存且仍锁定：标题与条件句全遮蔽（进度数字保留——不剧透，只留期待）
+    val masked = preview.blindBox && !preview.unlocked
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -61,25 +63,36 @@ fun HomePreviewCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (preview.kind == HomeViewModel.LatestPreview.PreviewKind.UPCOMING) {
-                        L.previewUpcoming
+                    text = if (masked) {
+                        "${when (preview.kind) {
+                            HomeViewModel.LatestPreview.PreviewKind.UPCOMING -> L.previewUpcoming
+                            HomeViewModel.LatestPreview.PreviewKind.TODAY -> L.previewToday
+                            else -> L.previewLatest
+                        }} · ${L.blindBoxTag}"
                     } else {
-                        L.previewLatest
+                        when (preview.kind) {
+                            HomeViewModel.LatestPreview.PreviewKind.UPCOMING -> L.previewUpcoming
+                            HomeViewModel.LatestPreview.PreviewKind.TODAY -> L.previewToday
+                            else -> L.previewLatest
+                        }
                     },
                     style = TimartType.caption,
                     color = InkSecondary,
                 )
                 Text(
-                    text = preview.title,
+                    text = if (masked) L.blindMaskTitle else preview.title,
                     style = TimartType.titleSerif,
                     color = if (opened) InkPrimary.copy(alpha = 0.6f) else InkPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 6.dp),
                 )
-                preview.sentence?.let { sentence ->
+                if (masked || preview.sentence != null) {
                     Text(
-                        text = sentence,
+                        text = when {
+                            masked -> L.blindMaskSentence
+                            else -> preview.sentence.orEmpty()
+                        },
                         style = TimartType.caption,
                         color = InkSecondary,
                         maxLines = 1,

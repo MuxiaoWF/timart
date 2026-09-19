@@ -80,6 +80,63 @@ import com.muxiao.timart.ui.create.rules.condition.WeatherMetricForm
 import com.muxiao.timart.ui.create.rules.condition.WeatherTypeForm
 import com.muxiao.timart.ui.create.rules.condition.WeekDayForm
 import com.muxiao.timart.ui.create.rules.condition.YearlyDateForm
+import com.muxiao.timart.ui.create.rules.condition.AirQualityForm
+import com.muxiao.timart.ui.create.rules.condition.BackupDoneForm
+import com.muxiao.timart.ui.create.rules.condition.BatteryTempForm
+import com.muxiao.timart.ui.create.rules.condition.BluetoothDeviceForm
+import com.muxiao.timart.ui.create.rules.condition.CapsuleReadLinkForm
+import com.muxiao.timart.ui.create.rules.condition.CityLocationForm
+import com.muxiao.timart.ui.create.rules.condition.ClimbFloorsForm
+import com.muxiao.timart.ui.create.rules.condition.DarkThemeForm
+import com.muxiao.timart.ui.create.rules.condition.DayLengthForm
+import com.muxiao.timart.ui.create.rules.condition.DestroyCountForm
+import com.muxiao.timart.ui.create.rules.condition.DevicePoseForm
+import com.muxiao.timart.ui.create.rules.condition.DoNotDisturbForm
+import com.muxiao.timart.ui.create.rules.condition.FreshBootForm
+import com.muxiao.timart.ui.create.rules.condition.GesturePatternForm
+import com.muxiao.timart.ui.create.rules.condition.HemisphereForm
+import com.muxiao.timart.ui.create.rules.condition.InstalledAppForm
+import com.muxiao.timart.ui.create.rules.condition.LastDayOfMonthForm
+import com.muxiao.timart.ui.create.rules.condition.LeapDayForm
+import com.muxiao.timart.ui.create.rules.condition.LiftHighLowerLowForm
+import com.muxiao.timart.ui.create.rules.condition.LunarMonthRangeForm
+import com.muxiao.timart.ui.create.rules.condition.MediaVolumeForm
+import com.muxiao.timart.ui.create.rules.condition.MinElapsedMonthsForm
+import com.muxiao.timart.ui.create.rules.condition.MonthlyDaySetForm
+import com.muxiao.timart.ui.create.rules.condition.NthWeekdayOfMonthForm
+import com.muxiao.timart.ui.create.rules.condition.NthWeekdaySinceForm
+import com.muxiao.timart.ui.create.rules.condition.OrientationForm
+import com.muxiao.timart.ui.create.rules.condition.OtherCapsuleStillLockedForm
+import com.muxiao.timart.ui.create.rules.condition.PlugTypeForm
+import com.muxiao.timart.ui.create.rules.condition.PrecipitationProbabilityForm
+import com.muxiao.timart.ui.create.rules.condition.ProofOfWorkForm
+import com.muxiao.timart.ui.create.rules.condition.ProximityCoveredForm
+import com.muxiao.timart.ui.create.rules.condition.ReadCountForm
+import com.muxiao.timart.ui.create.rules.condition.ReadLinkMode
+import com.muxiao.timart.ui.create.rules.condition.RelativeAltitudeForm
+import com.muxiao.timart.ui.create.rules.condition.RoundDaysForm
+import com.muxiao.timart.ui.create.rules.condition.ScanQrForm
+import com.muxiao.timart.ui.create.rules.condition.ScreenBrightnessForm
+import com.muxiao.timart.ui.create.rules.condition.SeasonForm
+import com.muxiao.timart.ui.create.rules.condition.SolarTermForm
+import com.muxiao.timart.ui.create.rules.condition.SpinPhoneForm
+import com.muxiao.timart.ui.create.rules.condition.SsidBssidMatchForm
+import com.muxiao.timart.ui.create.rules.condition.StayStillForm
+import com.muxiao.timart.ui.create.rules.condition.SunriseRangeForm
+import com.muxiao.timart.ui.create.rules.condition.SpeedRangeForm
+import com.muxiao.timart.ui.create.rules.condition.TapCountForm
+import com.muxiao.timart.ui.create.rules.condition.TempDeltaForm
+import com.muxiao.timart.ui.create.rules.condition.TodayOpenForm
+import com.muxiao.timart.ui.create.rules.condition.TotalCreatedForm
+import com.muxiao.timart.ui.create.rules.condition.VoicePasswordForm
+import com.muxiao.timart.ui.create.rules.condition.VolumeKeyComboForm
+import com.muxiao.timart.ui.create.rules.condition.VpnActiveForm
+import com.muxiao.timart.ui.create.rules.condition.WalkStepsNowForm
+import com.muxiao.timart.ui.create.rules.condition.WatchDurationForm
+import com.muxiao.timart.ui.create.rules.condition.WidgetBoundForm
+import com.muxiao.timart.ui.create.rules.condition.WindDirectionForm
+import com.muxiao.timart.ui.create.rules.condition.YearlyNthWeekdayForm
+import com.muxiao.timart.ui.create.rules.condition.ZodiacSeasonForm
 import com.muxiao.timart.ui.components.visual.SectionHeader
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkDisabled
@@ -105,6 +162,7 @@ fun RulesStep(
     var showTypeSheet by remember { mutableStateOf(false) }
     var activeForm by remember { mutableStateOf<ConditionType?>(null) }
     var showDependencySheet by remember { mutableStateOf(false) }
+    var showScenarioSheet by remember { mutableStateOf(false) }
     val ruleEmpty = vm.conditions.isEmpty() && vm.dependCapsuleId == null
 
     Column(
@@ -149,11 +207,14 @@ fun RulesStep(
                 onRemove = vm::removeCondition,
                 modifier = Modifier.padding(top = 10.dp),
             )
-            // AND/OR 只在两条及以上时有意义
+            // AND/OR/任选 M 只在两条及以上时有意义
             if (vm.conditions.size >= 2) {
                 LogicSwitch(
                     logic = vm.logic,
+                    conditionCount = vm.conditions.size,
+                    threshold = vm.logicThreshold,
                     onLogicChange = vm::updateLogic,
+                    onThresholdChange = vm::updateThreshold,
                     modifier = Modifier.padding(top = 18.dp),
                 )
             }
@@ -171,6 +232,14 @@ fun RulesStep(
                 primary = true,
                 onClick = { showTypeSheet = true },
                 modifier = Modifier.padding(top = 22.dp),
+            )
+        }
+
+        // 场景模板入口（一键生成条件组合；引擎零改动的纯编排）
+        if (vm.conditions.size < CreateViewModel.CONDITION_MAX) {
+            ScenarioEntry(
+                onClick = { showScenarioSheet = true },
+                modifier = Modifier.padding(top = 10.dp),
             )
         }
 
@@ -216,6 +285,14 @@ fun RulesStep(
                 activeForm = type
             },
             onDismiss = { showTypeSheet = false },
+        )
+    }
+
+    // ---- 场景模板面板 ----
+    if (showScenarioSheet) {
+        ScenarioTemplateSheet(
+            vm = vm,
+            onDismiss = { showScenarioSheet = false },
         )
     }
 
@@ -274,6 +351,35 @@ private fun AddConditionEntry(
             style = if (primary) TimartType.titleSerif else TimartType.body,
             color = if (primary) TimeGold else InkPrimary,
             modifier = Modifier.padding(start = 10.dp),
+        )
+    }
+}
+
+/** 场景模板入口行：细边框次级入口，点开模板面板一键生成条件组合 */
+@Composable
+private fun ScenarioEntry(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val L = LocalStrings.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(SurfaceRaise, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = L.scenarioEntry,
+            style = TimartType.caption,
+            color = InkSecondary,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "›",
+            style = TimartType.titleSerif,
+            color = InkDisabled,
         )
     }
 }
@@ -378,6 +484,65 @@ internal enum class ConditionType {
     BIOMETRIC,
     PHOTO_KEEPSAKE,
     NFC,
+
+    // ---- 储备池 v4（57 条，delta-prd-vs-code.md D-1.2）----
+    SOLAR_TERM,
+    ROUND_DAYS,
+    SEASON,
+    ELAPSED_MONTHS,
+    NTH_WEEKDAY_MONTH,
+    NTH_WEEKDAY_YEAR,
+    LEAP_DAY,
+    LAST_DAY_MONTH,
+    NTH_WEEKDAY_SINCE,
+    ZODIAC,
+    LUNAR_MONTH,
+    MONTHLY_DAYS,
+    DARK_THEME,
+    DND,
+    DEVICE_POSE,
+    SCREEN_BRIGHTNESS,
+    MEDIA_VOLUME,
+    VPN,
+    PLUG_TYPE,
+    BATTERY_TEMP,
+    ORIENTATION,
+    BSSID,
+    PROXIMITY,
+    FRESH_BOOT,
+    INSTALLED_APP,
+    BLUETOOTH_DEVICE,
+    SPEED_RANGE,
+    DAY_LENGTH,
+    SUNRISE_RANGE,
+    HEMISPHERE,
+    CITY_LOCATION,
+    RELATIVE_ALTITUDE,
+    AIR_QUALITY,
+    WIND_DIR,
+    TEMP_DELTA,
+    PRECIP_PROB,
+    WATCH_DURATION,
+    READ_COUNT,
+    DESTROY_COUNT,
+    STILL_LOCKED,
+    BACKUP_DONE,
+    TOTAL_CREATED,
+    SAME_DAY_READ,
+    DAYS_SINCE_READ,
+    WIDGET_BOUND,
+    TODAY_OPEN,
+    GESTURE_PATTERN,
+    WALK_NOW,
+    SPIN,
+    VOLUME_KEYS,
+    STAY_STILL,
+    LIFT,
+    VOICE,
+    TAP,
+    CLIMB,
+    SCAN_QR,
+    POW,
 }
 
 /** 条件类型显示名（随界面语言） */
@@ -434,6 +599,64 @@ private fun ConditionType.label(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.BIOMETRIC -> L.condBiometric
     ConditionType.PHOTO_KEEPSAKE -> L.condPhotoKeepsake
     ConditionType.NFC -> L.condNfc
+    // ---- 储备池 v4 ----
+    ConditionType.SOLAR_TERM -> L.condSolarTerm
+    ConditionType.ROUND_DAYS -> L.condRoundDays
+    ConditionType.SEASON -> L.condSeason
+    ConditionType.ELAPSED_MONTHS -> L.condElapsedMonths
+    ConditionType.NTH_WEEKDAY_MONTH -> L.condNthWeekdayMonth
+    ConditionType.NTH_WEEKDAY_YEAR -> L.condNthWeekdayYear
+    ConditionType.LEAP_DAY -> L.condLeapDay
+    ConditionType.LAST_DAY_MONTH -> L.condLastDayMonth
+    ConditionType.NTH_WEEKDAY_SINCE -> L.condNthWeekdaySince
+    ConditionType.ZODIAC -> L.condZodiac
+    ConditionType.LUNAR_MONTH -> L.condLunarMonth
+    ConditionType.MONTHLY_DAYS -> L.condMonthlyDays
+    ConditionType.DARK_THEME -> L.condDarkTheme
+    ConditionType.DND -> L.condDnd
+    ConditionType.DEVICE_POSE -> L.condPose
+    ConditionType.SCREEN_BRIGHTNESS -> L.condBrightness
+    ConditionType.MEDIA_VOLUME -> L.condMediaVolume
+    ConditionType.VPN -> L.condVpn
+    ConditionType.PLUG_TYPE -> L.condPlugType
+    ConditionType.BATTERY_TEMP -> L.condBatteryTemp
+    ConditionType.ORIENTATION -> L.condOrientation
+    ConditionType.BSSID -> L.condBssid
+    ConditionType.PROXIMITY -> L.condProximity
+    ConditionType.FRESH_BOOT -> L.condFreshBoot
+    ConditionType.INSTALLED_APP -> L.condInstalledApp
+    ConditionType.BLUETOOTH_DEVICE -> L.condBluetooth
+    ConditionType.SPEED_RANGE -> L.condSpeedRange
+    ConditionType.DAY_LENGTH -> L.condDayLength
+    ConditionType.SUNRISE_RANGE -> L.condSunriseRange
+    ConditionType.HEMISPHERE -> L.condHemisphere
+    ConditionType.CITY_LOCATION -> L.condCityLocation
+    ConditionType.RELATIVE_ALTITUDE -> L.condRelAltitude
+    ConditionType.AIR_QUALITY -> L.condAirQuality
+    ConditionType.WIND_DIR -> L.condWindDir
+    ConditionType.TEMP_DELTA -> L.condTempDelta
+    ConditionType.PRECIP_PROB -> L.condPrecipProb
+    ConditionType.WATCH_DURATION -> L.condWatchDuration
+    ConditionType.READ_COUNT -> L.condReadCount
+    ConditionType.DESTROY_COUNT -> L.condDestroyCount
+    ConditionType.STILL_LOCKED -> L.condStillLocked
+    ConditionType.BACKUP_DONE -> L.condBackupDone
+    ConditionType.TOTAL_CREATED -> L.condTotalCreated
+    ConditionType.SAME_DAY_READ -> L.condSameDayRead
+    ConditionType.DAYS_SINCE_READ -> L.condDaysSinceRead
+    ConditionType.WIDGET_BOUND -> L.condWidgetBound
+    ConditionType.TODAY_OPEN -> L.condTodayOpen
+    ConditionType.GESTURE_PATTERN -> L.condGesturePattern
+    ConditionType.WALK_NOW -> L.condWalkNow
+    ConditionType.SPIN -> L.condSpin
+    ConditionType.VOLUME_KEYS -> L.condVolumeKeys
+    ConditionType.STAY_STILL -> L.condStayStill
+    ConditionType.LIFT -> L.condLift
+    ConditionType.VOICE -> L.condVoice
+    ConditionType.TAP -> L.condTap
+    ConditionType.CLIMB -> L.condClimb
+    ConditionType.SCAN_QR -> L.condScanQr
+    ConditionType.POW -> L.condPow
 }
 
 /** 条件分组名（随界面语言） */
@@ -499,6 +722,74 @@ private fun ConditionType.group(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.PHOTO_KEEPSAKE,
     ConditionType.NFC,
     -> L.catChallenge
+
+    // ---- 储备池 v4 分组 ----
+    ConditionType.SOLAR_TERM,
+    ConditionType.ROUND_DAYS,
+    ConditionType.SEASON,
+    ConditionType.ELAPSED_MONTHS,
+    ConditionType.NTH_WEEKDAY_MONTH,
+    ConditionType.NTH_WEEKDAY_YEAR,
+    ConditionType.LEAP_DAY,
+    ConditionType.LAST_DAY_MONTH,
+    ConditionType.NTH_WEEKDAY_SINCE,
+    ConditionType.ZODIAC,
+    ConditionType.LUNAR_MONTH,
+    ConditionType.MONTHLY_DAYS,
+    -> L.catTime
+
+    ConditionType.DARK_THEME,
+    ConditionType.DND,
+    ConditionType.DEVICE_POSE,
+    ConditionType.SCREEN_BRIGHTNESS,
+    ConditionType.MEDIA_VOLUME,
+    ConditionType.VPN,
+    ConditionType.PLUG_TYPE,
+    ConditionType.BATTERY_TEMP,
+    ConditionType.ORIENTATION,
+    ConditionType.BSSID,
+    ConditionType.PROXIMITY,
+    ConditionType.FRESH_BOOT,
+    ConditionType.INSTALLED_APP,
+    ConditionType.BLUETOOTH_DEVICE,
+    -> L.catDevice
+
+    ConditionType.SPEED_RANGE,
+    ConditionType.DAY_LENGTH,
+    ConditionType.SUNRISE_RANGE,
+    ConditionType.HEMISPHERE,
+    ConditionType.CITY_LOCATION,
+    ConditionType.RELATIVE_ALTITUDE,
+    ConditionType.AIR_QUALITY,
+    ConditionType.WIND_DIR,
+    ConditionType.TEMP_DELTA,
+    ConditionType.PRECIP_PROB,
+    -> L.catNet
+
+    ConditionType.WATCH_DURATION,
+    ConditionType.READ_COUNT,
+    ConditionType.DESTROY_COUNT,
+    ConditionType.STILL_LOCKED,
+    ConditionType.BACKUP_DONE,
+    ConditionType.TOTAL_CREATED,
+    ConditionType.SAME_DAY_READ,
+    ConditionType.DAYS_SINCE_READ,
+    ConditionType.WIDGET_BOUND,
+    ConditionType.TODAY_OPEN,
+    -> L.catUsage
+
+    ConditionType.GESTURE_PATTERN,
+    ConditionType.WALK_NOW,
+    ConditionType.SPIN,
+    ConditionType.VOLUME_KEYS,
+    ConditionType.STAY_STILL,
+    ConditionType.LIFT,
+    ConditionType.VOICE,
+    ConditionType.TAP,
+    ConditionType.CLIMB,
+    ConditionType.SCAN_QR,
+    ConditionType.POW,
+    -> L.catChallenge
 }
 
 /** 条件类型选择面板：分组 + 双列网格。
@@ -528,11 +819,26 @@ internal fun ConditionTypeSheet(
             if (com.muxiao.timart.utils.device.DeviceHardware.ACCELEROMETER in missing) {
                 add(ConditionType.SHAKE)
                 add(ConditionType.FLIP_HOLD)
+                add(ConditionType.DEVICE_POSE)
+                add(ConditionType.STAY_STILL)
             }
+            if (com.muxiao.timart.utils.device.DeviceHardware.GYROSCOPE in missing) add(ConditionType.SPIN)
+            if (com.muxiao.timart.utils.device.DeviceHardware.PROXIMITY in missing) add(ConditionType.PROXIMITY)
             if (com.muxiao.timart.utils.device.DeviceHardware.NFC in missing) add(ConditionType.NFC)
             if (com.muxiao.timart.utils.device.DeviceHardware.LIGHT_SENSOR in missing) add(ConditionType.AMBIENT_LIGHT)
-            if (com.muxiao.timart.utils.device.DeviceHardware.CAMERA in missing) add(ConditionType.PHOTO_KEEPSAKE)
+            if (com.muxiao.timart.utils.device.DeviceHardware.CAMERA in missing) {
+                add(ConditionType.PHOTO_KEEPSAKE)
+                add(ConditionType.SCAN_QR)
+            }
             if (com.muxiao.timart.utils.device.DeviceHardware.BIOMETRIC in missing) add(ConditionType.BIOMETRIC)
+            if (com.muxiao.timart.utils.device.DeviceHardware.PRESSURE in missing) {
+                add(ConditionType.RELATIVE_ALTITUDE)
+                add(ConditionType.CLIMB)
+                add(ConditionType.LIFT)
+            }
+            if (com.muxiao.timart.utils.device.DeviceHardware.STEP_COUNTER in missing) {
+                add(ConditionType.WALK_NOW)
+            }
         }
     }
     ModalBottomSheet(
@@ -843,6 +1149,77 @@ internal fun ConditionFormSheet(
                 ConditionType.NFC -> NfcTapForm(
                     onConfirm = { onConfirm(it) },
                 )
+
+                // ---- 储备池 v4 ----
+                ConditionType.SOLAR_TERM -> SolarTermForm(onConfirm = { onConfirm(it) })
+                ConditionType.ROUND_DAYS -> RoundDaysForm(onConfirm = { onConfirm(it) })
+                ConditionType.SEASON -> SeasonForm(onConfirm = { onConfirm(it) })
+                ConditionType.ELAPSED_MONTHS -> MinElapsedMonthsForm(onConfirm = { onConfirm(it) })
+                ConditionType.NTH_WEEKDAY_MONTH -> NthWeekdayOfMonthForm(onConfirm = { onConfirm(it) })
+                ConditionType.NTH_WEEKDAY_YEAR -> YearlyNthWeekdayForm(onConfirm = { onConfirm(it) })
+                ConditionType.LEAP_DAY -> LeapDayForm(onConfirm = { onConfirm(it) })
+                ConditionType.LAST_DAY_MONTH -> LastDayOfMonthForm(onConfirm = { onConfirm(it) })
+                ConditionType.NTH_WEEKDAY_SINCE -> NthWeekdaySinceForm(onConfirm = { onConfirm(it) })
+                ConditionType.ZODIAC -> ZodiacSeasonForm(onConfirm = { onConfirm(it) })
+                ConditionType.LUNAR_MONTH -> LunarMonthRangeForm(onConfirm = { onConfirm(it) })
+                ConditionType.MONTHLY_DAYS -> MonthlyDaySetForm(onConfirm = { onConfirm(it) })
+                ConditionType.DARK_THEME -> DarkThemeForm(onConfirm = { onConfirm(it) })
+                ConditionType.DND -> DoNotDisturbForm(onConfirm = { onConfirm(it) })
+                ConditionType.DEVICE_POSE -> DevicePoseForm(onConfirm = { onConfirm(it) })
+                ConditionType.SCREEN_BRIGHTNESS -> ScreenBrightnessForm(onConfirm = { onConfirm(it) })
+                ConditionType.MEDIA_VOLUME -> MediaVolumeForm(onConfirm = { onConfirm(it) })
+                ConditionType.VPN -> VpnActiveForm(onConfirm = { onConfirm(it) })
+                ConditionType.PLUG_TYPE -> PlugTypeForm(onConfirm = { onConfirm(it) })
+                ConditionType.BATTERY_TEMP -> BatteryTempForm(onConfirm = { onConfirm(it) })
+                ConditionType.ORIENTATION -> OrientationForm(onConfirm = { onConfirm(it) })
+                ConditionType.BSSID -> vm?.let {
+                    SsidBssidMatchForm(vm = it, onConfirm = { onConfirm(it) })
+                }
+                ConditionType.PROXIMITY -> ProximityCoveredForm(onConfirm = { onConfirm(it) })
+                ConditionType.FRESH_BOOT -> FreshBootForm(onConfirm = { onConfirm(it) })
+                ConditionType.INSTALLED_APP -> InstalledAppForm(onConfirm = { onConfirm(it) })
+                ConditionType.BLUETOOTH_DEVICE -> BluetoothDeviceForm(onConfirm = { onConfirm(it) })
+                ConditionType.SPEED_RANGE -> SpeedRangeForm(onConfirm = { onConfirm(it) })
+                ConditionType.DAY_LENGTH -> DayLengthForm(onConfirm = { onConfirm(it) })
+                ConditionType.SUNRISE_RANGE -> SunriseRangeForm(onConfirm = { onConfirm(it) })
+                ConditionType.HEMISPHERE -> HemisphereForm(onConfirm = { onConfirm(it) })
+                ConditionType.CITY_LOCATION -> vm?.let {
+                    CityLocationForm(vm = it, onConfirm = onConfirm)
+                }
+                ConditionType.RELATIVE_ALTITUDE -> vm?.let {
+                    RelativeAltitudeForm(vm = it, onConfirm = { onConfirm(it) })
+                }
+                ConditionType.AIR_QUALITY -> AirQualityForm(onConfirm = { onConfirm(it) })
+                ConditionType.WIND_DIR -> WindDirectionForm(onConfirm = { onConfirm(it) })
+                ConditionType.TEMP_DELTA -> TempDeltaForm(onConfirm = { onConfirm(it) })
+                ConditionType.PRECIP_PROB -> PrecipitationProbabilityForm(onConfirm = { onConfirm(it) })
+                ConditionType.WATCH_DURATION -> WatchDurationForm(onConfirm = { onConfirm(it) })
+                ConditionType.READ_COUNT -> ReadCountForm(onConfirm = { onConfirm(it) })
+                ConditionType.DESTROY_COUNT -> DestroyCountForm(onConfirm = { onConfirm(it) })
+                ConditionType.STILL_LOCKED -> vm?.let {
+                    OtherCapsuleStillLockedForm(vm = it, onConfirm = onConfirm)
+                }
+                ConditionType.BACKUP_DONE -> BackupDoneForm(onConfirm = { onConfirm(it) })
+                ConditionType.TOTAL_CREATED -> TotalCreatedForm(onConfirm = { onConfirm(it) })
+                ConditionType.SAME_DAY_READ -> vm?.let {
+                    CapsuleReadLinkForm(vm = it, mode = ReadLinkMode.SAME_DAY, onConfirm = onConfirm)
+                }
+                ConditionType.DAYS_SINCE_READ -> vm?.let {
+                    CapsuleReadLinkForm(vm = it, mode = ReadLinkMode.DAYS_SINCE, onConfirm = onConfirm)
+                }
+                ConditionType.WIDGET_BOUND -> WidgetBoundForm(onConfirm = { onConfirm(it) })
+                ConditionType.TODAY_OPEN -> TodayOpenForm(onConfirm = { onConfirm(it) })
+                ConditionType.GESTURE_PATTERN -> GesturePatternForm(onConfirm = { onConfirm(it) })
+                ConditionType.WALK_NOW -> WalkStepsNowForm(onConfirm = { onConfirm(it) })
+                ConditionType.SPIN -> SpinPhoneForm(onConfirm = { onConfirm(it) })
+                ConditionType.VOLUME_KEYS -> VolumeKeyComboForm(onConfirm = { onConfirm(it) })
+                ConditionType.STAY_STILL -> StayStillForm(onConfirm = { onConfirm(it) })
+                ConditionType.LIFT -> LiftHighLowerLowForm(onConfirm = { onConfirm(it) })
+                ConditionType.VOICE -> VoicePasswordForm(onConfirm = { onConfirm(it) })
+                ConditionType.TAP -> TapCountForm(onConfirm = { onConfirm(it) })
+                ConditionType.CLIMB -> ClimbFloorsForm(onConfirm = { onConfirm(it) })
+                ConditionType.SCAN_QR -> ScanQrForm(onConfirm = { onConfirm(it) })
+                ConditionType.POW -> ProofOfWorkForm(onConfirm = { onConfirm(it) })
             }
         }
     }

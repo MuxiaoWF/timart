@@ -47,4 +47,10 @@ data class WeatherSnapshot(
     val windKmh: Double? = null,
     val pressureHpa: Double? = null,
     val uvIndex: Double? = null,
+    /** 当前风向（度，气象惯例 0 = 北；储备池 v4 风向条件通道） */
+    val windDirectionDeg: Int? = null,
+    /** 今日降水概率上限（%，Open-Meteo daily 字段） */
+    val precipProbPercent: Int? = null,
+    /** 昨日日均温（°C，past_days=1；降温条件通道） */
+    val yesterdayMeanTempC: Double? = null,
 )

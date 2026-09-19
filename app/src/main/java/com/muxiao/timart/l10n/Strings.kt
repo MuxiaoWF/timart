@@ -654,4 +654,318 @@ interface Strings {
     val bkErrReadFile: String
     val bkErrReadFailFmt: String
     val bkErrFormat: String
+
+    // ---- 储备池 v4 条件名（57 条，delta-prd-vs-code.md D-1.2）----
+    val condSolarTerm: String
+    val condRoundDays: String
+    val condSeason: String
+    val condElapsedMonths: String
+    val condNthWeekdayMonth: String
+    val condNthWeekdayYear: String
+    val condLeapDay: String
+    val condLastDayMonth: String
+    val condNthWeekdaySince: String
+    val condZodiac: String
+    val condDayLength: String
+    val condSunriseRange: String
+    val condLunarMonth: String
+    val condMonthlyDays: String
+    val condDarkTheme: String
+    val condDnd: String
+    val condPose: String
+    val condBrightness: String
+    val condMediaVolume: String
+    val condVpn: String
+    val condPlugType: String
+    val condBatteryTemp: String
+    val condOrientation: String
+    val condSpeedRange: String
+    val condBssid: String
+    val condBluetooth: String
+    val condProximity: String
+    val condFreshBoot: String
+    val condInstalledApp: String
+    val condAirQuality: String
+    val condWindDir: String
+    val condHemisphere: String
+    val condTempDelta: String
+    val condCityLocation: String
+    val condRelAltitude: String
+    val condPrecipProb: String
+    val condWatchDuration: String
+    val condReadCount: String
+    val condDestroyCount: String
+    val condStillLocked: String
+    val condBackupDone: String
+    val condTotalCreated: String
+    val condSameDayRead: String
+    val condDaysSinceRead: String
+    val condWidgetBound: String
+    val condTodayOpen: String
+    val condGesturePattern: String
+    val condWalkNow: String
+    val condSpin: String
+    val condVolumeKeys: String
+    val condStayStill: String
+    val condLift: String
+    val condVoice: String
+    val condTap: String
+    val condClimb: String
+    val condScanQr: String
+    val condPow: String
+
+    // ---- 储备池 v4 表单 / 挑战提示 ----
+
+    /** 依赖定位通道的条件表单说明（白昼长度 / 日出钟点 / 半球 / 速度区间共用） */
+    val condGpsNeeded: String
+
+    /** 城市级定位近似判定说明 */
+    val cityLocNote: String
+
+    /** 手势图案：创建提示 */
+    val gestureFormHint: String
+
+    /** 手势图案：挑战提示 */
+    val gesturePadHint: String
+
+    /** 语音口令：创建提示 */
+    val voiceFormHint: String
+
+    /** 蓝牙设备条件说明 */
+    val btFormHint: String
+
+    /** 已装应用：包名输入标签 */
+    val installedPkgLabel: String
+
+    /** BSSID 表单：一键读取当前路由器 */
+    val sfUseCurrentBssid: String
+
+    /** BSSID 表单：读不到时的提示 */
+    val sfNoCurrentBssid: String
+
+    /** 算力挑战：难度说明 */
+    val powFormNote: String
+
+    /** 音量键挑战提示 */
+    val challengeVolumeKeysHint: String
+
+    /** 转机挑战提示 */
+    val challengeSpinHint: String
+
+    /** 城市搜索框提示（城市级定位表单） */
+    val citySearchHint: String
+
+    // ---- 储备池 §6：M-of-N 逻辑 + 场景模板 ----
+
+    /** 逻辑切换第三态药丸：N 条满足 M 条即可 */
+    val logicAtLeastPill: String
+
+    /** 逻辑说明（AT_LEAST） */
+    val logicAtLeastDesc: String
+
+    /** 阈值选择行（%1$d = M，%2$d = N） */
+    val thresholdFmt: String
+
+    /** 封存摘要前缀（%1$d = M，%2$d = N） */
+    val summaryAtLeastPrefix: String
+
+    /** 详情页满足态（AT_LEAST 达到阈值，%1$d = 已满足，%2$d = 总数） */
+    val condAtLeastMetFmt: String
+
+    /** 场景模板入口与面板标题 */
+    val scenarioEntry: String
+    val scenarioSheetTitle: String
+
+    /** 模板：名称 + 说明（8 组） */
+    val tplNightName: String
+    val tplNightNote: String
+    val tplFarName: String
+    val tplFarNote: String
+    val tplRunName: String
+    val tplRunNote: String
+    val tplMoonName: String
+    val tplMoonNote: String
+    val tplLunarName: String
+    val tplLunarNote: String
+    val tplMotherName: String
+    val tplMotherNote: String
+    val tplUnplugName: String
+    val tplUnplugNote: String
+    val tplCafeName: String
+    val tplCafeNote: String
+
+    // ---- 体验储备池增量（docs/backlog-experience.md ★五件套）----
+
+    /** 灵感卡（封存问答卡）：写下页小节标题 / 提示 / 抽卡动作 */
+    val promptSectionLabel: String
+    val promptSectionHint: String
+    val promptDrawHint: String
+
+    /** 灵感卡池（三语各 30 张；纯文案资产，写下页随机翻牌引导内容） */
+    val sealPrompts: List<String>
+
+    /** 盲盒封存（连自己也保密）：开关 / 确认弹窗 / 预览遮蔽 */
+    val blindBoxLabel: String
+    val blindBoxDesc: String
+    val blindAskTitle: String
+    val blindAskBody: String
+    val blindBoxTag: String
+    val blindMaskTitle: String
+    val blindMaskSentence: String
+    val summaryBlindBox: String
+
+    /** 单胶囊赠予：详情页入口 / 导出弹窗 / 收下弹窗（设置页）/ 错误 */
+    val giftEntry: String
+    val giftExportTitle: String
+    val giftExportInfo: String
+    val giftExportNote: String
+    val giftExportDone: String
+    val giftImportTitle: String
+    val giftImportInfo: String
+    val giftImportAskPw: String
+    val giftImportDoneFmt: String
+    val giftErrDestroyed: String
+    val giftErrNeedLocalUnlock: String
+    val giftErrNoCapsule: String
+    val setGiftImport: String
+    val setGiftImportDesc: String
+
+    /** 尘迹生平页（胶囊的一生） */
+    val bioTitle: String
+    val bioSealLabel: String
+    val bioOpenLabel: String
+    val bioDustLabel: String
+    val bioNeverOpened: String
+    val bioConditionsLabel: String
+    val bioMomentFmt: String
+    val bioMomentUnrecorded: String
+    val bioViewsFmt: String
+    val bioWatchMinFmt: String
+    val bioWatchSecFmt: String
+    val bioNoteLabel: String
+    val bioRowGone: String
+
+    // ---- 体验储备池 §1–§2 增量（声音留言 / 手绘附件 / 信纸样式 / 成熟度渐变 / 今日抽一颗）----
+
+    /** 声音留言（写下页录制 + 解封播放） */
+    val voiceLabel: String
+    val voiceHint: String
+    val voiceRecordStart: String
+    val voiceRecordingFmt: String
+    val voiceRerecord: String
+    val voiceRecordedFmt: String
+    val voicePermHint: String
+    val voicePlay: String
+    val voiceStopPlaying: String
+
+    /** 信纸样式（封存时选定，解封信笺呈现） */
+    val paperLabel: String
+    val paperHint: String
+    val paperNamePlain: String
+    val paperNameMist: String
+    val paperNameEmber: String
+
+    /** 手绘附件弹层 */
+    val handDrawTile: String
+    val handDrawTitle: String
+    val handDrawHint: String
+    val handDrawUndo: String
+    val handDrawClear: String
+
+    /** 今日抽一颗（预览卡第三页小注） */
+    val previewToday: String
+
+    // ---- 体验储备池 §3–§5 增量（拼图 / 嵌套 / NFC 锚点 / 回信 / 年度报告）----
+
+    /** 回信（开启后一句附言，随档案留存） */
+    val replyWrite: String
+    val replyEdit: String
+    val replyLabel: String
+    val replyPlaceholder: String
+    val replyHint: String
+
+    /** NFC 实体锚点 */
+    val nfcLinkTitle: String
+    val nfcLinkInfo: String
+
+    /** 拼图胶囊（封存侧分组 + 详情侧合信视图） */
+    val puzzleLabel: String
+    val puzzleDesc: String
+    val puzzleJoin: String
+    val puzzleJoinedFmt: String
+    val puzzleSheetDesc: String
+    val puzzlePieceCountFmt: String
+    val puzzleNewGroup: String
+    val puzzleExistingGroups: String
+    val puzzleGroupRowFmt: String
+    val puzzleOpen: String
+    val puzzleSheetTitle: String
+    val puzzleEmpty: String
+    val puzzlePieceFmt: String
+    val puzzleStatusFmt: String
+    val puzzleReadyFmt: String
+
+    /** 嵌套胶囊（封存侧选择父胶囊） */
+    val seedLabel: String
+    val seedDesc: String
+    val seedPick: String
+    val seedBoundFmt: String
+    val seedPickTitle: String
+    val seedPickDesc: String
+    val seedEmpty: String
+
+    /** 年度星图报告 */
+    val setAnnualReport: String
+    val setAnnualReportDesc: String
+    val reportTitleFmt: String
+    val reportSealedFmt: String
+    val reportOpenedFmt: String
+    val reportDustFmt: String
+    val reportLongestWaitFmt: String
+    val reportTopConditionFmt: String
+    val reportShare: String
+    val reportComputing: String
+    val reportNote: String
+
+    // ---- 体验储备池 §6–§7 增量（触觉签名 / 环境音 / 旁白语料 / 口令分片 / 模板打磨）----
+
+    /** 闲置旁白语料池（体验储备池 §6）：8 组 = 四季 × 2，按季节桶 + 日奇偶轮换 */
+    val narrIdleVariants: List<Pair<String, String>>
+
+    /** M-of-N 预告（体验储备池 §7.2：时间线顶部「还差几条」） */
+    val condAtLeastGapFmt: String
+
+    /** 触觉签名（封存时选择，解锁/销毁时振动） */
+    val hapticLabel: String
+    val hapticDesc: String
+    val hapticNone: String
+    val hapticDouble: String
+    val hapticPulse: String
+    val hapticRipple: String
+
+    /** 环境音场景（封存时绑定，解封淡入） */
+    val ambientLabel: String
+    val ambientDesc: String
+    val ambientNone: String
+    val ambientRain: String
+    val ambientDrone: String
+
+    /** 口令分片（体验储备池 §7.1） */
+    val shardLabel: String
+    val shardDesc: String
+    val shardNote: String
+    val shardTotalFmt: String
+    val shardThresholdFmt: String
+    val shardSharesTitle: String
+    val shardSharesNote: String
+    val shardShareDone: String
+    val shardGateHintFmt: String
+    val shardGateInputHint: String
+    val shardGateSubmit: String
+    val shardInvalid: String
+
+    /** 场景模板打磨（体验储备池 §7.2：用户自存模板） */
+    val tplUserSection: String
+    val tplUserSaveCurrent: String
+    val tplUserNeedConditions: String
 }

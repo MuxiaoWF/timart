@@ -83,9 +83,7 @@ fun ChallengeSection(
     val L = LocalStrings.current
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            // 底部固定间距：下方 weight spacer 在内容超屏时会收缩为 0，无此间距挑战卡将贴住底部叙事
-            .padding(bottom = 24.dp),
+            .fillMaxWidth(),
     ) {
         Text(
             text = L.challengeSectionTitle,
@@ -150,6 +148,18 @@ private fun ChallengeCard(
                 is UnlockCondition.HoldPress -> HoldPressChallenge(condition) { onAnswer(condition, DONE) }
                 is UnlockCondition.BiometricUnlock -> BiometricChallenge { onAnswer(condition, DONE) }
                 is UnlockCondition.PhotoKeepsake -> PhotoKeepsakeChallenge { onAnswer(condition, DONE) }
+                // ---- 储备池 v4 ----
+                is UnlockCondition.VoicePassword -> VoiceChallenge { onAnswer(condition, it) }
+                is UnlockCondition.GesturePattern -> GesturePatternChallenge { onAnswer(condition, it) }
+                is UnlockCondition.ScanQr -> ScanQrChallenge(condition) { onAnswer(condition, it) }
+                is UnlockCondition.ProofOfWork -> PowChallenge(condition) { onAnswer(condition, it) }
+                is UnlockCondition.WalkStepsNow -> WalkNowChallenge(condition.steps) { onAnswer(condition, DONE) }
+                is UnlockCondition.SpinPhone -> SpinChallenge(condition.degrees) { onAnswer(condition, DONE) }
+                is UnlockCondition.VolumeKeyCombo -> VolumeKeysChallenge(condition.holdSeconds) { onAnswer(condition, DONE) }
+                is UnlockCondition.StayStill -> StayStillChallenge(condition.holdSeconds) { onAnswer(condition, DONE) }
+                is UnlockCondition.LiftHighLowerLow -> LiftChallenge(condition) { onAnswer(condition, DONE) }
+                is UnlockCondition.TapCount -> TapChallenge(condition.taps) { onAnswer(condition, DONE) }
+                is UnlockCondition.ClimbFloors -> ClimbChallenge(condition.floors) { onAnswer(condition, DONE) }
             }
         }
     }

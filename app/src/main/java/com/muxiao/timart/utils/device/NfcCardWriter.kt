@@ -26,14 +26,36 @@ object NfcCardWriter {
     }
 
     /** 把该挑战的配对记录写入卡贴 */
-    fun writePairing(tag: Tag, challengeId: String): Result {
-        val message = NdefMessage(
-            NdefRecord.createExternal(
-                NfcPairing.EXTERNAL_DOMAIN,
-                NfcPairing.EXTERNAL_TYPE,
-                NfcPairing.payloadFor(challengeId).toByteArray(Charsets.UTF_8),
+    fun writePairing(tag: Tag, challengeId: String): Result =
+        writeMessage(
+            tag,
+            NdefMessage(
+                NdefRecord.createExternal(
+                    NfcPairing.EXTERNAL_DOMAIN,
+                    NfcPairing.EXTERNAL_TYPE,
+                    NfcPairing.payloadFor(challengeId).toByteArray(Charsets.UTF_8),
+                ),
             ),
         )
+
+    /**
+     * 写入胶囊链接记录（体验储备池 §4 NFC 实体锚点）：
+     * 类型 `timart.com:link`，载荷 = capsuleId——卡贴在实物上，碰卡直达该胶囊。
+     */
+    fun writeCapsuleLink(tag: Tag, capsuleId: String): Result =
+        writeMessage(
+            tag,
+            NdefMessage(
+                NdefRecord.createExternal(
+                    NfcPairing.EXTERNAL_DOMAIN,
+                    NfcPairing.LINK_TYPE,
+                    capsuleId.toByteArray(Charsets.UTF_8),
+                ),
+            ),
+        )
+
+    /** 共享写卡流程：已格式化标签走 [Ndef]，未格式化走 [NdefFormatable] 现场格式化 */
+    private fun writeMessage(tag: Tag, message: NdefMessage): Result {
         val bytes = message.toByteArray()
         return try {
             val ndef = Ndef.get(tag)
@@ -70,5 +92,31 @@ object NfcCardWriter {
                 ?.map { String(it.payload, Charsets.UTF_8) }
                 .orEmpty()
         }.getOrElse { emptyList() }
+    }
+
+    /**
+     * 从系统 NFC 分发 Intent 中解析胶囊链接记录（体验储备池 §4）：
+     * 找到 `timart.com:link` 外部类型记录 → 返回其载荷（capsuleId）；无链接记录返回 null。
+     * 仅解 Intent 里的 NDEF 消息（ACTION_NDEF_DISCOVERED 时已就绪，免 connect）。
+     */
+    fun parseLinkCapsuleId(intent: android.content.Intent): String? {
+        if (intent.action != android.nfc.NfcAdapter.ACTION_NDEF_DISCOVERED) return null
+        // API 33 起走类型安全重载；低版本仍用旧签名（弃用告警就地抑制）
+        val messages = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES, android.os.Parcelable::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES)
+        } ?: return null
+        for (raw in messages) {
+            val message = raw as? NdefMessage ?: continue
+            for (record in message.records) {
+                val type = String(record.type, Charsets.UTF_8)
+                if (NfcPairing.isLinkRecord(type)) {
+                    return String(record.payload, Charsets.UTF_8)
+                }
+            }
+        }
+        return null
     }
 }

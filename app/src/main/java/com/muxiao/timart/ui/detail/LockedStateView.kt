@@ -6,6 +6,8 @@ import android.hardware.SensorManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -110,6 +112,12 @@ fun LockedStateView(
     /** 「后悔药」隐藏入口：每胶囊一次的条件修改机会未消耗时，长按或连续快击尘核唤出 */
     regretAvailable: Boolean = false,
     onOrbLongPress: () -> Unit = {},
+
+    /** 单胶囊赠予入口（体验储备池 §4）：点击唤出赠予导出弹窗 */
+    onGift: () -> Unit = {},
+
+    /** NFC 实体锚点入口（体验储备池 §4）：写 `timart.com:link` 卡贴，碰卡直达该胶囊 */
+    onWriteNfcLink: () -> Unit = {},
 
     /** 粒子画布（宿主 ParticleCanvas）在窗口根坐标中的原点：尘核锚点换算画布局部坐标用 */
     overlayOrigin: Offset = Offset.Zero,
@@ -287,12 +295,32 @@ fun LockedStateView(
             style = TimartType.titleSerif,
             color = TimeGold,
         )
+        // 满足态措辞按逻辑类型：AND 全部达成 / OR 任一达成 / AT_LEAST 达到任选阈值
+        val rule = capsule.unlockRule
+        val metText = when {
+            total <= 0 -> L.condSomeMet
+            rule.logicType == com.muxiao.timart.domain.model.unlock.LogicType.AT_LEAST &&
+                satisfied >= (rule.threshold ?: total).coerceIn(1, total) -> L.condAtLeastMetFmt.format(satisfied, total)
+            satisfied == total -> L.condAllMet
+            else -> L.condSomeMet
+        }
         Text(
-            text = if (total > 0 && satisfied == total) L.condAllMet else L.condSomeMet,
+            text = metText,
             style = TimartType.caption,
             color = InkSecondary,
             modifier = Modifier.padding(top = 6.dp),
         )
+        // M-of-N 预告（体验储备池 §7.2）：未达任选阈值时明示还差几条（时间线顶部的口头承诺）
+        if (rule.logicType == com.muxiao.timart.domain.model.unlock.LogicType.AT_LEAST &&
+            satisfied < (rule.threshold ?: total).coerceIn(1, total)
+        ) {
+            Text(
+                text = L.condAtLeastGapFmt.format(rule.threshold ?: total, satisfied, (rule.threshold ?: total) - satisfied),
+                style = TimartType.caption,
+                color = TimeGold,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
 
         Spacer(modifier = Modifier.height(30.dp))
 
@@ -346,6 +374,19 @@ fun LockedStateView(
                 ),
             )
         }
+
+        // 单胶囊赠予入口（导出加密赠予文件；与整库备份的语义差异见 GiftExportDialog 说明）
+        DetailActionRow(
+            label = L.giftEntry,
+            onClick = onGift,
+            modifier = Modifier.padding(top = 18.dp),
+        )
+        // NFC 实体锚点入口（写卡贴；碰卡经系统 NDEF 分发直达本胶囊）
+        DetailActionRow(
+            label = L.nfcLinkTitle,
+            onClick = onWriteNfcLink,
+            modifier = Modifier.padding(top = 10.dp),
+        )
 
         // 条件行权限引导（T14）：权限未授予 → 去开启（拒绝不影响判定）。
         // 组容器统一与上方开关行的间距（18dp），组内两条引导间隔 12dp
@@ -402,9 +443,10 @@ fun LockedStateView(
             satisfiedIds = satisfiedChallenges,
         )
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        // 底部叙事（对齐设计稿：还差最后一把钥匙…）
+        // 底部叙事（对齐设计稿：还差最后一把钥匙…）。
+        // 可滚动 Column 里 weight spacer 恒塌缩为 0，与上方条目（赠予/NFC 卡、挑战卡、权限引导）
+        // 的间距由这里的固定 spacer 保证，不依赖上方区块自带的 bottom padding
+        Spacer(modifier = Modifier.height(24.dp))
         val (narrative, narrativeNote) =
             narrativeFor(timeline, total, satisfied, RuntimeSettings.resolvedLang)
         Text(
@@ -475,6 +517,37 @@ private const val REGRET_LONG_PRESS_MS = 3_000L
 private const val REGRET_TAP_TRIGGER_COUNT = 5
 private const val REGRET_TAP_WINDOW_MS = 1_200L
 
+/** 详情页次级动作行（赠予 / NFC 卡贴）：整行卡片化可点（SurfaceRaise 底 + 发丝描边 + 尾部箭头），
+ *  行高约 48dp，替代原先 caption 纯文本的小热区 */
+@Composable
+private fun DetailActionRow(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(SurfaceRaise, RoundedCornerShape(12.dp))
+            .border(1.dp, TrackHairline, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text(
+            text = label,
+            style = TimartType.body,
+            color = TimeGold,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "›",
+            style = TimartType.titleSerif,
+            color = TimeGold,
+        )
+    }
+}
+
 /** 依赖前置尘核行：小型球体 + 依赖标题 + 状态文本（已销毁 → 永久无法解锁明示） */
 @Composable
 private fun DependencyRow(timeline: DetailViewModel.TimelineUi) {
@@ -528,7 +601,7 @@ private fun DependencyRow(timeline: DetailViewModel.TimelineUi) {
     }
 }
 
-/** 底部叙事文案（随判定进度微调，保持低调不庆祝） */
+/** 底部叙事文案（随判定进度微调，保持低调不庆祝）；闲置语料随季节/日期轮换（体验储备池 §6） */
 private fun narrativeFor(
     timeline: DetailViewModel.TimelineUi?,
     total: Int,
@@ -536,12 +609,28 @@ private fun narrativeFor(
     lang: Lang,
 ): Pair<String, String> {
     val L = stringsFor(lang)
+    val idlePair = run {
+        val variants = L.narrIdleVariants
+        if (variants.isEmpty()) {
+            L.narrIdle1 to L.narrIdle2
+        } else {
+            // 季节桶（口径与 SeasonKind 判定一致）内按日奇偶轮换：旁白跟着时间走
+            val today = java.time.LocalDate.now()
+            val seasonBase = when (today.monthValue) {
+                3, 4, 5 -> 0
+                6, 7, 8 -> 2
+                9, 10, 11 -> 4
+                else -> 6
+            }
+            variants[(seasonBase + today.dayOfYear % 2).coerceAtMost(variants.size - 1)]
+        }
+    }
     return when {
-        timeline == null -> L.narrIdle1 to L.narrIdle2
+        timeline == null -> idlePair
         timeline.dependencyUnreachable -> L.narrDepDead1 to L.narrDepDead2
         total > 0 && satisfied == total -> L.narrReady1 to L.narrReady2
         total > 0 && satisfied == total - 1 -> L.narrOneLeft1 to L.narrOneLeft2
-        else -> L.narrIdle1 to L.narrIdle2
+        else -> idlePair
     }
 }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.WindowInsets
@@ -42,6 +43,15 @@ fun NavGraph(container: AppContainer) {
     val navController = rememberNavController()
 
     val backStackEntry by navController.currentBackStackEntryAsState()
+
+    // NFC 实体锚点直达（体验储备池 §4）：碰卡分发 → 导航详情并消费，胶囊不存在时详情页 MISSING 态兜底
+    LaunchedEffect(container.pendingNfcCapsuleId) {
+        val id = container.pendingNfcCapsuleId
+        if (!id.isNullOrEmpty()) {
+            container.pendingNfcCapsuleId = null
+            navController.navigate(Routes.detail(id, firstUnlock = false))
+        }
+    }
 
     Scaffold(
         containerColor = DeepCharcoal,

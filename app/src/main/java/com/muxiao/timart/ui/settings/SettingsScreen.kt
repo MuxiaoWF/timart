@@ -13,6 +13,7 @@ import android.provider.Settings as SystemSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
@@ -62,6 +63,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -87,13 +89,18 @@ import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TrackHairline
 import com.muxiao.timart.ui.theme.wideContentWidth
 import com.muxiao.timart.data.remote.update.UpdateChecker
+import com.muxiao.timart.utils.RuntimeSettings
 import com.muxiao.timart.utils.AppLanguage
+import com.muxiao.timart.utils.export.AnnualReport
+import com.muxiao.timart.utils.export.PosterComposer
 import com.muxiao.timart.utils.permission.PERM_ACTIVITY_RECOGNITION
 import com.muxiao.timart.utils.permission.PERM_POST_NOTIFICATIONS
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 
 /**
@@ -127,6 +134,8 @@ fun SettingsScreen(container: AppContainer) {
     var showModifyPassword by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showGiftImportDialog by remember { mutableStateOf(false) }
+    var showAnnualReport by remember { mutableStateOf(false) }
     var showLanguageSheet by remember { mutableStateOf(false) }
 
     // 检查更新（GitHub Releases 占位）：请求在 IO 协程，结果落主线程弹窗
@@ -327,6 +336,11 @@ fun SettingsScreen(container: AppContainer) {
                     description = L.setImportDesc,
                     onClick = { showImportDialog = true },
                 )
+                SimpleRow(
+                    label = L.setGiftImport,
+                    description = L.setGiftImportDesc,
+                    onClick = { showGiftImportDialog = true },
+                )
             }
 
             // ---- 权限管理（状态实时展示；就近申请或跳转系统设置） ----
@@ -334,6 +348,11 @@ fun SettingsScreen(container: AppContainer) {
 
             // ---- 信息类：权限说明 / 天气数据 / 关于 ----
             SettingsCard(title = L.setInfoCard, modifier = Modifier.padding(top = 12.dp)) {
+                SimpleRow(
+                    label = L.setAnnualReport,
+                    description = L.setAnnualReportDesc,
+                    onClick = { showAnnualReport = true },
+                )
                 SimpleRow(
                     label = L.setPerm,
                     description = L.setPermDesc,
@@ -495,6 +514,12 @@ fun SettingsScreen(container: AppContainer) {
     }
     if (showImportDialog) {
         BackupImportDialog(manager = container.backupManager, onDismiss = { showImportDialog = false })
+    }
+    if (showGiftImportDialog) {
+        GiftImportDialog(manager = container.backupManager, onDismiss = { showGiftImportDialog = false })
+    }
+    if (showAnnualReport) {
+        AnnualReportDialog(container = container, onDismiss = { showAnnualReport = false })
     }
 
     // ---- 语言选择底部弹层（单选列表，选中即时生效并收起） ----
@@ -884,4 +909,151 @@ private fun languageName(option: AppLanguage, strings: Strings): String = when (
     AppLanguage.ZH_HANS -> strings.langZhHans
     AppLanguage.ZH_HANT -> strings.langZhHant
     AppLanguage.EN -> strings.langEn
+}
+
+/**
+ * 年度星图报告弹窗（体验储备池 §5）：统计预览（今年/去年切换）→ 生成海报并分享。
+ * 统计口径见 [AnnualReport]；海报复用 PosterComposer（FileProvider 分享，与详情页海报同路）。
+ */
+@Composable
+private fun AnnualReportDialog(
+    container: AppContainer,
+    onDismiss: () -> Unit,
+) {
+    val L = LocalStrings.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val thisYear = java.time.LocalDate.now().year
+    var year by remember { mutableIntStateOf(thisYear) }
+    var stats by remember { mutableStateOf<AnnualReport.AnnualStats?>(null) }
+    var sharing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(year) {
+        stats = withContext(Dispatchers.IO) {
+            val capsules = runCatching { container.capsuleRepository.allSync() }.getOrDefault(emptyList())
+            val destroyed = runCatching { container.destroyedRepository.observeAll().first() }.getOrDefault(emptyList())
+            AnnualReport.compute(capsules, destroyed, year, RuntimeSettings.resolvedLang)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!sharing) onDismiss() },
+        containerColor = SurfaceRaise,
+        title = { Text(text = L.setAnnualReport, style = TimartType.titleSerif) },
+        text = {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(thisYear, thisYear - 1).forEach { option ->
+                        val selected = option == year
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (selected) TimeGold else SurfaceRaise)
+                                .clickable(enabled = !sharing) { year = option }
+                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                        ) {
+                            Text(
+                                text = option.toString(),
+                                style = TimartType.caption,
+                                color = if (selected) DeepCharcoal else InkSecondary,
+                            )
+                        }
+                    }
+                }
+                val current = stats
+                if (current == null) {
+                    Text(
+                        text = L.reportComputing,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                } else {
+                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                        Text(
+                            text = L.reportTitleFmt.format(current.year),
+                            style = TimartType.titleSerif.copy(fontSize = 18.sp),
+                            color = InkPrimary,
+                        )
+                        Text(
+                            text = L.reportSealedFmt.format(current.sealedCount),
+                            style = TimartType.body,
+                            color = InkPrimary,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        Text(
+                            text = L.reportOpenedFmt.format(current.openedCount),
+                            style = TimartType.body,
+                            color = InkPrimary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        Text(
+                            text = L.reportDustFmt.format(current.dustCount),
+                            style = TimartType.body,
+                            color = InkPrimary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        current.longestWaitTitle?.let { title ->
+                            Text(
+                                text = L.reportLongestWaitFmt.format(title, current.longestWaitDays),
+                                style = TimartType.body,
+                                color = InkPrimary,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                        current.topConditionKindName?.let { name ->
+                            Text(
+                                text = L.reportTopConditionFmt.format(name, current.topConditionCount),
+                                style = TimartType.body,
+                                color = InkPrimary,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (stats != null) {
+                TextButton(
+                    onClick = {
+                        val current = stats ?: return@TextButton
+                        sharing = true
+                        scope.launch(Dispatchers.IO) {
+                            val poster = PosterComposer(context).compose(
+                                AnnualReport.posterContent(current, RuntimeSettings.resolvedLang),
+                            )
+                            withContext(Dispatchers.Main) {
+                                sharing = false
+                                if (poster == null) {
+                                    android.widget.Toast.makeText(context, L.posterFail, android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        poster,
+                                    )
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "image/jpeg"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        clipData = android.content.ClipData.newRawUri("poster", uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    runCatching { context.startActivity(Intent.createChooser(send, L.posterShare)) }
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                ) {
+                    Text(text = L.reportShare)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !sharing) {
+                Text(text = L.cancel, color = InkSecondary)
+            }
+        },
+    )
 }

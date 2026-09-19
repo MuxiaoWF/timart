@@ -74,6 +74,7 @@ fun HomeScreen(
     val pending by vm.pendingIds.collectAsStateWithLifecycle()
     val readMarks by vm.readIds.collectAsStateWithLifecycle()
     val previews by vm.previews.collectAsStateWithLifecycle()
+    val satisfaction by vm.satisfaction.collectAsStateWithLifecycle()
     val engine = container.particleEngine
 
     // ON_RESUME 重入计数：从详情返回等场景（组合未重建）下重同步 BREATHE 状态与锚点
@@ -205,6 +206,7 @@ fun HomeScreen(
                     unsealedIds = unsealed,
                     pendingIds = pending,
                     readIds = readMarks,
+                    satisfactionRatios = satisfaction,
                     parallax = parallax,
                     tier = container.particleTier,
                     onTransform = { panDelta, zoomDelta ->

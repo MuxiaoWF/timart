@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 时粒桌面小组件元信息（储备池 v4 WidgetBound 条件；极简静态卡） -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_timart"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

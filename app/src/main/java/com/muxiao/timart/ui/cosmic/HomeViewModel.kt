@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -32,9 +33,25 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     private val repo = container.capsuleRepository
     private val judge = container.unlockJudgeUseCase
 
-    /** 全量胶囊（Room Flow 驱动） */
-    val capsules: StateFlow<List<Capsule>> = repo.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /**
+     * 全量胶囊（Room Flow 驱动；**休眠种子不可见**——体验储备池 §3 嵌套胶囊：
+     * 有 `capsule.seedOf.*` 且无 `capsule.sprout.*` 的胶囊对时轨/预览隐藏，父胶囊开启后萌芽浮现）
+     */
+    val capsules: StateFlow<List<Capsule>> = combine(
+        repo.observeAll(),
+        container.database.metaDao().observeLike(com.muxiao.timart.data.local.db.CapsuleMetaKeys.SEED_OF_KEY_PREFIX),
+        container.database.metaDao().observeLike(com.muxiao.timart.data.local.db.CapsuleMetaKeys.SPROUT_KEY_PREFIX),
+    ) { list, seedMeta, sproutMeta ->
+        val parentByChild = seedMeta.associate {
+            it.key.removePrefix(com.muxiao.timart.data.local.db.CapsuleMetaKeys.SEED_OF_KEY_PREFIX) to it.value
+        }
+        val sprouted = sproutMeta.map {
+            it.key.removePrefix(com.muxiao.timart.data.local.db.CapsuleMetaKeys.SPROUT_KEY_PREFIX)
+        }.toSet()
+        list.filter { capsule ->
+            parentByChild[capsule.id] == null || capsule.id in sprouted
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _unsealedIds = MutableStateFlow<Set<String>>(emptySet())
 
@@ -48,8 +65,17 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _previews = MutableStateFlow<List<LatestPreview>>(emptyList())
 
-    /** 底部预览卡分页数据：[最近的一颗, 即将达成的一颗?]（后者无候选时仅一页） */
+    /** 底部预览卡分页数据：[最近的一颗, 即将达成的一颗?, 今日的一颗?]（后两者无候选时仅一页） */
     val previews: StateFlow<List<LatestPreview>> = _previews.asStateFlow()
+
+    private val _satisfaction = MutableStateFlow<Map<String, Float>>(emptyMap())
+
+    /**
+     * 锁定胶囊「满足比」快照（体验储备池 §2 成熟度渐变）：
+     * 满足条件占比 0..1，时轨画布据此把锁定球色从尘埃灰向暖金过渡；
+     * 随 30s 预览周期与 ON_RESUME 判定演进，环境类条件变化自动反映。
+     */
+    val satisfaction: StateFlow<Map<String, Float>> = _satisfaction.asStateFlow()
 
     private val satisfiedCache = HashMap<String, Int>()
 
@@ -113,21 +139,43 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     private fun refreshPreview() {
         val latest = latestCandidate ?: run {
             _previews.value = emptyList()
+            _satisfaction.value = emptyMap()
             return
         }
-        val pages = mutableListOf(buildPreview(latest, LatestPreview.PreviewKind.LATEST))
-        // 「即将达成的一颗」：达成进度（满足条件占比）最接近的一颗；
-        // 环境类条件随 30s 周期重判，进度会自动演进
         val ctx = container.defaultContext(foregroundOnly = false)
-        val closest = upcomingCandidates
+        val judged = upcomingCandidates
+            .filter { it.state == CapsuleState.LOCKED }
             .map { capsule -> capsule to judge.judge(capsule, ctx, RuntimeSettings.resolvedLang) }
+        val closest = judged
             .filter { (_, result) -> result.items.isNotEmpty() }
             .maxByOrNull { (_, result) ->
                 val satisfied = result.items.count { item -> item.satisfied }
                 satisfied.toFloat() / result.items.size
             }
+        val pages = mutableListOf(buildPreview(latest, LatestPreview.PreviewKind.LATEST))
         closest?.let { (capsule, _) -> pages += buildPreview(capsule, LatestPreview.PreviewKind.UPCOMING) }
+        // 今日抽一颗（体验储备池 §2）：锁定池按「日序」轮转一颗（排除最近/即将达成两页），
+        // 纯展示层随机（日期为种子，日更不重样、当天恒定），不碰判定确定性、不解锁不剧透
+        val pool = upcomingCandidates.filter { it.state == CapsuleState.LOCKED && it.id != closest?.first?.id }
+        if (pool.isNotEmpty()) {
+            val dayIndex = java.time.LocalDate.now().toEpochDay().mod(pool.size.toLong()).toInt()
+            pages += buildPreview(pool[dayIndex], LatestPreview.PreviewKind.TODAY)
+        }
         _previews.value = pages
+        // 成熟度快照：页面已判定的取页面数；其余锁定胶囊用本轮判定结果补齐
+        val ratios = HashMap<String, Float>()
+        pages.forEach { p ->
+            if (!p.unlocked && p.total != null && p.total > 0 && p.satisfied != null) {
+                ratios[p.id] = p.satisfied.toFloat() / p.total
+            }
+        }
+        judged.forEach { (capsule, result) ->
+            if (result.items.isNotEmpty() && capsule.id !in ratios) {
+                ratios[capsule.id] =
+                    result.items.count { it.satisfied }.toFloat() / result.items.size
+            }
+        }
+        _satisfaction.value = ratios
     }
 
     private fun buildPreview(capsule: Capsule, kind: LatestPreview.PreviewKind): LatestPreview {
@@ -152,6 +200,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
             total = total,
             unlocked = capsule.state == CapsuleState.UNLOCKED,
             read = capsule.id in _readIds.value,
+            blindBox = capsule.blindBox && capsule.state == CapsuleState.LOCKED,
             kind = kind,
         )
     }
@@ -166,15 +215,21 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val ctx = container.defaultContext(foregroundOnly = false)
+                val ratioMap = HashMap(_satisfaction.value)
                 for (capsule in repo.allLockedSync()) {
                     val result = judge.judge(capsule, ctx, RuntimeSettings.resolvedLang)
                     val satisfied = result.items.count { it.satisfied }
+                    // 成熟度快照随回前台判定即时演进（不等 30s 周期）
+                    if (result.items.isNotEmpty()) {
+                        ratioMap[capsule.id] = satisfied.toFloat() / result.items.size
+                    }
                     val prev = satisfiedCache[capsule.id]
                     if (prev != null && satisfied > prev && !result.overallOk) {
                         _pendingIds.update { it + capsule.id }
                     }
                     satisfiedCache[capsule.id] = satisfied
                 }
+                _satisfaction.value = ratioMap
                 // 回前台即时刷新预览卡（不等 30s 周期）
                 refreshPreview()
             } finally {
@@ -206,10 +261,12 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         val unlocked: Boolean,
         /** 已开启过（读过内容，meta `capsule.read.*` 存在）：与「刚解锁未读」区分 */
         val read: Boolean,
+        /** 盲盒封存且仍锁定：标题与条件句在预览卡遮蔽（解锁前连自己也保密） */
+        val blindBox: Boolean = false,
         val kind: PreviewKind,
     ) {
-        /** 预览卡种类：最近的一颗 / 即将达成的一颗 */
-        enum class PreviewKind { LATEST, UPCOMING }
+        /** 预览卡种类：最近的一颗 / 即将达成的一颗 / 今日的一颗（体验储备池 §2） */
+        enum class PreviewKind { LATEST, UPCOMING, TODAY }
     }
 
     companion object {

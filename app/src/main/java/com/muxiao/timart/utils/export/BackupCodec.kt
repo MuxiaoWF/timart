@@ -32,6 +32,9 @@ object BackupCodec {
     const val ENTRY_DESTROYED = "destroyed.json"
     const val IMAGE_PREFIX = "images/"
 
+    /** 加密语音条目前缀（体验储备池 §1 声音留言；audios/{id}/audio_0.bin，v2 包可选出现） */
+    const val AUDIO_PREFIX = "audios/"
+
     val json: Json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = false
@@ -48,6 +51,8 @@ object BackupCodec {
         val exportedAt: String,
         val capsuleCount: Int,
         val destroyedCount: Int,
+        /** 包类型标记：null = 整库备份；"gift" = 单胶囊赠予（导入侧仅作展示区分，格式同 v2） */
+        val kind: String? = null,
     )
 
     // ---- 段二：meta ----
@@ -106,6 +111,14 @@ object BackupCodec {
         val createNote: String = "",
         val layoutX: Float? = null,
         val layoutY: Float? = null,
+        /** 盲盒封存标志（v2 载荷向后兼容：旧包无此字段按 false 解析） */
+        val blindBox: Boolean = false,
+        /** 口令分片材料（体验储备池 §7.1；五者同非 null = 分片胶囊。分片份额永不入包/入设备） */
+        val shardSalt: String? = null,
+        val shardParams: String? = null,
+        val shardVerifier: String? = null,
+        val shardThreshold: Int? = null,
+        val shardTotal: Int? = null,
     )
 
     // ---- 段四：destroyed ----

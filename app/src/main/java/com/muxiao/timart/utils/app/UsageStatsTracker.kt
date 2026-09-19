@@ -22,10 +22,19 @@ class UsageStatsTracker(context: Context) : UsageStatsProvider {
     fun recordOpen(nowMillis: Long = System.currentTimeMillis()): Boolean {
         val last = prefs.getLong(KEY_LAST_OPEN, 0L)
         if (nowMillis - last < SESSION_GAP_MILLIS) return false
+        val today = dateKey(nowMillis)
+        // 今日打开计数：跨日重置（TodayOpenCount 条件输入）
+        val newTodayCount = if (prefs.getString(KEY_TODAY_DATE, null) == today) {
+            prefs.getInt(KEY_TODAY_COUNT, 0) + 1
+        } else {
+            1
+        }
         prefs.edit {
             putLong(KEY_PREV_OPEN, last)
                 .putLong(KEY_LAST_OPEN, nowMillis)
                 .putInt(KEY_OPEN_COUNT, prefs.getInt(KEY_OPEN_COUNT, 0) + 1)
+                .putString(KEY_TODAY_DATE, today)
+                .putInt(KEY_TODAY_COUNT, newTodayCount)
                 .putString(KEY_OPEN_DATES, prefs.getString(KEY_OPEN_DATES, null)?.let { dates ->
                     (dates.split(",").filter { it.isNotEmpty() } + dateKey(nowMillis))
                         .distinct()
@@ -35,6 +44,11 @@ class UsageStatsTracker(context: Context) : UsageStatsProvider {
                 } ?: dateKey(nowMillis))
         }
         return true
+    }
+
+    override fun todayOpenCount(): Int {
+        val today = dateKey(System.currentTimeMillis())
+        return if (prefs.getString(KEY_TODAY_DATE, null) == today) prefs.getInt(KEY_TODAY_COUNT, 0) else 0
     }
 
     override fun openCount(): Int = prefs.getInt(KEY_OPEN_COUNT, 0)
@@ -78,6 +92,8 @@ class UsageStatsTracker(context: Context) : UsageStatsProvider {
         const val KEY_LAST_OPEN = "lastOpen"
         const val KEY_PREV_OPEN = "prevOpen"
         const val KEY_OPEN_DATES = "openDates"
+        const val KEY_TODAY_DATE = "todayDate"
+        const val KEY_TODAY_COUNT = "todayCount"
         const val KEEP_DAYS = 60
         const val SESSION_GAP_MILLIS = 10 * 60 * 1000L
     }

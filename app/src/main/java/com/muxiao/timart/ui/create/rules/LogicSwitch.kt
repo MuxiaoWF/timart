@@ -28,57 +28,85 @@ import com.muxiao.timart.ui.theme.InkPrimary
 import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.SurfaceRaise
 import com.muxiao.timart.ui.theme.TimeGold
+import com.muxiao.timart.ui.theme.TimartMotion
 import com.muxiao.timart.ui.theme.TimartType
+import com.muxiao.timart.ui.create.rules.condition.IntSlider
 
 /**
- * AND / OR 逻辑切换（架构 §2.15）：切换时 240ms 缩放淡入重排（统一走 TimartMotion，禁 spring）。
- * AND = 全部满足；OR = 任一满足。
+ * AND / OR / AT_LEAST 逻辑切换（架构 §2.15）：切换时 240ms 缩放淡入重排（统一走 TimartMotion，禁 spring）。
+ * AND = 全部满足；OR = 任一满足；AT_LEAST = N 条满足 M 条即可（备用钥匙语义）。
  * 布局 = 左「标签 + 说明」列，右药丸组（同设置页开关行模式）：
  * 药丸占固有宽度且文字锁单行，窄屏不再被压缩换行错位。
+ * AT_LEAST 选中时在下方出现 M 选择滑条（1..N，N = 当前条件数）。
  */
 @Composable
 fun LogicSwitch(
     logic: LogicType,
+    conditionCount: Int,
+    threshold: Int,
     onLogicChange: (LogicType) -> Unit,
+    onThresholdChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val L = LocalStrings.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = L.logicLabel, style = TimartType.body, color = InkPrimary)
-            Text(
-                text = if (logic == LogicType.AND) L.logicAndDesc else L.logicOrDesc,
-                style = TimartType.caption,
-                color = InkSecondary,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-
-        AnimatedContent(
-            targetState = logic,
-            transitionSpec = {
-                // 240ms 与全局内容级转场同档（原 250ms 离群值，B4 收敛）
-                (scaleIn(initialScale = 0.92f, animationSpec = tween(com.muxiao.timart.ui.theme.TimartMotion.CONTENT_MILLIS)) +
-                    fadeIn(tween(com.muxiao.timart.ui.theme.TimartMotion.CONTENT_MILLIS)))
-                    .togetherWith(fadeOut(tween(com.muxiao.timart.ui.theme.TimartMotion.CONTENT_MILLIS)))
-            },
-            label = "LogicSwitchReorder",
-        ) { current ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LogicPill(
-                    label = L.logicAndPill,
-                    selected = current == LogicType.AND,
-                    onClick = { onLogicChange(LogicType.AND) },
-                )
-                LogicPill(
-                    label = L.logicOrPill,
-                    selected = current == LogicType.OR,
-                    onClick = { onLogicChange(LogicType.OR) },
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = L.logicLabel, style = TimartType.body, color = InkPrimary)
+                Text(
+                    text = when (logic) {
+                        LogicType.AND -> L.logicAndDesc
+                        LogicType.OR -> L.logicOrDesc
+                        LogicType.AT_LEAST -> L.logicAtLeastDesc
+                    },
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
+
+            AnimatedContent(
+                targetState = logic,
+                transitionSpec = {
+                    // 240ms 与全局内容级转场同档（原 250ms 离群值，B4 收敛）
+                    (scaleIn(initialScale = 0.92f, animationSpec = tween(TimartMotion.CONTENT_MILLIS)) +
+                        fadeIn(tween(TimartMotion.CONTENT_MILLIS)))
+                        .togetherWith(fadeOut(tween(TimartMotion.CONTENT_MILLIS)))
+                },
+                label = "LogicSwitchReorder",
+            ) { current ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LogicPill(
+                        label = L.logicAndPill,
+                        selected = current == LogicType.AND,
+                        onClick = { onLogicChange(LogicType.AND) },
+                    )
+                    LogicPill(
+                        label = L.logicOrPill,
+                        selected = current == LogicType.OR,
+                        onClick = { onLogicChange(LogicType.OR) },
+                    )
+                    LogicPill(
+                        label = L.logicAtLeastPill,
+                        selected = current == LogicType.AT_LEAST,
+                        onClick = { onLogicChange(LogicType.AT_LEAST) },
+                    )
+                }
+            }
+        }
+
+        // M 选择器：仅 AT_LEAST 且条件数 ≥ 2 时出现（1 条时任选即 AND，面板本身也只在 ≥2 条时展示）
+        if (logic == LogicType.AT_LEAST && conditionCount >= 2) {
+            Text(
+                text = L.thresholdFmt.format(threshold.coerceIn(1, conditionCount), conditionCount),
+                style = TimartType.body.copy(color = TimeGold),
+                modifier = Modifier.padding(top = 14.dp),
+            )
+            IntSlider(
+                value = threshold.coerceIn(1, conditionCount),
+                range = 1f..conditionCount.toFloat(),
+                steps = (conditionCount - 2).coerceAtLeast(0),
+            ) { onThresholdChange(it) }
         }
     }
 }

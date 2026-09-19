@@ -43,6 +43,7 @@ fun ConditionCardList(
     Column(modifier = modifier.fillMaxWidth()) {
         conditions.forEachIndexed { index, condition ->
             if (index > 0) {
+                // AT_LEAST（任选 M 条）卡片间连接词与 OR 同为"或者"语义
                 Text(
                     text = if (logic == LogicType.AND) L.andWord else L.orWord,
                     style = TimartType.caption,

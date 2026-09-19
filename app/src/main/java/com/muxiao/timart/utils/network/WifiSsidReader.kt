@@ -44,22 +44,31 @@ class WifiSsidReader(private val context: Context) : WifiProvider {
         if (!locationOn) return WifiSsidInfo(WifiSsidState.NO_LOCATION_SERVICE)
 
         val manager = wifiManager ?: return WifiSsidInfo(WifiSsidState.NOT_CONNECTED)
+        // 单次读取 connectionInfo 快照（弃用 API 无同步替代；SSID 与 BSSID 须取自同一快照）
         @Suppress("DEPRECATION")
-        val raw = try {
-            manager.connectionInfo?.ssid
+        val info = try {
+            manager.connectionInfo
         } catch (_: SecurityException) {
             null
         }
-        val ssid = raw?.removeSurrounding("\"")?.takeIf { it != UNKNOWN_SSID && it.isNotBlank() }
+        val ssid = info?.ssid
+            ?.removeSurrounding("\"")
+            ?.takeIf { it != UNKNOWN_SSID && it.isNotBlank() }
         return if (ssid == null) {
             WifiSsidInfo(WifiSsidState.NOT_CONNECTED)
         } else {
-            WifiSsidInfo(WifiSsidState.CONNECTED, ssid)
+            // 部分 ROM 可能返回空/02:00:00:00:00:00 占位
+            val bssid = info.bssid
+                ?.takeIf { it.isNotBlank() && it != DEFAULT_BSSID_PLACEHOLDER }
+            WifiSsidInfo(WifiSsidState.CONNECTED, ssid, bssid)
         }
     }
 
     private companion object {
         /** 未连接时部分 ROM 返回字面量 <unknown ssid> */
         const val UNKNOWN_SSID = "<unknown ssid>"
+
+        /** 部分 ROM 未连接/受限时返回的 BSSID 占位值 */
+        const val DEFAULT_BSSID_PLACEHOLDER = "02:00:00:00:00:00"
     }
 }

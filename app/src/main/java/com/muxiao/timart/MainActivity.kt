@@ -43,6 +43,13 @@ class MainActivity : FragmentActivity() {
     /** 通知权限引导是否显示（33+ 且从未引导过时置 true） */
     private var showNotifGuide by mutableStateOf(false)
 
+    /**
+     * 本进程内已确认落库的「条件达成时刻」键（`capsuleId:index`）：
+     * ON_RESUME 全量判定每轮都会对已满足条件重复回调，内存去重避免反复读 meta。
+     * 契约见 CapsuleMetaKeys（写入点本类 + DetailViewModel.judgeOnce，读取点 DustRecordsViewModel）。
+     */
+    private val condMetSeen = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
     /** 通知权限申请：PermissionGuideDialog 确认后触发系统弹窗 */
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -53,6 +60,7 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
 
         val container = (application as TimartApplication).container
+        handleNfcLinkIntent(container, intent)
 
         // ON_RESUME → 全量前台判定（含 GPS）
         lifecycle.addObserver(
@@ -66,8 +74,16 @@ class MainActivity : FragmentActivity() {
                             repo = container.capsuleRepository,
                             onUnlocked = { capsule ->
                                 container.notifier.notifyUnlock(capsule.id, capsule.title)
+                                container.playCapsuleHaptic(capsule.id, destroy = false)
                             },
                             lang = RuntimeSettings.resolvedLang,
+                            onConditionSatisfied = { capsuleId, index, _ ->
+                                val seenKey = "$capsuleId:$index"
+                                if (condMetSeen.putIfAbsent(seenKey, true) == null) {
+                                    recordCondMet(container, capsuleId, index)
+                                }
+                            },
+                            shouldJudge = { capsule -> !container.isSeedDormant(capsule.id) },
                         )
                     }
                     maybeGuideNotificationPermission(container)
@@ -110,8 +126,7 @@ class MainActivity : FragmentActivity() {
      * 通知权限引导（33+，仅一次）：meta 标记 `app.notifGuideAsked`（用户交互后写入，
      * 见 setContent 内 PermissionGuideDialog 回调）；说明先于系统弹窗（PermissionGuideDialog），
      * 拒绝仅收不到提醒、不影响判定。
-     */
-    private fun maybeGuideNotificationPermission(container: AppContainer) {
+     */    private fun maybeGuideNotificationPermission(container: AppContainer) {
         if (!container.permissionHelper.shouldRequestPostNotifications()) return
         judgeScope.launch(Dispatchers.IO) {
             val metaDao = container.database.metaDao()
@@ -130,9 +145,59 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * 「条件达成时刻」埋点：meta `capsule.condMet.<id>.<index>` 只写不覆写（先到先记），
+     * 供尘迹生平页达成时刻线使用。写失败静默（缺刻度的条件在生平页显示为「—」）。
+     */
+    private fun recordCondMet(container: AppContainer, capsuleId: String, index: Int) {
+        judgeScope.launch(Dispatchers.IO) {
+            runCatching {
+                val dao = container.database.metaDao()
+                val key = com.muxiao.timart.data.local.db.CapsuleMetaKeys.condMet(capsuleId, index)
+                if (dao.get(key) == null) {
+                    dao.put(MetaEntity(key, container.timeProvider.nowMillis().toString()))
+                }
+            }
+        }
+    }
+
+    /** NFC 实体锚点分发（体验储备池 §4）：`timart.com:link` 记录 → 待直达胶囊 id（NavGraph 消费后清空） */
+    private fun handleNfcLinkIntent(container: AppContainer, intent: android.content.Intent?) {
+        val capsuleId = intent?.let { com.muxiao.timart.utils.device.NfcCardWriter.parseLinkCapsuleId(it) }
+        if (!capsuleId.isNullOrEmpty()) {
+            container.pendingNfcCapsuleId = capsuleId
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        // singleTask：应用在前时碰卡走 onNewIntent；先 setIntent 再解析
+        setIntent(intent)
+        handleNfcLinkIntent((application as TimartApplication).container, intent)
+    }
+
     override fun onDestroy() {
         judgeScope.cancel()
         super.onDestroy()
+    }
+
+    // 音量键转发（VolumeKeyCombo 挑战判定输入；不拦截系统行为）
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == com.muxiao.timart.utils.app.VolumeKeyEventBus.KEY_UP ||
+            keyCode == com.muxiao.timart.utils.app.VolumeKeyEventBus.KEY_DOWN
+        ) {
+            com.muxiao.timart.utils.app.VolumeKeyEventBus.dispatch(keyCode, true)
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == com.muxiao.timart.utils.app.VolumeKeyEventBus.KEY_UP ||
+            keyCode == com.muxiao.timart.utils.app.VolumeKeyEventBus.KEY_DOWN
+        ) {
+            com.muxiao.timart.utils.app.VolumeKeyEventBus.dispatch(keyCode, false)
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     private companion object {

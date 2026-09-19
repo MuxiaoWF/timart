@@ -408,3 +408,314 @@ private fun GoldTextButton(
         Text(text = label)
     }
 }
+
+/**
+ * 单胶囊赠予导出弹窗（体验储备池 §4）：说明 → （会话锁定时输口令 / 已解锁直接确认）→ 打包 → 展示结果路径。
+ * 与整库导出的差异：只含一颗胶囊；依赖关系不随赠予携带；不写 BackupDone 标记。
+ */
+@Composable
+fun GiftExportDialog(
+    manager: BackupManager,
+    capsuleId: String,
+    onDismiss: () -> Unit,
+) {
+    val L = LocalStrings.current
+    // 0 说明 / 1 口令或确认 / 2 进行中 / 3 完成 / 4 失败
+    var step by remember { mutableIntStateOf(0) }
+    var resultPath by remember { mutableStateOf("") }
+    var unsupportedLabels by remember { mutableStateOf(emptyList<String>()) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var password by remember { mutableStateOf("") }
+    var failedAttempts by remember { mutableIntStateOf(0) }
+
+    var lockUntil by remember { mutableLongStateOf(0L) }
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val locked = nowTick < lockUntil
+    LaunchedEffect(locked) {
+        while (locked) {
+            delay(500.milliseconds)
+            nowTick = System.currentTimeMillis()
+        }
+    }
+
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = { if (step != 2) onDismiss() },
+        containerColor = SurfaceRaise,
+        title = { Text(text = L.giftExportTitle, style = TimartType.titleSerif) },
+        text = {
+            Column {
+                when (step) {
+                    0 -> {
+                        InfoLine(text = L.giftExportInfo)
+                        WarnLine(text = L.giftExportNote)
+                    }
+
+                    1 -> {
+                        if (manager.isSessionUnlocked()) {
+                            InfoLine(text = L.bkExportSessionInfo)
+                        } else {
+                            InfoLine(text = L.bkExportAskPw)
+                            BasicTextField(
+                                value = password,
+                                onValueChange = { password = it },
+                                singleLine = true,
+                                enabled = !locked,
+                                textStyle = TimartType.body.copy(color = InkPrimary),
+                                cursorBrush = SolidColor(TimeGold),
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                modifier = Modifier
+                                    .padding(top = 10.dp)
+                                    .fillMaxWidth()
+                                    .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 14.dp, vertical = 13.dp),
+                            )
+                            errorText?.let { WarnLine(text = it) }
+                            if (locked) {
+                                val remainSeconds = (lockUntil - nowTick) / 1000 + 1
+                                WarnLine(text = L.bkCooldownFmt.format(remainSeconds))
+                            } else if (failedAttempts > 0) {
+                                WarnLine(text = L.bkAttemptsLeftFmt.format(5 - failedAttempts))
+                            }
+                        }
+                    }
+
+                    2 -> InfoLine(text = L.bkPacking)
+
+                    3 -> {
+                        InfoLine(text = L.giftExportDone)
+                        MonoLine(text = resultPath)
+                        if (unsupportedLabels.isNotEmpty()) {
+                            WarnLine(
+                                text = L.bkDeviceUnsupportedFmt
+                                    .format(unsupportedLabels.joinToString(" · ")),
+                            )
+                        }
+                    }
+
+                    else -> WarnLine(text = errorText ?: L.bkExportFailed)
+                }
+            }
+        },
+        confirmButton = {
+            when (step) {
+                0 -> GoldTextButton(label = L.continueWord, onClick = { step = 1 })
+
+                1 -> GoldTextButton(
+                    label = L.giftExportTitle,
+                    enabled = (manager.isSessionUnlocked() || password.isNotBlank()) && !locked,
+                    onClick = {
+                        val usePassword = !manager.isSessionUnlocked()
+                        if (usePassword && password.length < ContentCryptoManager.MIN_PASSWORD_LENGTH) {
+                            errorText = L.bkWrongPw
+                            return@GoldTextButton
+                        }
+                        errorText = null
+                        step = 2
+                        scope.launch {
+                            val result = runCatching {
+                                manager.exportGift(capsuleId, if (usePassword) password.toCharArray() else null)
+                            }
+                            if (result.isSuccess) {
+                                val export = result.getOrNull()
+                                resultPath = export?.file?.absolutePath ?: ""
+                                unsupportedLabels = export?.unsupportedLabels ?: emptyList()
+                                step = 3
+                            } else {
+                                val failure = result.exceptionOrNull()
+                                errorText = failure?.message ?: L.bkExportFailed
+                                if (failure is BackupException && failure.wrongPassword) {
+                                    failedAttempts++
+                                    if (failedAttempts >= 5) {
+                                        lockUntil = System.currentTimeMillis() + LOCK_MILLIS
+                                        failedAttempts = 0
+                                        password = ""
+                                    }
+                                    step = 1
+                                } else {
+                                    step = 4
+                                }
+                            }
+                        }
+                    },
+                )
+
+                2 -> TextButton(onClick = {}, enabled = false) {
+                    Text(text = L.inProgress, color = InkDisabled)
+                }
+
+                else -> GoldTextButton(label = L.done, onClick = onDismiss)
+            }
+        },
+        dismissButton = {
+            if (step == 0 || step == 1) {
+                TextButton(onClick = onDismiss) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            }
+        },
+    )
+}
+
+/**
+ * 赠予收下弹窗（重加密导入）：选文件 → 输入**封存者告知的口令** → 校验解密 →
+ * 以本机会话密钥重加密入库。本机口令未解锁时导入侧显式报错并引导先解锁。
+ */
+@Composable
+fun GiftImportDialog(
+    manager: BackupManager,
+    onDismiss: () -> Unit,
+) {
+    val L = LocalStrings.current
+    // 0 提示选文件 / 1 输封存者口令 / 2 进行中 / 3 成功 / 4 失败
+    var step by remember { mutableIntStateOf(0) }
+    var pickedUri by remember { mutableStateOf<Uri?>(null) }
+    var password by remember { mutableStateOf("") }
+    var resultText by remember { mutableStateOf("") }
+    var unsupportedLabels by remember { mutableStateOf(emptyList<String>()) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+
+    var failedAttempts by remember { mutableIntStateOf(0) }
+    var lockUntil by remember { mutableLongStateOf(0L) }
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val locked = nowTick < lockUntil
+    LaunchedEffect(locked) {
+        while (locked) {
+            delay(500.milliseconds)
+            nowTick = System.currentTimeMillis()
+        }
+    }
+
+    val scope = rememberCoroutineScope()
+    val pickZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            pickedUri = uri
+            step = 1
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (step != 2) onDismiss() },
+        containerColor = SurfaceRaise,
+        title = { Text(text = L.giftImportTitle, style = TimartType.titleSerif) },
+        text = {
+            Column {
+                when (step) {
+                    0 -> {
+                        InfoLine(text = L.giftImportInfo)
+                        WarnLine(text = L.giftImportAskPw)
+                    }
+
+                    1 -> {
+                        InfoLine(text = L.giftImportAskPw)
+                        BasicTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            singleLine = true,
+                            enabled = !locked,
+                            textStyle = TimartType.body.copy(color = InkPrimary),
+                            cursorBrush = SolidColor(TimeGold),
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            modifier = Modifier
+                                .padding(top = 10.dp)
+                                .fillMaxWidth()
+                                .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 14.dp, vertical = 13.dp),
+                        )
+                        if (locked) {
+                            val remainSeconds = (lockUntil - nowTick) / 1000 + 1
+                            WarnLine(text = L.bkCooldownFmt.format(remainSeconds))
+                        } else if (failedAttempts > 0) {
+                            WarnLine(text = L.bkAttemptsLeftFmt.format(5 - failedAttempts))
+                        }
+                    }
+
+                    2 -> InfoLine(text = L.bkVerifying)
+
+                    3 -> {
+                        InfoLine(text = resultText)
+                        if (unsupportedLabels.isNotEmpty()) {
+                            WarnLine(
+                                text = L.bkDeviceUnsupportedFmt
+                                    .format(unsupportedLabels.joinToString(" · ")),
+                            )
+                        }
+                    }
+
+                    else -> WarnLine(text = errorText ?: L.bkImportFailed)
+                }
+            }
+        },
+        confirmButton = {
+            when (step) {
+                0 -> GoldTextButton(
+                    label = L.bkPickFile,
+                    onClick = {
+                        pickZip.launch(
+                            arrayOf(
+                                "application/zip",
+                                "application/x-zip-compressed",
+                                "application/octet-stream",
+                            ),
+                        )
+                    },
+                )
+
+                1 -> GoldTextButton(
+                    label = L.giftImportTitle,
+                    enabled = password.isNotBlank() && !locked,
+                    onClick = {
+                        val uri = pickedUri
+                        if (uri != null) {
+                            step = 2
+                            scope.launch {
+                                val result = runCatching {
+                                    manager.importGift(uri, password.toCharArray())
+                                }
+                                result.fold(
+                                    onSuccess = { r ->
+                                        resultText = L.giftImportDoneFmt.format(r.importedCapsules, r.skippedCapsules)
+                                        unsupportedLabels = r.unsupportedLabels
+                                        step = 3
+                                    },
+                                    onFailure = { throwable ->
+                                        val wrongPassword = throwable is BackupException &&
+                                            throwable.wrongPassword
+                                        errorText = throwable.message ?: L.bkImportFailed
+                                        if (wrongPassword) {
+                                            failedAttempts++
+                                            if (failedAttempts >= 5) {
+                                                lockUntil = System.currentTimeMillis() + LOCK_MILLIS
+                                                failedAttempts = 0
+                                                password = ""
+                                            }
+                                            step = 1
+                                        } else {
+                                            step = 4
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    },
+                )
+
+                2 -> TextButton(onClick = {}, enabled = false) {
+                    Text(text = L.inProgress, color = InkDisabled)
+                }
+
+                else -> GoldTextButton(label = L.done, onClick = onDismiss)
+            }
+        },
+        dismissButton = {
+            if (step == 0 || step == 1 || step == 4) {
+                TextButton(onClick = onDismiss) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            }
+        },
+    )
+}

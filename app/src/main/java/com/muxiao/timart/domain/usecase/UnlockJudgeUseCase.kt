@@ -13,10 +13,14 @@ import com.muxiao.timart.domain.model.unlock.LogicType
 import com.muxiao.timart.domain.model.unlock.LunarCalendar
 import com.muxiao.timart.domain.model.unlock.MeteorCalendar
 import com.muxiao.timart.domain.model.unlock.MoonCalc
+import com.muxiao.timart.domain.model.unlock.SeasonKind
+import com.muxiao.timart.domain.model.unlock.SolarTermCalendar
 import com.muxiao.timart.domain.model.unlock.SunCalc
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.domain.model.unlock.UnlockRule
+import com.muxiao.timart.domain.model.unlock.LiftDirection
 import com.muxiao.timart.domain.model.unlock.WeatherMetricKind
+import com.muxiao.timart.domain.model.unlock.windDirFromDeg
 import com.muxiao.timart.domain.repository.CapsuleRepository
 import com.muxiao.timart.utils.location.GeoMath
 import java.time.temporal.ChronoUnit
@@ -75,15 +79,27 @@ class UnlockJudgeUseCase {
     /**
      * 判定全部 LOCKED 胶囊并持久化；解锁成功的胶囊经 [onUnlocked] 回调（通知 + UI 反馈）。
      * 调用方（MainActivity ON_RESUME / Worker / 详情页）各自决定协程作用域。
+     *
+     * [onConditionSatisfied]：每当观测到某条件满足即回调（capsuleId, 条件下标, 条件本体），
+     * 供「条件达成时刻」埋点（capsule.condMet.*，写入由调用方负责且只写不覆写）；
+     * 每轮全量判定都会对已满足条件重复回调，去重责任在回调侧。默认空实现。
+     * [shouldJudge]：跳过不该参与周期判定的胶囊（嵌套种子的休眠态，体验储备池 §3——
+     * 藏着的种子条件即便已达成也不能在萌芽前解锁）；默认全量判定。
      */
     suspend fun judgeAllLocked(
         ctx: ConditionContext,
         repo: CapsuleRepository,
         lang: Lang = Lang.ZH_HANS,
         onUnlocked: (Capsule) -> Unit = {},
+        onConditionSatisfied: (capsuleId: String, index: Int, condition: UnlockCondition) -> Unit = { _, _, _ -> },
+        shouldJudge: (Capsule) -> Boolean = { _ -> true },
     ) {
         for (capsule in repo.allLockedSync()) {
+            if (!shouldJudge(capsule)) continue
             val result = judge(capsule, ctx, lang)
+            result.items.forEachIndexed { index, item ->
+                if (item.satisfied) onConditionSatisfied(capsule.id, index, item.condition)
+            }
             if (result.overallOk) {
                 val now = ctx.time.nowMillis()
                 repo.updateState(capsule.id, CapsuleState.UNLOCKED, now)
@@ -519,12 +535,443 @@ class UnlockJudgeUseCase {
                             answer.trim().equals(condition.expectedAnswer.trim(), ignoreCase = true)
                         is UnlockCondition.PuzzleAnswer ->
                             sha256Hex(answer.trim().lowercase()).equals(condition.answerHash, ignoreCase = true)
-                        // 感官挑战（摇一摇/翻面静置/NFC）：物理动作由 App 当场核验，应答传 DONE
+                        // 图案挑战：应答 = 九宫格点位序列（规范化串），SHA-256 比对
+                        is UnlockCondition.GesturePattern ->
+                            sha256Hex(answer).equals(condition.answerHash, ignoreCase = true)
+                        // 语音口令：识别文本比对口径同问答
+                        is UnlockCondition.VoicePassword ->
+                            answer.trim().equals(condition.expectedAnswer.trim(), ignoreCase = true)
+                        // 扫码：内容一致即通过；未绑定内容时任意非空码通过
+                        is UnlockCondition.ScanQr ->
+                            condition.expectedPayload == null || answer.trim() == condition.expectedPayload.trim()
+                        // 算力挑战：应答 = nonce，SHA-256(challengeId:nonce) 前导零 ≥ difficulty
+                        is UnlockCondition.ProofOfWork ->
+                            sha256Hex("${condition.challengeId}:$answer")
+                                .startsWith("0".repeat(condition.difficulty))
+                        // 感官挑战（摇一摇/翻面静置/NFC/当场步数/转机/音量键/静置/举放/爬楼/连点）：
+                        // 物理动作由 App 当场核验，应答传 DONE
                         else -> answer == CHALLENGE_DONE
                     }
                     Triple(ok, false, if (ok) null else r.challengeWrong)
                 }
             }
+
+            // ================= 储备池 v4 扩展（delta-prd-vs-code.md D-1.2） =================
+
+            is UnlockCondition.SolarTerm ->
+                Triple(SolarTermCalendar.termOf(ctx.time.today()) in condition.solarTerms, false, null)
+
+            is UnlockCondition.RoundDaysElapsed -> {
+                val createdDate = java.time.Instant.ofEpochMilli(capsule.createTimestamp)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+                val elapsed = ChronoUnit.DAYS.between(createdDate, ctx.time.today())
+                Triple(elapsed >= 1 && elapsed % condition.modulus == 0L, false, null)
+            }
+
+            is UnlockCondition.Season -> {
+                val season = when (ctx.time.today().monthValue) {
+                    3, 4, 5 -> SeasonKind.SPRING
+                    6, 7, 8 -> SeasonKind.SUMMER
+                    9, 10, 11 -> SeasonKind.AUTUMN
+                    else -> SeasonKind.WINTER
+                }
+                Triple(season in condition.seasons, false, null)
+            }
+
+            is UnlockCondition.MinElapsedMonths -> {
+                val created = java.time.Instant.ofEpochMilli(capsule.createTimestamp)
+                    .atZone(java.time.ZoneId.systemDefault())
+                val now = java.time.Instant.ofEpochMilli(ctx.time.nowMillis()).atZone(java.time.ZoneId.systemDefault())
+                Triple(!now.isBefore(created.plusMonths(condition.months.toLong())), false, null)
+            }
+
+            is UnlockCondition.NthWeekdayOfMonth -> {
+                val today = ctx.time.today()
+                Triple(isNthWeekdayOf(today, condition.nth, condition.dayOfWeek), false, null)
+            }
+
+            is UnlockCondition.YearlyNthWeekday -> {
+                val today = ctx.time.today()
+                Triple(
+                    today.monthValue == condition.month && isNthWeekdayOf(today, condition.nth, condition.dayOfWeek),
+                    false,
+                    null,
+                )
+            }
+
+            is UnlockCondition.LeapDay ->
+                Triple(ctx.time.today().monthValue == 2 && ctx.time.today().dayOfMonth == 29, false, null)
+
+            is UnlockCondition.LastDayOfMonth ->
+                Triple(ctx.time.today().dayOfMonth == ctx.time.today().lengthOfMonth(), false, null)
+
+            is UnlockCondition.NthWeekdaySince -> {
+                val createdDate = java.time.Instant.ofEpochMilli(capsule.createTimestamp)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+                val elapsed = ChronoUnit.DAYS.between(createdDate, ctx.time.today())
+                // 满 minDays 天后的首个星期X当天：7 天窗口内恰有一个星期X，错过即不再满足
+                Triple(
+                    elapsed >= condition.minDays &&
+                        elapsed - condition.minDays < 7 &&
+                        ctx.time.today().dayOfWeek == condition.dayOfWeek,
+                    false,
+                    null,
+                )
+            }
+
+            is UnlockCondition.ZodiacSeason ->
+                Triple(SolarTermCalendar.zodiacOf(ctx.time.today()) == condition.zodiac, false, null)
+
+            // 白昼长度 / 日出钟点：与 SunPhase 同通道（定位换经纬度做天文计算）
+            is UnlockCondition.DayLength -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                else -> {
+                    val point = ctx.location.lastKnown()
+                    val times = point?.let { SunCalc.sunTimesUtcMillis(it.lat, it.lng, ctx.time.today()) }
+                    if (point == null) {
+                        Triple(false, false, r.gpsNoFix)
+                    } else if (times == null) {
+                        // 极昼/极夜：无日出日落，白昼长度无定义，fail-closed
+                        Triple(false, false, null)
+                    } else {
+                        val hours = (times.second - times.first) / 3_600_000.0
+                        val byMin = condition.minHours?.let { hours >= it } ?: true
+                        val byMax = condition.maxHours?.let { hours <= it } ?: true
+                        Triple(byMin && byMax, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.SunriseTimeRange -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                else -> {
+                    val point = ctx.location.lastKnown()
+                    val riseUtc = point?.let { SunCalc.sunTimesUtcMillis(it.lat, it.lng, ctx.time.today())?.first }
+                    if (point == null) {
+                        Triple(false, false, r.gpsNoFix)
+                    } else if (riseUtc == null) {
+                        Triple(false, false, null)
+                    } else {
+                        val minuteOfDay = java.time.Instant.ofEpochMilli(riseUtc)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .let { it.hour * 60 + it.minute }
+                        val byMin = condition.minMinute?.let { minuteOfDay >= it } ?: true
+                        val byMax = condition.maxMinute?.let { minuteOfDay <= it } ?: true
+                        Triple(byMin && byMax, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.LunarMonthRange -> {
+                val lunar = LunarCalendar.solarToLunar(ctx.time.today())
+                Triple(lunar != null && lunar.month == condition.month, false, null)
+            }
+
+            is UnlockCondition.MonthlyDaySet ->
+                Triple(ctx.time.today().dayOfMonth in condition.days, false, null)
+
+            is UnlockCondition.DarkTheme -> when (ctx.systemUi) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.systemUi.isDarkThemeOn() == condition.isDark, false, null)
+            }
+
+            is UnlockCondition.DoNotDisturb -> when (ctx.systemUi) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.systemUi.isDndActive() == condition.isActive, false, null)
+            }
+
+            is UnlockCondition.DevicePose -> {
+                val pose = ctx.sensorExtra?.pose()
+                if (pose == null) {
+                    Triple(false, false, r.envSensorUnavailable)
+                } else {
+                    Triple(pose in condition.kinds, false, null)
+                }
+            }
+
+            is UnlockCondition.ScreenBrightness -> {
+                val level = ctx.systemUi?.screenBrightnessLevel()
+                if (level == null) {
+                    Triple(false, false, r.deviceStateUnavailable)
+                } else {
+                    Triple(level <= condition.maxLevel, false, null)
+                }
+            }
+
+            is UnlockCondition.MediaVolume -> when (ctx.systemUi) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.systemUi.isMediaMuted() == condition.isMuted, false, null)
+            }
+
+            is UnlockCondition.VpnActive -> when (ctx.deviceExtra) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.deviceExtra.isVpnActive() == condition.isActive, false, null)
+            }
+
+            is UnlockCondition.PlugType -> {
+                val kind = ctx.deviceExtra?.pluggedKind()
+                if (kind == null) {
+                    // 未充电或读取失败：指定充电方式的条件自然不满足
+                    Triple(false, false, null)
+                } else {
+                    Triple(kind in condition.kinds, false, null)
+                }
+            }
+
+            is UnlockCondition.BatteryTemp -> {
+                val temp = ctx.deviceExtra?.batteryTempC()
+                if (temp == null) {
+                    Triple(false, false, r.deviceStateUnavailable)
+                } else {
+                    val byMin = condition.minC?.let { temp >= it } ?: true
+                    val byMax = condition.maxC?.let { temp <= it } ?: true
+                    Triple(byMin && byMax, false, null)
+                }
+            }
+
+            is UnlockCondition.Orientation -> when (ctx.systemUi) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.systemUi.isLandscape() == condition.isLandscape, false, null)
+            }
+
+            is UnlockCondition.SpeedRange -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                else -> {
+                    val speed = ctx.location.speedMps()
+                    if (speed == null) {
+                        Triple(false, false, r.gpsNoFix)
+                    } else {
+                        val kmh = speed * 3.6
+                        val byMin = condition.minKmh?.let { kmh >= it } ?: true
+                        val byMax = condition.maxKmh?.let { kmh <= it } ?: true
+                        Triple(byMin && byMax, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.SsidBssidMatch -> {
+                val info = ctx.wifi.current()
+                when (info.state) {
+                    WifiSsidState.NO_PERMISSION ->
+                        Triple(false, false, r.ssidNoPermission)
+                    WifiSsidState.NO_LOCATION_SERVICE ->
+                        Triple(false, false, r.ssidLocationOff)
+                    WifiSsidState.NOT_CONNECTED ->
+                        Triple(false, false, r.ssidNotConnected)
+                    WifiSsidState.CONNECTED ->
+                        Triple(info.bssid != null && info.bssid in condition.bssids, false, null)
+                }
+            }
+
+            is UnlockCondition.BluetoothDevice -> {
+                val names = ctx.appEnv?.connectedBluetoothNames()
+                when {
+                    ctx.appEnv == null -> Triple(false, false, r.deviceStateUnavailable)
+                    names == null -> Triple(false, false, r.btNoPermission)
+                    else -> Triple(names.any { it in condition.deviceNames }, false, null)
+                }
+            }
+
+            is UnlockCondition.ProximityCovered -> {
+                val covered = ctx.sensorExtra?.proximityCovered()
+                if (covered == null) {
+                    Triple(false, false, r.envSensorUnavailable)
+                } else {
+                    Triple(covered, false, null)
+                }
+            }
+
+            is UnlockCondition.FreshBoot -> {
+                val elapsed = ctx.deviceExtra?.bootElapsedMillis()
+                if (elapsed == null) {
+                    Triple(false, false, r.deviceStateUnavailable)
+                } else {
+                    Triple(elapsed <= condition.withinMinutes * 60_000L, false, null)
+                }
+            }
+
+            is UnlockCondition.InstalledApp -> when (ctx.appEnv) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.appEnv.isAppInstalled(condition.packageName), false, null)
+            }
+
+            is UnlockCondition.AirQuality -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val aqi = ctx.airQuality?.aqi(cityId)
+                    if (aqi == null) {
+                        Triple(false, false, r.airQualityFailed)
+                    } else {
+                        Triple(aqi <= condition.maxAqi, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.WindDirection -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    val deg = snapshot?.windDirectionDeg
+                    if (snapshot == null) {
+                        Triple(false, false, r.weatherFailed)
+                    } else if (deg == null) {
+                        Triple(false, false, r.metricUnavailable)
+                    } else {
+                        Triple(windDirFromDeg(deg) in condition.dirs, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.Hemisphere -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                else -> {
+                    val point = ctx.location.lastKnown()
+                    if (point == null) {
+                        Triple(false, false, r.gpsNoFix)
+                    } else {
+                        Triple(if (condition.north) point.lat >= 0 else point.lat < 0, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.TempDelta -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    val yesterday = snapshot?.yesterdayMeanTempC
+                    if (snapshot == null) {
+                        Triple(false, false, r.weatherFailed)
+                    } else if (yesterday == null) {
+                        Triple(false, false, r.metricUnavailable)
+                    } else {
+                        Triple(snapshot.tempC <= yesterday - condition.minDropC, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.CityLocation -> when {
+                !ctx.location.isPermitted() ->
+                    Triple(false, false, r.gpsNoPermission)
+                ctx.location.foregroundOnly ->
+                    Triple(false, true, r.gpsBackground)
+                ctx.location.lastKnown() == null ->
+                    Triple(false, false, r.gpsNoFix)
+                else -> {
+                    val point = ctx.location.lastKnown()!!
+                    val ok = GeoMath.withinRadius(
+                        lat = point.lat,
+                        lng = point.lng,
+                        centerLat = condition.lat,
+                        centerLng = condition.lng,
+                        radiusMeters = condition.radiusMeter,
+                    )
+                    Triple(ok, false, null)
+                }
+            }
+
+            is UnlockCondition.RelativeAltitude -> {
+                val alt = ctx.altitude.altitudeMeters()
+                if (alt == null) {
+                    Triple(false, false, r.altitudeUnavailable)
+                } else {
+                    val delta = alt - condition.baseAltM
+                    Triple(
+                        if (condition.direction == LiftDirection.UP) delta >= condition.deltaM else -delta >= condition.deltaM,
+                        false,
+                        null,
+                    )
+                }
+            }
+
+            is UnlockCondition.PrecipitationProbability -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    val prob = snapshot?.precipProbPercent
+                    if (snapshot == null) {
+                        Triple(false, false, r.weatherFailed)
+                    } else if (prob == null) {
+                        Triple(false, false, r.metricUnavailable)
+                    } else {
+                        Triple(prob >= condition.minProb, false, null)
+                    }
+                }
+            }
+
+            is UnlockCondition.WatchDurationAtLeast ->
+                Triple(ctx.meta.watchSeconds(capsule.id) >= condition.seconds, false, null)
+
+            is UnlockCondition.ReadCountAtLeast ->
+                Triple(ctx.meta.readCount() >= condition.count, false, null)
+
+            is UnlockCondition.DestroyCountAtLeast ->
+                Triple(ctx.meta.destroyCount() >= condition.count, false, null)
+
+            is UnlockCondition.OtherCapsuleStillLocked -> {
+                val status = ctx.dependency.statusOf(condition.capsuleId)
+                if (status == DependencyStatus.NOT_FOUND) {
+                    Triple(false, false, r.dependencyNotFound)
+                } else {
+                    Triple(status == DependencyStatus.LOCKED, false, null)
+                }
+            }
+
+            is UnlockCondition.BackupDone ->
+                Triple(ctx.meta.backupDone(), false, null)
+
+            is UnlockCondition.TotalCreatedCount ->
+                Triple(ctx.meta.totalCreated() >= condition.count, false, null)
+
+            is UnlockCondition.SameDayAsCapsuleRead -> {
+                val readAt = ctx.meta.lastReadAt(condition.capsuleId)
+                if (readAt == null) {
+                    Triple(false, false, null)
+                } else {
+                    val readDay = java.time.Instant.ofEpochMilli(readAt)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                    Triple(readDay == ctx.time.today(), false, null)
+                }
+            }
+
+            is UnlockCondition.DaysSinceCapsuleRead -> {
+                val readAt = ctx.meta.lastReadAt(condition.capsuleId)
+                if (readAt == null) {
+                    Triple(false, false, null)
+                } else {
+                    Triple(ctx.time.nowMillis() - readAt >= condition.days * 86_400_000L, false, null)
+                }
+            }
+
+            is UnlockCondition.WidgetBound -> when (ctx.appEnv) {
+                null -> Triple(false, false, r.deviceStateUnavailable)
+                else -> Triple(ctx.appEnv.isAnyWidgetBound(), false, null)
+            }
+
+            is UnlockCondition.TodayOpenCount ->
+                Triple(ctx.usage.todayOpenCount() >= condition.count, false, null)
         }
         return ConditionStatus(condition = condition, satisfied = satisfied, skipped = skipped, reason = reason)
     }
@@ -532,6 +979,18 @@ class UnlockJudgeUseCase {
     private fun merge(rule: UnlockRule, items: List<ConditionStatus>): Boolean = when (rule.logicType) {
         LogicType.AND -> if (items.isEmpty()) true else items.all { it.satisfied }
         LogicType.OR -> items.any { it.satisfied }
+        // M-of-N：满足条数达到阈值即通过；skipped / 未应答挑战照常计为不满足（fail-closed 不变）；
+        // 阈值缺省回退为"全部"（等价 AND），阈值越界在序列化层已归一并 coerce，这里再兜底一次
+        LogicType.AT_LEAST -> {
+            val required = (rule.threshold ?: items.size).coerceIn(1, items.size)
+            items.count { it.satisfied } >= required
+        }
+    }
+
+    /** 今天是否为本月第 [nth] 个 [dayOfWeek]（nth 1–5；如"每月第一个周一"） */
+    private fun isNthWeekdayOf(today: java.time.LocalDate, nth: Int, dayOfWeek: java.time.DayOfWeek): Boolean {
+        if (today.dayOfWeek != dayOfWeek) return false
+        return (today.dayOfMonth - 1) / 7 + 1 == nth
     }
 
     /** 感官挑战完成应答的约定值（App 当场核验物理动作后传入） */

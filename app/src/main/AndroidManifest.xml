@@ -24,7 +24,20 @@
 
     <!-- 生物识别挑战（androidx.biometric；硬件缺失设备创建侧禁用该条件） -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <!-- 声音留言（体验储备池 §1）：封存时录制语音，仅本地加密存储，无任何上传 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
+
+    <!-- InstalledApp 条件（储备池 v4）：包可见性声明——可见范围 = 全部带启动器入口的应用
+         （queryIntentActivities 语义；未在此列的组件 getPackageInfo 按不存在处理，fail-closed） -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".TimartApplication"
@@ -50,6 +63,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- NFC 实体锚点（体验储备池 §4）：碰卡直达胶囊——外部类型 timart.com:link 的 NDEF 分发 -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="vnd.android.nfc" android:host="ext" android:pathPrefix="/timart.com:link" />
+            </intent-filter>
         </activity>
 
         <!-- 备份 zip / 海报 PNG 分享用 -->
@@ -62,6 +81,18 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- 桌面小组件（WidgetBound 条件的绑定事实源；显示倒计时占位卡） -->
+        <receiver
+            android:name=".widget.TimartWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/timart_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

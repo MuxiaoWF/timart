@@ -74,6 +74,20 @@ class AppContainer(context: Context) {
         )
     }
 
+    /** 加密语音仓库（体验储备池 §1 声音留言；filesDir/audio/{id}/audio_0.bin，不落 Room） */
+    val audioCipherStore: com.muxiao.timart.data.local.crypto.AudioCipherStore by lazy {
+        com.muxiao.timart.data.local.crypto.AudioCipherStore(
+            baseDir = File(appContext.filesDir, "audio"),
+            cipher = aesGcmCipher,
+            sessionKeyProvider = { contentCryptoManager.sessionKeyOrNull() },
+        )
+    }
+
+    /** 语音留言播放器（详情页信笺播放键；明文只进 cacheDir 临时文件，播完即删） */
+    val voicePlayer: com.muxiao.timart.utils.audio.VoicePlayer by lazy {
+        com.muxiao.timart.utils.audio.VoicePlayer(appContext, audioCipherStore)
+    }
+
     val contentCryptoManager: ContentCryptoManager by lazy {
         ContentCryptoManager(
             cipher = aesGcmCipher,
@@ -81,6 +95,7 @@ class AppContainer(context: Context) {
             capsuleRepository = capsuleRepository,
             imageStore = imageCipherStore,
             sessionVault = sessionKeyVault,
+            audioStore = audioCipherStore,
         )
     }
 
@@ -142,6 +157,31 @@ class AppContainer(context: Context) {
         com.muxiao.timart.utils.sensor.LightSensorReader(appContext)
     }
 
+    // ---- 储备池 v4 Provider ----
+
+    /** 系统界面状态 + 设备硬件状态（深色/横竖屏/勿扰/亮度/媒体静音/VPN/充电方式/电池温度/开机时长） */
+    val deviceStateReader: com.muxiao.timart.utils.device.DeviceStateReader by lazy {
+        com.muxiao.timart.utils.device.DeviceStateReader(appContext)
+    }
+
+    /** 传感器扩展（设备姿态 / 接近遮挡；无对应硬件返回 null） */
+    val sensorExtraReader: com.muxiao.timart.utils.sensor.SensorExtraReader by lazy {
+        com.muxiao.timart.utils.sensor.SensorExtraReader(appContext)
+    }
+
+    /** 应用生态（已装应用 / 桌面小组件 / 蓝牙设备名） */
+    val appEnvReader: com.muxiao.timart.utils.app.AppEnvReader by lazy {
+        com.muxiao.timart.utils.app.AppEnvReader(appContext)
+    }
+
+    /** 空气质量（AirQuality 条件判定通道，Open-Meteo Air Quality API + 缓存） */
+    val airQualityRepository: com.muxiao.timart.data.remote.weather.AirQualityRepositoryImpl by lazy {
+        com.muxiao.timart.data.remote.weather.AirQualityRepositoryImpl(
+            com.muxiao.timart.data.remote.weather.OpenMeteoAirApi(),
+            cityRepository,
+        )
+    }
+
     /** 应用内使用统计（打开次数 / 连击 / 上次打开；MainActivity ON_RESUME 记录会话） */
     val usageStatsTracker: UsageStatsTracker by lazy { UsageStatsTracker(appContext) }
 
@@ -158,6 +198,28 @@ class AppContainer(context: Context) {
             override fun viewCount(capsuleId: String): Int = runCatching {
                 metaDao.getSync("capsule.views.$capsuleId")?.toIntOrNull() ?: 0
             }.getOrDefault(0)
+
+            // ---- 储备池 v4 扩展通道 ----
+
+            override fun readCount(): Int = runCatching { metaDao.readCountSync() }.getOrDefault(0)
+
+            override fun destroyCount(): Int = runCatching { destroyedDao.countSync() }.getOrDefault(0)
+
+            override fun totalCreated(): Int = runCatching {
+                metaDao.getSync("app.created.total")?.toIntOrNull() ?: 0
+            }.getOrDefault(0)
+
+            override fun backupDone(): Boolean = runCatching {
+                metaDao.getSync(BackupManager.FLAG_BACKUP_DONE) == "true"
+            }.getOrDefault(false)
+
+            override fun watchSeconds(capsuleId: String): Int = runCatching {
+                metaDao.getSync("capsule.watch.$capsuleId")?.toIntOrNull() ?: 0
+            }.getOrDefault(0)
+
+            override fun lastReadAt(capsuleId: String): Long? = runCatching {
+                metaDao.getSync("capsule.readAt.$capsuleId")?.toLongOrNull()
+            }.getOrNull()
         }
     }
 
@@ -177,6 +239,8 @@ class AppContainer(context: Context) {
             destroyedRecords = destroyedRepository,
             crypto = contentCryptoManager,
             imageStore = imageCipherStore,
+            audioStore = audioCipherStore,
+            metaDao = metaDao,
         )
     }
 
@@ -201,8 +265,50 @@ class AppContainer(context: Context) {
             capsuleRepository = capsuleRepository,
             imageStore = imageCipherStore,
             destroyedRepository = destroyedRepository,
+            audioStore = audioCipherStore,
         )
     }
+
+    // ---- NFC 锚点 / 嵌套种子 / 触觉（体验储备池 §3–§6） ----
+
+    /** 口令分片（体验储备池 §7.1）：GF(256) Shamir 拆分/重构 + 分片串编解码（纯 Kotlin） */
+    val shardSecretUseCase: com.muxiao.timart.domain.usecase.ShardSecretUseCase by lazy {
+        com.muxiao.timart.domain.usecase.ShardSecretUseCase()
+    }
+
+    /** 触觉签名播放器（体验储备池 §6；零权限） */
+    val haptics: com.muxiao.timart.utils.device.Haptics by lazy {
+        com.muxiao.timart.utils.device.Haptics(appContext)
+    }
+
+    /** 播放胶囊触觉签名：读 meta `capsule.haptic.<id>`（0 = 无）后振动；读取失败静默 */
+    fun playCapsuleHaptic(capsuleId: String, destroy: Boolean) {
+        val style = runCatching {
+            metaDao.getSync(com.muxiao.timart.data.local.db.CapsuleMetaKeys.haptic(capsuleId))
+                ?.toIntOrNull() ?: 0
+        }.getOrDefault(0)
+        if (style != 0) haptics.play(style, destroy)
+    }
+
+    /** 环境音播放器（体验储备池 §6；合成循环、零音频资源；解封淡入 / 离场淡出） */
+    val ambientSoundPlayer: com.muxiao.timart.utils.audio.AmbientSoundPlayer by lazy {
+        com.muxiao.timart.utils.audio.AmbientSoundPlayer()
+    }
+
+    /**
+     * NFC 实体锚点待直达的胶囊 id（体验储备池 §4）：MainActivity 解析 `timart.com:link`
+     * NDEF 分发后写入，NavGraph 观察到非空即导航详情并清空。Compose 快照状态驱动。
+     */
+    var pendingNfcCapsuleId: String? by mutableStateOf(null)
+
+    /** 嵌套种子是否休眠（体验储备池 §3）：有 seedOf 标记且无 sprout 标记。
+     *  同步读（MainActivity 全量判定 / Worker 的 shouldJudge 用），失败按未休眠 fail-open——
+     *  宁可让种子照常判定，也不让读取故障把已萌芽/普通胶囊藏起来。 */
+    fun isSeedDormant(capsuleId: String): Boolean = runCatching {
+        val dao = metaDao
+        dao.getSync(com.muxiao.timart.data.local.db.CapsuleMetaKeys.seedOf(capsuleId)) != null &&
+            dao.getSync(com.muxiao.timart.data.local.db.CapsuleMetaKeys.sprout(capsuleId)) != "true"
+    }.getOrDefault(false)
 
     // ---- 粒子引擎 ----
 
@@ -245,6 +351,8 @@ class AppContainer(context: Context) {
     /**
      * 默认前台上下文；Worker 场景传 foregroundOnly = true（GPS 条件按 skipped 处理）。
      * 复用 UnlockJudgeUseCase，不另写后台判定逻辑。
+     * v4 扩展通道（systemUi/deviceExtra/sensorExtra/appEnv/airQuality）前台与 Worker 同源注入；
+     * 单测假件可不传（可空默认 null → 判定按「不可用」fail-closed）。
      */
     fun defaultContext(foregroundOnly: Boolean = false): ConditionContext = ConditionContext(
         time = timeProvider,
@@ -264,5 +372,10 @@ class AppContainer(context: Context) {
         usage = usageStatsTracker,
         meta = capsuleMetaProvider,
         ambientLight = lightSensorReader,
+        systemUi = deviceStateReader,
+        deviceExtra = deviceStateReader,
+        sensorExtra = sensorExtraReader,
+        appEnv = appEnvReader,
+        airQuality = airQualityRepository,
     )
 }

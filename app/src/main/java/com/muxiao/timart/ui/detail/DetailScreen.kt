@@ -11,9 +11,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -44,6 +48,8 @@ import com.muxiao.timart.ui.components.visual.GlowOrb
 import com.muxiao.timart.ui.components.visual.SectionHeader
 import com.muxiao.timart.ui.settings.PasswordUnlockDialog
 import com.muxiao.timart.ui.theme.DeepCharcoal
+import com.muxiao.timart.ui.theme.InkDisabled
+import com.muxiao.timart.ui.theme.InkPrimary
 import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.LockedSlate
 import com.muxiao.timart.ui.theme.TimeGold
@@ -150,8 +156,19 @@ fun DetailScreen(
         }
     }
 
+    // 环境音（体验储备池 §6）：CONTENT 淡入、离场淡出（scene 由胶囊 meta 决定）
+    LaunchedEffect(state.phase) {
+        if (state.phase == DetailViewModel.Phase.CONTENT) vm.startAmbient() else vm.stopAmbient()
+    }
+
     // 粒子画布原点（窗口根坐标）：尘核锚点换算到画布局部坐标系用
     var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
+
+    // 单胶囊赠予导出弹窗（LOCKED 态入口在 LockedStateView；体验储备池 §4）
+    var showGiftExport by remember { mutableStateOf(false) }
+
+    // NFC 实体锚点写卡弹层（LOCKED 态入口在 LockedStateView；体验储备池 §4）
+    var showNfcLinkWrite by remember { mutableStateOf(false) }
 
     // 返回键编排：UNSEAL → 跳过；autoDestroy 未决策 → 「销毁/保留」；其余直接退出
     BackHandler {
@@ -227,6 +244,8 @@ fun DetailScreen(
                         satisfiedChallenges = state.satisfiedChallenges,
                         regretAvailable = state.regretAvailable,
                         onOrbLongPress = vm::onOrbLongPress,
+                        onGift = { showGiftExport = true },
+                        onWriteNfcLink = { showNfcLinkWrite = true },
                         overlayOrigin = overlayOrigin,
                         // 宽屏限宽居中（横屏适配）：时间线行宽过长伤可读性；
                         // 尘核锚点经 positionInRoot 实测换算，居中偏移不影响粒子定位
@@ -239,26 +258,27 @@ fun DetailScreen(
                 // 隐藏实测通道：真实卡片以 0 透明度排版一次取自然高度——
                 // 揭封双翼按实测高度生成，摊平交接时与正文卡片零几何差
                 if (state.content != null && !state.needPassword) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer { alpha = 0f },
-                    ) {
-                        UnlockedLetterView(
-                            content = state.content,
-                            unlockedAt = state.unlockedAt,
-                            autoDestroyAfterRead = state.capsule?.autoDestroyAfterRead == true,
-                            loading = false,
-                            onCompleteRead = null,
-                            onKeep = null,
-                            onDestroy = null,
-                            onPoster = null,
-                            onBack = null,
-                            animateText = false,
-                            parallax = null,
-                            onCardHeightChanged = { measuredCardHeight = it },
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = 0f },
+                ) {
+                    UnlockedLetterView(
+                        content = state.content,
+                        unlockedAt = state.unlockedAt,
+                        autoDestroyAfterRead = state.capsule?.autoDestroyAfterRead == true,
+                        loading = false,
+                        onCompleteRead = null,
+                        onKeep = null,
+                        onDestroy = null,
+                        onPoster = null,
+                        onBack = null,
+                        animateText = false,
+                        parallax = null,
+                        paperStyle = state.paperStyle,
+                        onCardHeightChanged = { measuredCardHeight = it },
+                    )
+                }
                 }
                 UnsealSequence(
                     engine = engine,
@@ -270,7 +290,15 @@ fun DetailScreen(
 
             DetailViewModel.Phase.CONTENT -> {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    UnlockedLetterView(
+                    if (state.shardGate) {
+                        // 口令分片门（体验储备池 §7.1）：内层仍锁，先集齐分片
+                        ShardGateView(
+                            capsule = state.capsule,
+                            onSubmitted = vm::submitShardShares,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        UnlockedLetterView(
                         content = state.content,
                         unlockedAt = state.unlockedAt,
                         autoDestroyAfterRead = state.capsule?.autoDestroyAfterRead == true,
@@ -286,9 +314,19 @@ fun DetailScreen(
                         animateText = true,
                         titleHint = state.capsule?.title,
                         parallax = tiltSensor,
+                        voiceAvailable = state.voiceAvailable,
+                        voicePlaying = state.voicePlaying,
+                        onToggleVoice = vm::toggleVoice,
+                        paperStyle = state.paperStyle,
+                        reply = state.reply,
+                        onWriteReply = vm::openReplyDialog,
+                        puzzleStatus = vm.puzzleStatusText(L),
+                        puzzleReady = state.puzzleReady,
+                        onOpenPuzzle = vm::openPuzzleView,
                         onCardHeightChanged = { measuredCardHeight = it },
-                    )
-                    if (showRereadVeil) {
+                        )
+                    }
+                    if (!state.shardGate && showRereadVeil) {
                         RereadVeilOverlay(engine = engine, onDone = { showRereadVeil = false })
                     }
                 }
@@ -320,6 +358,7 @@ fun DetailScreen(
                         onBack = null,
                         animateText = false,
                         parallax = tiltSensor,
+                        paperStyle = state.paperStyle,
                     )
                 }
                 DissolveSequence(engine = engine, onFinished = vm::onDissolveFinished)
@@ -359,7 +398,123 @@ fun DetailScreen(
 
     // ---- 对话框层 ----
 
+    // NFC 实体锚点写卡（timart.com:link 卡贴；碰卡直达）
+    if (showNfcLinkWrite) {
+        NfcLinkWriteDialog(
+            capsuleId = capsuleId,
+            onDismiss = { showNfcLinkWrite = false },
+        )
+    }
+
+    // 单胶囊赠予导出（加密赠予文件；口令由封存者另行告知接受者）
+    if (showGiftExport) {
+        com.muxiao.timart.ui.settings.GiftExportDialog(
+            manager = container.backupManager,
+            capsuleId = capsuleId,
+            onDismiss = { showGiftExport = false },
+        )
+    }
+
     // 「后悔药」条件编辑（长按尘核唤出；同包 internal，无需 import）
+
+    // 回信弹窗（体验储备池 §5）：一句附言，存 meta，销毁后随尘迹档案留存
+    if (state.showReplyDialog) {
+        var replyInput by remember(state.reply) { mutableStateOf(state.reply.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = vm::dismissReplyDialog,
+            containerColor = com.muxiao.timart.ui.theme.SurfaceRaise,
+            title = { Text(text = L.replyWrite, style = TimartType.titleSerif) },
+            text = {
+                Column {
+                    Text(
+                        text = L.replyHint,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                    )
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = replyInput,
+                        onValueChange = { replyInput = it.take(DetailViewModel.REPLY_MAX) },
+                        singleLine = true,
+                        textStyle = TimartType.body.copy(color = InkPrimary),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(TimeGold),
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .fillMaxWidth()
+                            .background(DeepCharcoal.copy(alpha = 0.5f), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        decorationBox = { inner ->
+                            Box {
+                                if (replyInput.isEmpty()) {
+                                    Text(text = L.replyPlaceholder, style = TimartType.body, color = InkSecondary)
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.saveReply(replyInput) },
+                    enabled = replyInput.isNotBlank(),
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                ) {
+                    Text(text = L.confirm)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissReplyDialog) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+    }
+
+    // 合信视图弹层（体验储备池 §3）：全部片解锁后按片序聚合阅读
+    if (state.showPuzzleSheet) {
+        AlertDialog(
+            onDismissRequest = vm::dismissPuzzleSheet,
+            containerColor = com.muxiao.timart.ui.theme.SurfaceRaise,
+            title = { Text(text = L.puzzleSheetTitle, style = TimartType.titleSerif) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    val fragments = state.puzzleFragments.orEmpty()
+                    if (fragments.isEmpty()) {
+                        Text(
+                            text = L.puzzleEmpty,
+                            style = TimartType.caption,
+                            color = InkSecondary,
+                        )
+                    }
+                    fragments.forEachIndexed { i, fragment ->
+                        if (i > 0) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        Text(
+                            text = "${L.puzzlePieceFmt.format(fragment.index + 1)} · ${fragment.title}",
+                            style = TimartType.body.copy(fontSize = 14.sp),
+                            color = TimeGold,
+                        )
+                        fragment.paragraphs.forEach { paragraph ->
+                            Text(
+                                text = paragraph,
+                                style = TimartType.body.copy(fontSize = 14.sp, lineHeight = 24.sp),
+                                color = InkPrimary,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = vm::dismissPuzzleSheet) {
+                    Text(text = L.ok, color = TimeGold)
+                }
+            },
+        )
+    }
     if (state.showRegretSheet) {
         state.capsule?.let { capsule ->
             ConditionEditSheet(
@@ -446,5 +601,77 @@ fun DetailScreen(
             },
             onConfirm = vm::onPasswordEntered,
         )
+    }
+}
+
+/**
+ * 口令分片收集面板（体验储备池 §7.1）：外层已解、内层待重构——
+ * 持有人把 M 份分片串逐行粘贴，重构 k2 校验 verifier₂ 后才解出正文。
+ * 错误分片 fail-closed：显式报错，不产生任何半开放状态。
+ */
+@Composable
+private fun ShardGateView(
+    capsule: com.muxiao.timart.domain.model.Capsule?,
+    onSubmitted: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val L = LocalStrings.current
+    var input by remember { mutableStateOf("") }
+    val threshold = capsule?.shardThreshold ?: 0
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        modifier = modifier
+            .padding(horizontal = 32.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Text(
+            text = capsule?.title ?: L.untitled,
+            style = TimartType.titleSerif,
+            color = InkPrimary,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = L.shardGateHintFmt.format(threshold),
+            style = TimartType.body,
+            color = InkSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 14.dp),
+        )
+        androidx.compose.foundation.text.BasicTextField(
+            value = input,
+            onValueChange = { input = it },
+            textStyle = TimartType.caption.copy(
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                color = InkPrimary,
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(TimeGold),
+            modifier = Modifier
+                .padding(top = 18.dp)
+                .fillMaxWidth()
+                .height(160.dp)
+                .background(com.muxiao.timart.ui.theme.SurfaceRaise, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .padding(14.dp),
+            decorationBox = { inner ->
+                Box {
+                    if (input.isEmpty()) {
+                        Text(
+                            text = L.shardGateInputHint,
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                        )
+                    }
+                    inner()
+                }
+            },
+        )
+        TextButton(
+            onClick = { onSubmitted(input) },
+            enabled = input.isNotBlank(),
+            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = TimeGold),
+            modifier = Modifier.padding(top = 18.dp),
+        ) {
+            Text(text = L.shardGateSubmit)
+        }
     }
 }

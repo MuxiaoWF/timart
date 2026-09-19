@@ -2,6 +2,7 @@ package com.muxiao.timart.ui.detail
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -39,8 +41,8 @@ import com.muxiao.timart.domain.model.WeatherType
 import com.muxiao.timart.domain.usecase.ReadCapsuleUseCase
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.l10n.stringsFor
-import com.muxiao.timart.ui.components.visual.PaperInkColor
 import com.muxiao.timart.ui.components.visual.PaperLetterCard
+import com.muxiao.timart.ui.components.visual.PaperStyle
 import com.muxiao.timart.ui.components.visual.RevealBody
 import com.muxiao.timart.ui.components.visual.RevealTitle
 import com.muxiao.timart.ui.components.visual.rememberLetterReveal
@@ -48,7 +50,7 @@ import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.GlowGold
 import com.muxiao.timart.ui.theme.InkDisabled
 import com.muxiao.timart.ui.theme.InkSecondary
-import com.muxiao.timart.ui.theme.PaperInk
+
 import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.utils.RuntimeSettings
@@ -102,8 +104,28 @@ fun UnlockedLetterView(
 
     /** 陀螺仪视差传感器（设置页开关开启时卡片 3D 倾斜） */
     parallax: com.muxiao.timart.utils.sensor.ParallaxSensor? = null,
+
+    /** 声音留言（体验储备池 §1）：有无语音 / 播放态 / 播放开关（null = 不展示播放键，如消散重放） */
+    voiceAvailable: Boolean = false,
+    voicePlaying: Boolean = false,
+    onToggleVoice: (() -> Unit)? = null,
+
+    /** 信纸样式（体验储备池 §1；封存时选定，meta `capsule.paper.<id>`，0 = 原纸） */
+    paperStyle: Int = 0,
+
+    /** 回信（体验储备池 §5）：已写文本 / 写回信入口（null = 不展示，如消散重放） */
+    reply: String? = null,
+    onWriteReply: (() -> Unit)? = null,
+
+    /** 拼图分组（体验储备池 §3）：进度短句（如「拼图 2/3」）；就绪后可开合信视图（handler null = 不展示） */
+    puzzleStatus: String? = null,
+    puzzleReady: Boolean = false,
+    onOpenPuzzle: (() -> Unit)? = null,
 ) {
     val L = LocalStrings.current
+    // 信纸样式决定纸色与墨色（全信笺文本统一取 ink，噪点同墨）
+    val paper = PaperStyle.of(paperStyle)
+    val ink = paper.ink
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -117,6 +139,7 @@ fun UnlockedLetterView(
                 ),
         ) {
             PaperLetterCard(
+                style = paper,
                 modifier = Modifier
                     .fillMaxWidth()
                     .onSizeChanged { onCardHeightChanged?.invoke(it.height) }
@@ -151,7 +174,7 @@ fun UnlockedLetterView(
                         text = content?.title ?: titleHint ?: "…",
                         state = reveal,
                         style = TimartType.titleSerif.copy(fontSize = 26.sp, lineHeight = 36.sp),
-                        color = PaperInkColor,
+                        color = ink,
                     )
 
                     // 标题下金色划线：字符显现完成后从左扫入并保留（手账式短划线）
@@ -176,9 +199,41 @@ fun UnlockedLetterView(
                         Text(
                             text = metaLineOf(c),
                             style = TimartType.caption,
-                            color = PaperInk.copy(alpha = 0.55f),
+                            color = ink.copy(alpha = 0.55f),
                             modifier = Modifier.padding(top = 8.dp),
                         )
+                    }
+
+                    // 声音留言播放键（体验储备池 §1）：信笺上方浮现，播完/停止即回初始态
+                    if (voiceAvailable && onToggleVoice != null) {
+                        Text(
+                            text = if (voicePlaying) L.voiceStopPlaying else L.voicePlay,
+                            style = TimartType.caption,
+                            color = TimeGold,
+                            modifier = Modifier
+                                .padding(top = 14.dp)
+                                .clickable(onClick = onToggleVoice),
+                        )
+                    }
+
+                    // 拼图进度与合信视图入口（体验储备池 §3）
+                    if (puzzleStatus != null) {
+                        Text(
+                            text = puzzleStatus,
+                            style = TimartType.caption,
+                            color = ink.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(top = 14.dp),
+                        )
+                        if (puzzleReady && onOpenPuzzle != null) {
+                            Text(
+                                text = L.puzzleOpen,
+                                style = TimartType.caption,
+                                color = TimeGold,
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .clickable(onClick = onOpenPuzzle),
+                            )
+                        }
                     }
 
                     // 细分隔线
@@ -187,7 +242,7 @@ fun UnlockedLetterView(
                             .padding(top = 18.dp, bottom = 20.dp)
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(PaperInk.copy(alpha = 0.14f)),
+                            .background(ink.copy(alpha = 0.14f)),
                     )
 
                     // 正文（显现效果；未就绪时骨架行）
@@ -196,7 +251,7 @@ fun UnlockedLetterView(
                         contentReady = content != null && !loading,
                         state = reveal,
                         style = TimartType.body.copy(lineHeight = 30.sp),
-                        color = PaperInkColor,
+                        color = ink,
                     )
 
                     if (content != null && !loading) {
@@ -233,31 +288,32 @@ fun UnlockedLetterView(
                             Text(
                                 text = L.voucherTitle,
                                 style = TimartType.caption,
-                                color = PaperInk.copy(alpha = 0.45f),
+                                color = ink.copy(alpha = 0.45f),
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            VoucherRow(label = L.createdLabel, value = TimeFormatter.dateTime(content.createdAt))
-                            unlockedAt?.let { VoucherRow(label = L.unlockedLabel, value = TimeFormatter.dateTime(it)) }
+                            VoucherRow(label = L.createdLabel, value = TimeFormatter.dateTime(content.createdAt), ink = ink)
+                            unlockedAt?.let { VoucherRow(label = L.unlockedLabel, value = TimeFormatter.dateTime(it), ink = ink) }
                             content.snapshot?.let { snapshot ->
                                 VoucherRow(
                                     label = L.weatherLabel,
                                     value = "${snapshot.cityName} · ${weatherNameOf(snapshot.weatherType, RuntimeSettings.resolvedLang)} ${snapshot.tempC.toInt()}°C",
+                                    ink = ink,
                                 )
                             }
                             if (content.tags.isNotEmpty()) {
-                                VoucherRow(label = L.tagsLabel, value = content.tags.joinToString(" · "))
+                                VoucherRow(label = L.tagsLabel, value = content.tags.joinToString(" · "), ink = ink)
                             }
                             if (content.note.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(14.dp))
                                 Text(
                                     text = L.noteLabel,
                                     style = TimartType.caption,
-                                    color = PaperInk.copy(alpha = 0.45f),
+                                    color = ink.copy(alpha = 0.45f),
                                 )
                                 Text(
                                     text = content.note,
                                     style = TimartType.body.copy(fontSize = 14.sp, lineHeight = 24.sp),
-                                    color = PaperInk.copy(alpha = 0.75f),
+                                    color = ink.copy(alpha = 0.75f),
                                     modifier = Modifier.padding(top = 6.dp),
                                 )
                             }
@@ -328,6 +384,32 @@ fun UnlockedLetterView(
                     Text(text = L.makePoster, style = TimartType.caption)
                 }
             }
+
+            // 回信（体验储备池 §5）：一句附言绑定档案，销毁后留存于尘迹
+            if (onWriteReply != null) {
+                TextButton(
+                    onClick = onWriteReply,
+                    enabled = !loading && content != null,
+                    colors = ButtonDefaults.textButtonColors(contentColor = GlowGold),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = if (reply == null) L.replyWrite else L.replyEdit,
+                        style = TimartType.caption,
+                    )
+                }
+                reply?.let { written ->
+                    Text(
+                        text = "${L.replyLabel}：$written",
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                    )
+                }
+            }
         }
 
         // 左上返回按钮（共享组件；卡片列在有按钮时下移 64dp，此处不与卡片重叠）
@@ -341,18 +423,18 @@ fun UnlockedLetterView(
 }
 
 @Composable
-private fun VoucherRow(label: String, value: String) {
+private fun VoucherRow(label: String, value: String, ink: Color) {
     Row(modifier = Modifier.padding(top = 6.dp)) {
         Text(
             text = label,
             style = TimartType.caption,
-            color = PaperInk.copy(alpha = 0.45f),
+            color = ink.copy(alpha = 0.45f),
             modifier = Modifier.width(52.dp),
         )
         Text(
             text = value,
             style = TimartType.caption,
-            color = PaperInk.copy(alpha = 0.8f),
+            color = ink.copy(alpha = 0.8f),
         )
     }
 }

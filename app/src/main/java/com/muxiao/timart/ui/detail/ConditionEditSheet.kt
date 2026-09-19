@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.unlock.ConditionText
+import com.muxiao.timart.domain.model.unlock.LogicType
 import com.muxiao.timart.domain.model.unlock.UnlockRule
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.create.CreateViewModel
@@ -64,6 +66,9 @@ internal fun ConditionEditSheet(
     // 面板内暂存增删结果，确认才提交（与创建流程「表单只产出对象」同哲学）
     var conditions by remember { mutableStateOf(capsule.unlockRule.conditionList) }
     var logic by remember { mutableStateOf(capsule.unlockRule.logicType) }
+    var threshold by remember {
+        mutableIntStateOf(capsule.unlockRule.threshold ?: (capsule.unlockRule.conditionList.size / 2).coerceAtLeast(1))
+    }
     var showTypeSheet by remember { mutableStateOf(false) }
     var activeForm by remember { mutableStateOf<ConditionType?>(null) }
 
@@ -133,11 +138,14 @@ internal fun ConditionEditSheet(
                 )
             }
 
-            // AND/OR 切换（两条及以上才有意义，同创建流程）
+            // AND/OR/任选 M 切换（两条及以上才有意义，同创建流程）
             if (conditions.size >= 2) {
                 LogicSwitch(
                     logic = logic,
+                    conditionCount = conditions.size,
+                    threshold = threshold,
                     onLogicChange = { logic = it },
+                    onThresholdChange = { threshold = it },
                     modifier = Modifier.padding(top = 18.dp),
                 )
             }
@@ -165,7 +173,15 @@ internal fun ConditionEditSheet(
 
             // 确认：写库 + 消耗机会（由 VM 完成）；空规则禁止提交
             Button(
-                onClick = { onConfirm(UnlockRule(logicType = logic, conditionList = conditions)) },
+                onClick = {
+                    onConfirm(
+                        UnlockRule(
+                            logicType = logic,
+                            conditionList = conditions,
+                            threshold = threshold.takeIf { logic == LogicType.AT_LEAST },
+                        ),
+                    )
+                },
                 enabled = conditions.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = TimeGold,

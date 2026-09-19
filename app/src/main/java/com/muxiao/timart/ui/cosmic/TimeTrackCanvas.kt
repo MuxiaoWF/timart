@@ -77,6 +77,13 @@ fun TimeTrackCanvas(
     modifier: Modifier = Modifier,
     /** 已开启过（读过内容，meta `capsule.read.*`）的胶囊 id 集：已读金球做余温降档（亮度/环带/尘埃全弱化） */
     readIds: Set<String> = emptySet(),
+
+    /**
+     * 锁定胶囊「满足比」快照（体验储备池 §2 成熟度渐变）：
+     * 满足条件占比 0..1，锁定球色从尘埃灰向暖金过渡（上限压到 0.45，
+     * 与「即将达成」PENDING 的金色渐变段区分开——成熟只给温度，不冒充可开启）。
+     */
+    satisfactionRatios: Map<String, Float> = emptyMap(),
     onTransform: (panDelta: Offset, zoomDelta: Float) -> Unit,
     onCapsuleTap: (id: String, firstUnlock: Boolean, anchorX: Float, anchorY: Float) -> Unit,
     onLayoutChange: (id: String, nx: Float, ny: Float, finished: Boolean) -> Unit,
@@ -148,6 +155,16 @@ fun TimeTrackCanvas(
     // 原先对每球做 capsules.find 线性扫描（O(n²)），改 O(1) 取
     val capsulesById = remember(capsules) { capsules.associateBy { it.id } }
 
+    // 星座连线（体验储备池 §2）：依赖边 child.dependCapsuleId → 前置球，两端都在图上才成线；
+    // 锁定段为暗金细线，child 解锁后整段点亮（解锁一颗点亮一段）
+    val dependencyEdges = remember(capsules) {
+        capsules.filter { it.state != CapsuleState.DESTROYED && it.dependCapsuleId != null }
+            .map { it.id to it.dependCapsuleId!! }
+    }
+
+    // 盲盒遮蔽题（组合期取词，随语言即时重组；遮蔽规则与预览卡一致）
+    val blindMaskTitle = com.muxiao.timart.l10n.LocalStrings.current.blindMaskTitle
+
     // A8：绘制期常量提升——Stroke 对象与 dp→px 换算不再每帧每球重建/重算
     val ringGoldPadPx = remember(density) { with(density) { 7.dp.toPx() } }
     val ringLockedPadPx = remember(density) { with(density) { 4.dp.toPx() } }
@@ -162,14 +179,23 @@ fun TimeTrackCanvas(
     } else {
         minOf(canvasSize.width, canvasSize.height) / 2f - with(density) { 24.dp.toPx() }
     }
-    val layout = remember(capsules, canvasSize, zoom, focusId, dragId, dragFinger) {
+    val layout = remember(capsules, canvasSize, zoom, focusId, dragId, dragFinger, blindMaskTitle) {
         if (canvasSize == IntSize.Zero || baseRadiusPx <= 0f) {
             TimeTrackLayout.TrackLayoutResult(emptyList(), emptyList())
         } else {
             val result = TimeTrackLayout.layout(
                 items = capsules
                     .filter { it.state != CapsuleState.DESTROYED }
-                    .map { TimeTrackLayout.TrackItem(it.id, it.title, it.createTimestamp, it.layoutX, it.layoutY) },
+                    .map {
+                        TimeTrackLayout.TrackItem(
+                            it.id,
+                            // 盲盒封存且仍锁定：球旁标题遮蔽（与预览卡同规则，解锁后恢复）
+                            if (it.blindBox && it.state == CapsuleState.LOCKED) blindMaskTitle else it.title,
+                            it.createTimestamp,
+                            it.layoutX,
+                            it.layoutY,
+                        )
+                    },
                 centerX = canvasSize.width / 2f,
                 centerY = canvasSize.height / 2f,
                 baseRadius = baseRadiusPx,
@@ -191,6 +217,9 @@ fun TimeTrackCanvas(
             }
         }
     }
+
+    // 星座连线端点查找（draw 相位零分配：随 layout 记忆，不每帧重建）
+    val placedById = remember(layout) { layout.capsules.associateBy { it.id } }
 
     /** 屏幕坐标 → 归一化星图坐标（±1.5 钳制，与 TimeTrackLayout 自定义覆盖约定一致） */
     fun normalized(screen: Offset): Pair<Float, Float> {
@@ -222,6 +251,9 @@ fun TimeTrackCanvas(
                             p.id in unsealedIds -> ParticleEngine.TIME_GOLD
                             // 已读金球：环绕尘埃随余温降档（同色压暗，见 ReadGoldDraw）
                             capsuleState == CapsuleState.UNLOCKED && p.id in readIds -> ReadGoldArgb
+                            // 锁定非 PENDING：尘埃随成熟度向暖金过渡（与球核同源取色）
+                            capsuleState == CapsuleState.LOCKED && p.id !in pendingIds ->
+                                maturityColor(p.id, satisfactionRatios).toArgb()
                             else -> capsuleState.anchorColorArgb(pending = p.id in pendingIds)
                         },
                     ),
@@ -379,6 +411,20 @@ fun TimeTrackCanvas(
                     style = TRACK_STROKE,
                 )
             }
+            // 星座连线（球体层之下）：依赖边 child → 前置球；锁定段暗金细线，
+            // child 解锁（含 UNSEAL 待点击）后整段点亮——解锁一颗点亮一段
+            dependencyEdges.forEach { (childId, prereqId) ->
+                val child = placedById[childId] ?: return@forEach
+                val prereq = placedById[prereqId] ?: return@forEach
+                val lit = childId in unsealedIds ||
+                    capsulesById[childId]?.state == CapsuleState.UNLOCKED
+                drawLine(
+                    color = if (lit) CONSTELLATION_LIT else CONSTELLATION_DIM,
+                    start = Offset(child.x, child.y),
+                    end = Offset(prereq.x, prereq.y),
+                    strokeWidth = if (lit) 1.6f else 1.2f,
+                )
+            }
             layout.capsules.forEach { p ->
                 val state = capsulesById[p.id]?.state ?: CapsuleState.LOCKED
                 val isUnsealed = p.id in unsealedIds
@@ -391,7 +437,8 @@ fun TimeTrackCanvas(
                     isUnsealed -> TimeGold
                     state == CapsuleState.UNLOCKED -> if (isReadGold) ReadGoldDraw else TimeGold
                     isPending -> pendingColor(p.id)
-                    else -> LockedSlateDraw
+                    // 成熟度渐变（体验储备池 §2）：锁定球随满足比从尘埃灰向暖金过渡（压在 PENDING 段之下）
+                    else -> maturityColor(p.id, satisfactionRatios)
                 }
                 val isGolden = isUnsealed || state == CapsuleState.UNLOCKED
                 // 漂浮（Floating Element）：每球慢速正弦上下起伏，拖拽中的球归零
@@ -530,6 +577,18 @@ private fun pendingColor(id: String): androidx.compose.ui.graphics.Color {
     return androidx.compose.ui.graphics.lerp(LockedSlateDraw, TimeGold, 0.35f + seed * 0.3f)
 }
 
+/**
+ * 成熟度渐变（体验储备池 §2）：锁定非 PENDING 球核色 = 尘埃灰 → 暖金 lerp，
+ * 比例 = 满足比 × 0.45（上限刻意压在 PENDING 段 0.35–0.65 的下缘之下，
+ * 「温度在涨」可感但不会与「即将达成」混淆）；无快照数据回落纯尘埃灰。
+ */
+private fun maturityColor(id: String, ratios: Map<String, Float>): androidx.compose.ui.graphics.Color =
+    androidx.compose.ui.graphics.lerp(
+        LockedSlateDraw,
+        TimeGold,
+        (ratios[id] ?: 0f).coerceIn(0f, 1f) * 0.45f,
+    )
+
 private val LockedSlateDraw = androidx.compose.ui.graphics.Color(0xFF5A6B7A)
 
 /**
@@ -543,6 +602,10 @@ private val ReadGoldArgb = ReadGoldDraw.toArgb()
 private val TRACK_STROKE = Stroke(width = 1.2f)
 private val RING_LOCKED_STROKE = Stroke(width = 1.4f)
 private val ORB_HIGHLIGHT_STROKE = Stroke(width = 1.6f)
+
+/** 星座连线：锁定段暗金（低透明时金，不与轨道细线混淆）、点亮段满亮时金（主题 Token 派生） */
+private val CONSTELLATION_DIM = TimeGold.copy(alpha = 0.18f)
+private val CONSTELLATION_LIT = TimeGold.copy(alpha = 0.6f)
 
 /** 星云底光（暖琥珀，极低亮度） */
 private const val NEBULA_COLOR = 0xFF4A3813.toInt()

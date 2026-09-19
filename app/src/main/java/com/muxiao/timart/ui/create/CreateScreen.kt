@@ -10,8 +10,19 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import com.muxiao.timart.l10n.LocalStrings
+import com.muxiao.timart.ui.theme.InkPrimary
+import com.muxiao.timart.ui.theme.SurfaceRaise
+import com.muxiao.timart.ui.theme.TimeGold
+import com.muxiao.timart.ui.theme.TimartType
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -100,7 +111,7 @@ fun CreateScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             // 页级返回（仅第 1 步显示：后两步已有步内「‹ 上一步」；系统返回手势随时可退出）。
             // 进场样式：页面主体落位（~200ms）后单独淡入，不与路由转场抢戏
-            val L = com.muxiao.timart.l10n.LocalStrings.current
+            val L = LocalStrings.current
             if (step == 0 && !assembling) {
                 var backVisible by remember { mutableStateOf(false) }
                 androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -111,16 +122,16 @@ fun CreateScreen(
                     visible = backVisible,
                     enter = fadeIn(tween(com.muxiao.timart.ui.theme.TimartMotion.CONTENT_MILLIS, easing = LinearOutSlowInEasing)),
                 ) {
-                    androidx.compose.material3.TextButton(
+                    TextButton(
                         onClick = onBack,
-                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        colors = ButtonDefaults.textButtonColors(
                             contentColor = com.muxiao.timart.ui.theme.InkSecondary,
                         ),
                         modifier = Modifier.padding(start = 12.dp),
                     ) {
-                        androidx.compose.material3.Text(
+                        Text(
                             text = L.exitCreate,
-                            style = com.muxiao.timart.ui.theme.TimartType.caption,
+                            style = TimartType.caption,
                         )
                     }
                 }
@@ -181,14 +192,73 @@ fun CreateScreen(
         }
     }
 
-    // ASSEMBLE 全屏 overlay：保存已完成，动画结束（或兜底）后返回时轨
+    // ASSEMBLE 全屏 overlay：保存已完成，动画结束（或兜底）后返回时轨。
+    // 分片胶囊例外：动画结束后先揭示一次性分片串，确认已保存才离开（见 CreateViewModel.onAssembleFinished）
     if (assembling) {
         AssembleOverlay(
             engine = engine,
             onFinished = {
                 vm.onAssembleFinished()
+                if (!vm.showShardShares) onBack()
+            },
+        )
+    }
+
+    // 分片串一次性揭示弹层（体验储备池 §7.1）：设备不留份额，确认后不可再看
+    if (vm.showShardShares) {
+        ShardSharesDialog(
+            shares = vm.shardShares,
+            onDone = {
+                vm.consumeShardShares()
                 onBack()
             },
         )
     }
+}
+
+/** 分片串揭示弹层：SelectionContainer 让持有人可以长按选择逐份复制/转发 */
+@Composable
+private fun ShardSharesDialog(
+    shares: List<String>,
+    onDone: () -> Unit,
+) {
+    val L = LocalStrings.current
+    AlertDialog(
+        onDismissRequest = {},
+        containerColor = SurfaceRaise,
+        title = { Text(text = L.shardSharesTitle, style = TimartType.titleSerif) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = L.shardSharesNote,
+                    style = TimartType.caption,
+                    color = TimeGold,
+                )
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Column {
+                        shares.forEachIndexed { index, share ->
+                            Text(
+                                text = "${index + 1}. $share",
+                                style = TimartType.caption.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                ),
+                                color = InkPrimary,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDone,
+                colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+            ) {
+                Text(text = L.shardShareDone)
+            }
+        },
+    )
 }

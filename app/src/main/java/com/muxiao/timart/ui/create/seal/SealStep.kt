@@ -24,15 +24,20 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.model.unlock.LogicType
 import com.muxiao.timart.l10n.LocalStrings
@@ -64,6 +69,9 @@ fun SealStep(
     val L = LocalStrings.current
     val context = LocalContext.current
     var showAutoDestroyConfirm by remember { mutableStateOf(false) }
+    var showBlindBoxConfirm by remember { mutableStateOf(false) }
+    var showPuzzleSheet by remember { mutableStateOf(false) }
+    var showSeedPicker by remember { mutableStateOf(false) }
     var tagInput by remember { mutableStateOf("") }
 
     Column(
@@ -257,6 +265,252 @@ fun SealStep(
             )
         }
 
+        // ---- 盲盒封存（连自己也保密） ----
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = L.blindBoxLabel, style = TimartType.body, color = InkPrimary)
+                Text(
+                    text = L.blindBoxDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Switch(
+                checked = vm.blindBox,
+                onCheckedChange = { checked ->
+                    if (checked) {
+                        showBlindBoxConfirm = true
+                    } else {
+                        vm.updateBlindBox(false)
+                    }
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = TimeGold,
+                    checkedTrackColor = TimeGold.copy(alpha = 0.35f),
+                    uncheckedThumbColor = InkDisabled,
+                    uncheckedTrackColor = SurfaceRaise,
+                ),
+            )
+        }
+
+        // ---- 拼图分组（体验储备池 §3） ----
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = L.puzzleLabel, style = TimartType.body, color = InkPrimary)
+                Text(
+                    text = L.puzzleDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Text(
+                text = if (vm.puzzleGroupId != null) {
+                    L.puzzleJoinedFmt.format(vm.puzzleIndex + 1, vm.puzzleTotal)
+                } else {
+                    L.puzzleJoin
+                },
+                style = TimartType.caption,
+                color = TimeGold,
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .clickable {
+                        if (vm.puzzleGroupId != null) vm.leavePuzzle() else showPuzzleSheet = true
+                    },
+            )
+        }
+
+        // ---- 嵌套种子（体验储备池 §3） ----
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = L.seedLabel, style = TimartType.body, color = InkPrimary)
+                Text(
+                    text = L.seedDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Text(
+                text = if (vm.seedParentId != null) {
+                    L.seedBoundFmt.format(vm.seedParentTitle ?: L.untitled)
+                } else {
+                    L.seedPick
+                },
+                style = TimartType.caption,
+                color = TimeGold,
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .clickable {
+                        if (vm.seedParentId != null) vm.setSeedParent(null, null) else showSeedPicker = true
+                    },
+            )
+        }
+
+        // ---- 触觉签名 / 环境音（体验储备池 §6） ----
+        Text(
+            text = L.hapticLabel,
+            style = TimartType.body,
+            color = InkPrimary,
+            modifier = Modifier.padding(top = 24.dp),
+        )
+        Text(
+            text = L.hapticDesc,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 10.dp),
+        ) {
+            listOf(L.hapticNone, L.hapticDouble, L.hapticPulse, L.hapticRipple).forEachIndexed { index, label ->
+                val selected = vm.hapticStyle == index
+                Text(
+                    text = label,
+                    style = TimartType.caption,
+                    color = if (selected) TimeGold else InkSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selected) TimeGold.copy(alpha = 0.14f) else SurfaceRaise)
+                        .clickable { vm.updateHapticStyle(index) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                )
+            }
+        }
+        Text(
+            text = L.ambientLabel,
+            style = TimartType.body,
+            color = InkPrimary,
+            modifier = Modifier.padding(top = 20.dp),
+        )
+        Text(
+            text = L.ambientDesc,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 10.dp),
+        ) {
+            listOf(
+                com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.OFF,
+                com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.RAIN,
+                com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.DRONE,
+            ).forEach { scene ->
+                val selected = vm.ambientScene == scene.name
+                Text(
+                    text = when (scene) {
+                        com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.OFF -> L.ambientNone
+                        com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.RAIN -> L.ambientRain
+                        com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.DRONE -> L.ambientDrone
+                    },
+                    style = TimartType.caption,
+                    color = if (selected) TimeGold else InkSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selected) TimeGold.copy(alpha = 0.14f) else SurfaceRaise)
+                        .clickable { vm.updateAmbientScene(scene.name) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                )
+            }
+        }
+
+        // ---- 口令分片（体验储备池 §7.1）：集齐 M 份线下分片才能开封 ----
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = L.shardLabel, style = TimartType.body, color = InkPrimary)
+                Text(
+                    text = L.shardDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Switch(
+                checked = vm.shardEnabled,
+                onCheckedChange = { vm.updateShardEnabled(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = TimeGold,
+                    checkedTrackColor = TimeGold.copy(alpha = 0.35f),
+                    uncheckedThumbColor = InkDisabled,
+                    uncheckedTrackColor = SurfaceRaise,
+                ),
+            )
+        }
+        if (vm.shardEnabled) {
+            Text(
+                text = L.shardNote,
+                style = TimartType.caption,
+                color = TimeGold,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .fillMaxWidth(),
+            ) {
+                Text(
+                    text = L.shardTotalFmt.format(vm.shardTotal),
+                    style = TimartType.caption,
+                    color = InkPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { vm.updateShardTotal(vm.shardTotal - 1) }, enabled = vm.shardTotal > 2) {
+                    Text(text = "−", color = InkPrimary)
+                }
+                TextButton(
+                    onClick = { vm.updateShardTotal(vm.shardTotal + 1) },
+                    enabled = vm.shardTotal < com.muxiao.timart.domain.usecase.ShardSecretUseCase.MAX_TOTAL,
+                ) {
+                    Text(text = "+", color = InkPrimary)
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = L.shardThresholdFmt.format(vm.shardThreshold),
+                    style = TimartType.caption,
+                    color = InkPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { vm.updateShardThreshold(vm.shardThreshold - 1) }, enabled = vm.shardThreshold > 2) {
+                    Text(text = "−", color = InkPrimary)
+                }
+                TextButton(
+                    onClick = { vm.updateShardThreshold(vm.shardThreshold + 1) },
+                    enabled = vm.shardThreshold < vm.shardTotal - 1,
+                ) {
+                    Text(text = "+", color = InkPrimary)
+                }
+            }
+        }
+
         // ---- 封存 CTA ----
         Button(
             onClick = {
@@ -327,6 +581,177 @@ fun SealStep(
             },
         )
     }
+    // ---- 盲盒封存二次确认（与自动销毁同级：开启需明确意图） ----
+    if (showBlindBoxConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBlindBoxConfirm = false },
+            containerColor = SurfaceRaise,
+            title = {
+                Text(text = L.blindAskTitle, style = TimartType.titleSerif, color = InkPrimary)
+            },
+            text = {
+                Text(
+                    text = L.blindAskBody,
+                    style = TimartType.body,
+                    color = InkSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBlindBoxConfirm = false
+                        vm.updateBlindBox(true)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                ) {
+                    Text(text = L.enable, style = TimartType.body)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showBlindBoxConfirm = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = InkSecondary),
+                ) {
+                    Text(text = L.cancel, style = TimartType.body)
+                }
+            },
+        )
+    }
+    // ---- 拼图分组弹窗（体验储备池 §3）：新建组（份数 2–9）或加入未满员既有组 ----
+    if (showPuzzleSheet) {
+        var pieceCount by remember { mutableIntStateOf(2) }
+        var groups by remember { mutableStateOf(emptyList<CreateViewModel.PuzzleGroupOption>()) }
+        LaunchedEffect(Unit) {
+            groups = vm.puzzleGroups()
+        }
+        AlertDialog(
+            onDismissRequest = { showPuzzleSheet = false },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.puzzleLabel, style = TimartType.titleSerif, color = InkPrimary) },
+            text = {
+                Column {
+                    Text(text = L.puzzleSheetDesc, style = TimartType.caption, color = InkSecondary)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                    ) {
+                        Text(
+                            text = L.puzzlePieceCountFmt.format(pieceCount),
+                            style = TimartType.body,
+                            color = InkPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { if (pieceCount > 2) pieceCount-- }) {
+                            Text(text = "−", color = InkPrimary)
+                        }
+                        TextButton(onClick = { if (pieceCount < 9) pieceCount++ }) {
+                            Text(text = "+", color = InkPrimary)
+                        }
+                    }
+                    Text(
+                        text = L.puzzleNewGroup,
+                        style = TimartType.caption,
+                        color = TimeGold,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .fillMaxWidth()
+                            .clickable {
+                                vm.joinPuzzle(
+                                    java.util.UUID.randomUUID().toString(),
+                                    0,
+                                    pieceCount,
+                                )
+                                showPuzzleSheet = false
+                            },
+                    )
+                    if (groups.isNotEmpty()) {
+                        Text(
+                            text = L.puzzleExistingGroups,
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                            modifier = Modifier.padding(top = 14.dp),
+                        )
+                        groups.forEach { option ->
+                            Text(
+                                text = L.puzzleGroupRowFmt.format(option.total, option.filledCount),
+                                style = TimartType.caption,
+                                color = InkPrimary,
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        vm.joinPuzzle(
+                                            option.groupId,
+                                            option.filledCount,
+                                            option.total,
+                                        )
+                                        showPuzzleSheet = false
+                                    },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPuzzleSheet = false }) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+    }
+
+    // ---- 嵌套种子父胶囊选择（体验储备池 §3） ----
+    if (showSeedPicker) {
+        var candidates by remember { mutableStateOf(emptyList<Capsule>()) }
+        LaunchedEffect(Unit) {
+            candidates = vm.seedCandidates()
+        }
+        AlertDialog(
+            onDismissRequest = { showSeedPicker = false },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.seedPickTitle, style = TimartType.titleSerif, color = InkPrimary) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    Text(text = L.seedPickDesc, style = TimartType.caption, color = InkSecondary)
+                    if (candidates.isEmpty()) {
+                        Text(
+                            text = L.seedEmpty,
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                    }
+                    candidates.forEach { capsule ->
+                        Text(
+                            text = capsule.title,
+                            style = TimartType.body,
+                            color = InkPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .padding(top = 10.dp)
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.setSeedParent(capsule.id, capsule.title)
+                                    showSeedPicker = false
+                                },
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showSeedPicker = false }) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+    }
 }
 
 /** 摘要卡内细分隔线 */
@@ -341,16 +766,24 @@ private fun SummaryDivider() {
     )
 }
 
-/** 规则摘要句：空 → 立即可开启；否则按 AND/OR 前缀 + 条件句列表 */
+/** 规则摘要句：空 → 立即可开启；否则按 AND/OR/任选M 前缀 + 条件句列表 */
 private fun ruleSummary(vm: CreateViewModel): String {
     val L = currentStrings()
     val lang = RuntimeSettings.resolvedLang
     val parts = mutableListOf<String>()
     if (vm.conditions.isNotEmpty()) {
-        val prefix = if (vm.logic == LogicType.AND) L.summaryAndPrefix else L.summaryOrPrefix
+        val prefix = when (vm.logic) {
+            LogicType.AND -> L.summaryAndPrefix
+            LogicType.OR -> L.summaryOrPrefix
+            LogicType.AT_LEAST -> L.summaryAtLeastPrefix.format(
+                vm.logicThreshold.coerceIn(1, vm.conditions.size),
+                vm.conditions.size,
+            )
+        }
         parts.add(prefix + vm.conditions.joinToString(L.summarySep) { ConditionText.conditionSentence(it, lang) })
     }
     vm.dependTitle?.let { parts.add(L.summaryDependFmt.format(it)) }
     if (vm.autoDestroy) parts.add(L.summaryReadDestroy)
+    if (vm.blindBox) parts.add(L.summaryBlindBox)
     return parts.joinToString("\n").ifEmpty { L.summaryImmediate }
 }

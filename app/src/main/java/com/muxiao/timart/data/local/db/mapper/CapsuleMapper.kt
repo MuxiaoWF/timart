@@ -30,6 +30,12 @@ object CapsuleMapper {
         createNote = entity.createNote,
         layoutX = entity.layoutX,
         layoutY = entity.layoutY,
+        blindBox = entity.blindBox,
+        shardSalt = entity.shardSalt,
+        shardParams = entity.shardParams,
+        shardVerifier = entity.shardVerifier,
+        shardThreshold = entity.shardThreshold,
+        shardTotal = entity.shardTotal,
     )
 
     /**
@@ -62,6 +68,12 @@ object CapsuleMapper {
         createNote = capsule.createNote,
         layoutX = layoutX,
         layoutY = layoutY,
+        blindBox = capsule.blindBox,
+        shardSalt = capsule.shardSalt,
+        shardParams = capsule.shardParams,
+        shardVerifier = capsule.shardVerifier,
+        shardThreshold = capsule.shardThreshold,
+        shardTotal = capsule.shardTotal,
         destroyTimestamp = destroyTimestamp,
     )
 

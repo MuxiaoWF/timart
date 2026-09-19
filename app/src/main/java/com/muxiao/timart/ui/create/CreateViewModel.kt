@@ -3,6 +3,7 @@ package com.muxiao.timart.ui.create
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +13,8 @@ import com.muxiao.timart.utils.RuntimeSettings
 import com.muxiao.timart.l10n.currentStrings
 import com.muxiao.timart.AppContainer
 import com.muxiao.timart.data.local.db.mapper.UnlockRuleJson
+import com.muxiao.timart.data.local.crypto.KdfEngines
+import com.muxiao.timart.domain.usecase.ShardSecretUseCase
 import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.CapsuleState
 import com.muxiao.timart.domain.model.City
@@ -58,6 +61,32 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 已选图片字节（封存时才加密落盘；内存暂存上限 9 张） */
     val images = mutableStateListOf<ByteArray>()
+
+    /** 声音留言（体验储备池 §1；封存时加密落 filesDir/audio/，内存暂存单条） */
+    var voice by mutableStateOf<ByteArray?>(null)
+        private set
+
+    /** 录音时长（秒，仅创建页展示用；播放器运行时读媒体元数据，不持久化） */
+    var voiceSeconds by mutableIntStateOf(0)
+        private set
+
+    /** 信纸样式（体验储备池 §1；PaperStyle 序号，封存成功后落 meta `capsule.paper.<id>`） */
+    var paperStyle by mutableIntStateOf(0)
+        private set
+
+    fun addVoice(bytes: ByteArray, seconds: Int) {
+        voice = bytes
+        voiceSeconds = seconds
+    }
+
+    fun removeVoice() {
+        voice = null
+        voiceSeconds = 0
+    }
+
+    fun updatePaperStyle(v: Int) {
+        paperStyle = v
+    }
 
     fun updateTitle(v: String) {
         title = v.take(TITLE_MAX)
@@ -118,6 +147,14 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         if (keyword.isBlank()) container.cityRepository.all() else container.cityRepository.search(keyword.trim())
     }.getOrDefault(emptyList())
 
+    /** 当前气压计海拔快照（RelativeAltitude 条件的创建期基准值；null = 无读数 / 无气压计） */
+    fun currentAltitudeMeters(): Double? =
+        runCatching { container.compassAltitudeReader.altitudeMeters() }.getOrNull()
+
+    /** 当前连接路由器的 BSSID 快照（SsidBssidMatch 表单一键读取；null = 未连接 / 权限缺失） */
+    fun currentWifiBssid(): String? =
+        runCatching { container.wifiProvider.current().bssid }.getOrNull()
+
     /** 上次使用城市（默认选中） */
     fun lastUsedCity(): City? = runCatching { container.cityRepository.lastUsed() }.getOrNull()
 
@@ -167,8 +204,20 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     var logic by mutableStateOf(LogicType.AND)
         private set
 
+    /** AT_LEAST（M-of-N）的 M 值；仅 logic == AT_LEAST 时随规则写入 */
+    var logicThreshold by mutableIntStateOf(2)
+        private set
+
     fun updateLogic(v: LogicType) {
         logic = v
+        if (v == LogicType.AT_LEAST) {
+            // 切到任选模式：M 默认取条件数的一半（至少 1，且不超过当前条数）
+            logicThreshold = (conditions.size / 2).coerceAtLeast(1)
+        }
+    }
+
+    fun updateThreshold(v: Int) {
+        logicThreshold = v.coerceIn(1, conditions.size.coerceAtLeast(1))
     }
 
     fun addCondition(condition: UnlockCondition) {
@@ -229,6 +278,235 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         autoDestroy = v
     }
 
+    // ---- 盲盒封存（连自己也保密） ----
+
+    var blindBox by mutableStateOf(false)
+        private set
+
+    fun updateBlindBox(v: Boolean) {
+        blindBox = v
+    }
+
+    // ---- 拼图分组（体验储备池 §3：一封信切 N 片各自封存，全部解锁后合信） ----
+
+    var puzzleGroupId by mutableStateOf<String?>(null)
+        private set
+    var puzzleIndex by mutableIntStateOf(-1)
+        private set
+    var puzzleTotal by mutableIntStateOf(-1)
+        private set
+
+    /** 加入拼图组（index 由封存侧按已填片数顺延；组内片的合并阅读见 DetailViewModel 合信视图） */
+    fun joinPuzzle(groupId: String, index: Int, total: Int) {
+        puzzleGroupId = groupId
+        puzzleIndex = index
+        puzzleTotal = total
+    }
+
+    fun leavePuzzle() {
+        puzzleGroupId = null
+        puzzleIndex = -1
+        puzzleTotal = -1
+    }
+
+    /** 可加入的拼图组（未满员且不含已销毁片；含销毁片的组已永久无法合信，不再开放） */
+    data class PuzzleGroupOption(val groupId: String, val total: Int, val filledCount: Int)
+
+    suspend fun puzzleGroups(): List<PuzzleGroupOption> = withContext(Dispatchers.IO) {
+        runCatching {
+            val dao = container.database.metaDao()
+            val stateById = runCatching { container.capsuleRepository.allSync() }
+                .getOrDefault(emptyList())
+                .associate { it.id to it.state }
+            val members = dao.listLike(com.muxiao.timart.data.local.db.CapsuleMetaKeys.PUZZLE_KEY_PREFIX)
+                .mapNotNull { entity ->
+                    val id = entity.key.removePrefix(com.muxiao.timart.data.local.db.CapsuleMetaKeys.PUZZLE_KEY_PREFIX)
+                    val parsed = com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzleDecodeValue(entity.value)
+                        ?: return@mapNotNull null
+                    Triple(id, parsed.first, parsed.second to parsed.third)
+                }
+            members.groupBy { it.second }.mapNotNull { (groupId, groupMembers) ->
+                val total = groupMembers.firstOrNull()?.third?.second ?: return@mapNotNull null
+                val indices = groupMembers.map { it.third.first }.toSet()
+                val hasDestroyed = groupMembers.any { (id, _, _) ->
+                    stateById[id] == CapsuleState.DESTROYED
+                }
+                val missingRow = groupMembers.any { (id, _, _) -> stateById[id] == null }
+                if (hasDestroyed || missingRow) return@mapNotNull null
+                if (indices.size < total) {
+                    PuzzleGroupOption(groupId, total, indices.size)
+                } else {
+                    null
+                }
+            }.sortedBy { it.filledCount }
+        }.getOrDefault(emptyList())
+    }
+
+    // ---- 嵌套种子（体验储备池 §3：这颗藏进另一颗里，父开启后萌芽出现） ----
+
+    var seedParentId by mutableStateOf<String?>(null)
+        private set
+    var seedParentTitle by mutableStateOf<String?>(null)
+        private set
+
+    fun setSeedParent(id: String?, title: String?) {
+        seedParentId = id
+        seedParentTitle = title
+    }
+
+    /** 可选父胶囊：非销毁、且自身不是未萌芽种子（种子套种子会让「出现时机」不可读） */
+    suspend fun seedCandidates(): List<Capsule> = withContext(Dispatchers.IO) {
+        runCatching {
+            container.capsuleRepository.allSync().filter {
+                it.state != CapsuleState.DESTROYED && !container.isSeedDormant(it.id)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    // ---- 触觉签名 / 环境音（体验储备池 §6；封存时绑定，meta 落 key） ----
+
+    /** 振动纹样序号（0=无 1=双击 2=长振 3=涟漪，语义见 Haptics） */
+    var hapticStyle by mutableIntStateOf(0)
+        private set
+
+    fun updateHapticStyle(v: Int) {
+        hapticStyle = v
+    }
+
+    /** 环境音场景名（AmbientSoundPlayer.Scene，OFF = 不绑定） */
+    var ambientScene by mutableStateOf(com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.OFF.name)
+        private set
+
+    fun updateAmbientScene(name: String) {
+        ambientScene = name
+    }
+
+    // ---- 口令分片（体验储备池 §7.1 落地） ----
+
+    var shardEnabled by mutableStateOf(false)
+        private set
+    var shardTotal by mutableIntStateOf(3)
+        private set
+    var shardThreshold by mutableIntStateOf(2)
+        private set
+
+    fun updateShardEnabled(v: Boolean) {
+        shardEnabled = v
+    }
+
+    fun updateShardTotal(v: Int) {
+        shardTotal = v.coerceIn(2, ShardSecretUseCase.MAX_TOTAL)
+        if (shardThreshold >= shardTotal) shardThreshold = shardTotal - 1
+    }
+
+    fun updateShardThreshold(v: Int) {
+        shardThreshold = v.coerceIn(2, shardTotal - 1)
+    }
+
+    /** 分片只展示一次：封存动画结束后揭示，确认已妥善保存后才清空草稿 */
+    private var pendingShares: List<String>? = null
+    var showShardShares by mutableStateOf(false)
+        private set
+
+    val shardShares: List<String>
+        get() = pendingShares.orEmpty()
+
+    /** 生成分片计划并加密内层：S 拆 M-of-N → k2 = KDF(hex(S), salt₂) → verifier₂ → 内层密文。
+     *  返回 (计划, 分片串)；分片串由调用方在**入库成功后**才登记（失败重试不得残留旧份额）。 */
+    private fun buildShardPlan(): Pair<CapsuleCrudUseCase.ShardPlan, List<String>> {
+        val useCase = container.shardSecretUseCase
+        val secret = ByteArray(ShardSecretUseCase.SECRET_BYTES).also {
+            java.security.SecureRandom().nextBytes(it)
+        }
+        val shares = useCase.split(secret, shardThreshold, shardTotal)
+        val salt2 = KdfEngines.newSalt()
+        val params = KdfEngines.defaultParams(salt2)
+        // hex(S) 作 KDF 口令：ASCII 形态在 KDF 内部编码下字节稳定，等价于对 S 做字节级 KDF
+        val k2 = KdfEngines.byAlgo(params.algo).derive(useCase.secretToPassword(secret), params)
+        val verifier2 = useCase.verifierHex(k2)
+        val inner = container.aesGcmCipher.encrypt(k2, content.toByteArray(Charsets.UTF_8))
+        java.util.Arrays.fill(k2, 0)
+        java.util.Arrays.fill(secret, 0)
+        val shareStrings = shares.map { useCase.encodeShare(it, shardTotal, shardThreshold) }
+        val plan = CapsuleCrudUseCase.ShardPlan(
+            saltB64 = KdfEngines.encodeSalt(salt2),
+            kdfParamsJson = KdfEngines.paramsToJson(params),
+            verifierHex = verifier2,
+            threshold = shardThreshold,
+            total = shardTotal,
+            innerCipher = inner,
+        )
+        return plan to shareStrings
+    }
+
+    // ---- 用户自存场景模板（体验储备池 §7.2：meta 序列化当前条件组合） ----
+
+    @kotlinx.serialization.Serializable
+    data class UserTemplateDto(val name: String, val ruleJson: String)
+
+    private val userTemplateJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    /** 应用一份规则组合（内置模板与用户模板同路）：清空后按序加入 + 逻辑/阈值 */
+    fun applyTemplate(rule: UnlockRule) {
+        conditions.clear()
+        conditions.addAll(rule.conditionList)
+        logic = rule.logicType
+        logicThreshold = if (rule.logicType == LogicType.AT_LEAST) {
+            (rule.threshold ?: (rule.conditionList.size / 2)).coerceIn(1, rule.conditionList.size.coerceAtLeast(1))
+        } else {
+            2
+        }
+    }
+
+    suspend fun userTemplates(): List<UserTemplateDto> = withContext(Dispatchers.IO) {
+        runCatching { loadUserTemplates() }.getOrDefault(emptyList())
+    }
+
+    /** 保存当前条件组合为模板（同名覆盖；空名 / 无条件静默忽略） */
+    fun saveUserTemplate(name: String) {
+        val trimmed = name.trim().take(USER_TEMPLATE_NAME_MAX)
+        if (trimmed.isEmpty() || conditions.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val ruleJson = UnlockRuleJson.toJson(currentRule())
+                val list = loadUserTemplates().toMutableList()
+                list.removeAll { it.name == trimmed }
+                list.add(0, UserTemplateDto(trimmed, ruleJson))
+                persistUserTemplates(list)
+            }
+        }
+    }
+
+    fun deleteUserTemplate(name: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                persistUserTemplates(loadUserTemplates().filterNot { it.name == name })
+            }
+        }
+    }
+
+    private fun loadUserTemplates(): List<UserTemplateDto> {
+        val raw = container.database.metaDao().getSync(USER_TEMPLATES_KEY) ?: return emptyList()
+        return runCatching {
+            userTemplateJson.decodeFromString(
+                kotlinx.serialization.builtins.ListSerializer(UserTemplateDto.serializer()),
+                raw,
+            )
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistUserTemplates(list: List<UserTemplateDto>) {
+        container.database.metaDao().putSync(
+            com.muxiao.timart.data.local.db.entity.MetaEntity(
+                USER_TEMPLATES_KEY,
+                userTemplateJson.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(UserTemplateDto.serializer()),
+                    list,
+                ),
+            ),
+        )
+    }
+
     // ---- 标签（1–5） ----
 
     val tags = mutableStateListOf<String>()
@@ -281,6 +559,14 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
             if (!container.contentCryptoManager.ensureUnlocked()) {
                 throw IllegalStateException(currentStrings().errPwNotUnlockedSeal)
             }
+            // 分片计划在内层加密前生成：S/k2 用后即清，分片串只在揭示弹窗出现一次
+            var shardPlan: CapsuleCrudUseCase.ShardPlan? = null
+            var shardShareStrings: List<String> = emptyList()
+            if (shardEnabled) {
+                val (plan, shareStrings) = buildShardPlan()
+                shardPlan = plan
+                shardShareStrings = shareStrings
+            }
             val draft = CapsuleCrudUseCase.CapsuleDraft(
                 title = title.trim(),
                 contentText = content,
@@ -291,10 +577,66 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
                 note = note,
                 dependCapsuleId = dependCapsuleId,
                 autoDestroyAfterRead = autoDestroy,
+                blindBox = blindBox,
+                voiceBytes = voice,
+                shardPlan = shardPlan,
             )
             val created = container.capsuleCrudUseCase.create(draft, RuntimeSettings.resolvedLang)
+            // 拼图分组 / 嵌套种子 / 信纸样式落 meta（体验储备池 §3、§1；写失败不阻断封存，
+            // 代价分别是：本片不在组内合信、本颗不休眠恒可见、解封回落原纸）
+            runCatching {
+                val dao = container.database.metaDao()
+                dao.putSync(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        com.muxiao.timart.data.local.db.CapsuleMetaKeys.paper(created.id),
+                        paperStyle.toString(),
+                    ),
+                )
+                if (puzzleGroupId != null && puzzleIndex >= 0 && puzzleTotal >= 2) {
+                    dao.putSync(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzle(created.id),
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzleValue(
+                                puzzleGroupId!!,
+                                puzzleIndex,
+                                puzzleTotal,
+                            ),
+                        ),
+                    )
+                }
+                if (seedParentId != null) {
+                    dao.putSync(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.seedOf(created.id),
+                            seedParentId!!,
+                        ),
+                    )
+                }
+                dao.putSync(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        com.muxiao.timart.data.local.db.CapsuleMetaKeys.haptic(created.id),
+                        hapticStyle.toString(),
+                    ),
+                )
+                dao.putSync(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        com.muxiao.timart.data.local.db.CapsuleMetaKeys.ambient(created.id),
+                        ambientScene,
+                    ),
+                )
+            }
+            // 入库成功才登记一次性分片串（失败重试不残留）
+            if (shardPlan != null) pendingShares = shardShareStrings
             // 规则序列化预览（验收：JSON 正确性走 Log 核对）
             Log.d(TAG, "封存完成 id=${created.id} ruleJson=${ruleJsonPreview()}")
+            // 累计创建计数（TotalCreatedCount 条件输入；含后续已删/已毁，写失败不阻断封存）
+            runCatching {
+                val dao = container.database.metaDao()
+                val total = dao.getSync(FLAG_TOTAL_CREATED)?.toIntOrNull() ?: 0
+                dao.putSync(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(FLAG_TOTAL_CREATED, (total + 1).toString()),
+                )
+            }
             sealError = null
             withContext(Dispatchers.Main) { _assembling.value = true }
         } catch (e: Exception) {
@@ -310,6 +652,18 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     /** ASSEMBLE 动画完成（或 1.5s 兜底）后：复位草稿与步骤，由 UI 导航回时轨 */
     fun onAssembleFinished() {
         _assembling.value = false
+        if (pendingShares != null) {
+            // 分片只展示一次：动画结束即揭示，用户确认已保存后才清草稿离开
+            showShardShares = true
+        } else {
+            resetDraft()
+        }
+    }
+
+    /** 用户确认分片已妥善保存：清空草稿（含一次性分片串）并允许离开 */
+    fun consumeShardShares() {
+        pendingShares = null
+        showShardShares = false
         resetDraft()
     }
 
@@ -318,6 +672,9 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         content = ""
         note = ""
         images.clear()
+        voice = null
+        voiceSeconds = 0
+        paperStyle = 0
         conditions.clear()
         tags.clear()
         snapshot = null
@@ -326,12 +683,35 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         dependCapsuleId = null
         dependTitle = null
         autoDestroy = false
+        blindBox = false
+        puzzleGroupId = null
+        puzzleIndex = -1
+        puzzleTotal = -1
+        seedParentId = null
+        seedParentTitle = null
+        hapticStyle = 0
+        ambientScene = com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.OFF.name
+        shardEnabled = false
+        shardTotal = 3
+        shardThreshold = 2
+        pendingShares = null
+        showShardShares = false
+        logic = LogicType.AND
+        logicThreshold = 2
         step.value = 0
     }
 
     // ---- 内部 ----
 
-    private fun currentRule(): UnlockRule = UnlockRule(logicType = logic, conditionList = conditions.toList())
+    private fun currentRule(): UnlockRule = UnlockRule(
+        logicType = logic,
+        conditionList = conditions.toList(),
+        threshold = if (logic == LogicType.AT_LEAST) {
+            logicThreshold.coerceIn(1, conditions.size.coerceAtLeast(1))
+        } else {
+            null
+        },
+    )
 
     /** 规则 JSON 预览（验收日志） */
     fun ruleJsonPreview(): String = runCatching { UnlockRuleJson.toJson(currentRule()) }.getOrDefault("{}")
@@ -339,6 +719,13 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     companion object {
         private const val TAG = "CreateViewModel"
         private const val DRAFT_ID = "__draft__"
+
+        /** 累计创建计数 meta key（写入点本类封存成功，读取点 AppContainer.capsuleMetaProvider.totalCreated） */
+        const val FLAG_TOTAL_CREATED = "app.created.total"
+
+        /** 用户自存场景模板 meta key（体验储备池 §7.2；JSON 数组 name+ruleJson） */
+        const val USER_TEMPLATES_KEY = "app.templates.user"
+        const val USER_TEMPLATE_NAME_MAX = 20
         const val TITLE_MAX = 30
         const val CONTENT_MAX = 2000
         const val IMAGE_MAX = 9

@@ -588,4 +588,289 @@ object StringsEn : Strings {
     override val bkErrReadFile = "Couldn't read the selected file"
     override val bkErrReadFailFmt = $$"Failed to read the backup file: %1$s"
     override val bkErrFormat = "format error"
+
+    // ---- Reserve pool v4 condition names ----
+    override val condSolarTerm = "Solar terms"
+    override val condRoundDays = "Round-number anniversary"
+    override val condSeason = "Season"
+    override val condElapsedMonths = "Sealed for N months"
+    override val condNthWeekdayMonth = "Nth weekday of month"
+    override val condNthWeekdayYear = "Yearly floating holiday"
+    override val condLeapDay = "Leap day (Feb 29)"
+    override val condLastDayMonth = "Last day of month"
+    override val condNthWeekdaySince = "First weekday after sealing"
+    override val condZodiac = "Zodiac season"
+    override val condDayLength = "Daylight length"
+    override val condSunriseRange = "Sunrise time"
+    override val condLunarMonth = "Whole lunar month"
+    override val condMonthlyDays = "Fixed days of month"
+    override val condDarkTheme = "Dark theme"
+    override val condDnd = "Do not disturb"
+    override val condPose = "Device pose"
+    override val condBrightness = "Screen brightness"
+    override val condMediaVolume = "Media muted"
+    override val condVpn = "VPN connected"
+    override val condPlugType = "Charging method"
+    override val condBatteryTemp = "Battery temperature"
+    override val condOrientation = "Orientation"
+    override val condSpeedRange = "Moving speed range"
+    override val condBssid = "Designated router (BSSID)"
+    override val condBluetooth = "Bluetooth device"
+    override val condProximity = "Cover the phone"
+    override val condFreshBoot = "Just rebooted"
+    override val condInstalledApp = "App installed"
+    override val condAirQuality = "Air quality"
+    override val condWindDir = "Wind direction"
+    override val condHemisphere = "Hemisphere"
+    override val condTempDelta = "Big temperature drop"
+    override val condCityLocation = "Arrive in a city"
+    override val condRelAltitude = "Relative altitude"
+    override val condPrecipProb = "Precipitation probability"
+    override val condWatchDuration = "Gaze duration"
+    override val condReadCount = "Capsules read"
+    override val condDestroyCount = "Dust records"
+    override val condStillLocked = "Another still locked"
+    override val condBackupDone = "Backup exported"
+    override val condTotalCreated = "Total capsules sealed"
+    override val condSameDayRead = "Same-day unlock link"
+    override val condDaysSinceRead = "N days since opened"
+    override val condWidgetBound = "Home-screen widget"
+    override val condTodayOpen = "Opens today"
+    override val condGesturePattern = "Gesture pattern"
+    override val condWalkNow = "Walk N steps now"
+    override val condSpin = "Spin the phone"
+    override val condVolumeKeys = "Volume keys combo"
+    override val condStayStill = "Stay still"
+    override val condLift = "Lift / lower"
+    override val condVoice = "Voice passphrase"
+    override val condTap = "Tap the screen"
+    override val condClimb = "Climb floors now"
+    override val condScanQr = "Scan a QR code"
+    override val condPow = "Proof of work"
+
+    // ---- Reserve pool v4 form / challenge hints ----
+    override val condGpsNeeded = "This condition needs location permission to resolve your position; background checks skip it and it is judged when the app is open"
+    override val cityLocNote = "Judged approximately from the city center; pick a radius that covers usual activity range"
+    override val gestureFormHint = "Draw the gesture on the 3×3 grid (connect at least 4 dots); the pattern is stored as a hash and cannot be viewed again"
+    override val gesturePadHint = "Draw the pattern here (connect at least 4 dots)"
+    override val voiceFormHint = "The recipient must speak the passphrase aloud (uses system speech recognition; fails closed when unavailable)"
+    override val btFormHint = "The recipient must have a Bluetooth audio device with a matching name connected (headphones / speaker)"
+    override val installedPkgLabel = "Package name (e.g. com.example.app)"
+    override val sfUseCurrentBssid = "Read current router"
+    override val sfNoCurrentBssid = "Current router BSSID unavailable (not connected or system restriction)"
+    override val powFormNote = "Higher difficulty means longer computation for the recipient"
+    override val challengeVolumeKeysHint = "Hold volume-up and volume-down together"
+    override val challengeSpinHint = "Rotate the phone horizontally; progress accumulates as you turn"
+    override val citySearchHint = "Search cities"
+
+    // ---- Reserve pool §6: M-of-N logic + scenario templates ----
+    override val logicAtLeastPill = "Any M"
+    override val logicAtLeastDesc = "Meet any M of N conditions (spare keys)"
+    override val thresholdFmt = $$"Meet any %1$d of %2$d conditions"
+    override val summaryAtLeastPrefix = $$"Meet any %1$d of %2$d conditions:"
+    override val condAtLeastMetFmt = $$"Threshold reached (%1$d / %2$d)"
+    override val scenarioEntry = "Start from a scenario template"
+    override val scenarioSheetTitle = "Scenario templates"
+    override val tplNightName = "Late-night treat"
+    override val tplNightNote = "Dark theme + do-not-disturb + after 10 p.m."
+    override val tplFarName = "Far from home"
+    override val tplFarNote = "Timezone changed + in the southern hemisphere"
+    override val tplRunName = "Weekend morning run"
+    override val tplRunNote = "Weekend + 6000 steps + 5–9 a.m."
+    override val tplMoonName = "Full-moon night"
+    override val tplMoonNote = "Full moon + 8–11 p.m."
+    override val tplLunarName = "Lunar New Year letter"
+    override val tplLunarNote = "Lunar Jan 1 + 8 a.m.–noon"
+    override val tplMotherName = "Mother's Day letter"
+    override val tplMotherNote = "Second Sunday of May, every year"
+    override val tplUnplugName = "Digital sundown"
+    override val tplUnplugNote = "Airplane mode + 9–11 p.m."
+    override val tplCafeName = "Café afternoon"
+    override val tplCafeNote = "On Wi-Fi + weekdays 2–5 p.m."
+
+    // ---- Experience backlog increment (docs/backlog-experience.md ★ five) ----
+
+    override val promptSectionLabel = "Prompt card"
+    override val promptSectionHint = "Stuck? Draw one and let it lead your letter"
+    override val promptDrawHint = "Tap the card for another"
+    override val sealPrompts = listOf(
+        "What matters most to you right now?",
+        "What made you laugh out loud recently?",
+        "If you read this a year from now, what should you remember about today?",
+        "What color is the sky today?",
+        "Name the three closest objects around you.",
+        "What song is on repeat lately?",
+        "What can't you say out loud yet? Write it down.",
+        "What small decision did you just make?",
+        "Does today's worry deserve space in your future memory?",
+        "Whose letter would you most want to receive right now?",
+        "Describe this moment: the temperature, the smell, the sound.",
+        "When did you last feel \"how good it is to be alive\"?",
+        "Name your fear. Write it down and see how small it looks.",
+        "If you could keep only one memory, which one?",
+        "Who do you want to thank right now?",
+        "What small thing did you learn recently?",
+        "What's in your pocket or bag right now?",
+        "What do you want to dream about tonight?",
+        "What regret is fading? Let it go.",
+        "How are you different from who you were three years ago?",
+        "When did you last look up at the moon?",
+        "If tomorrow is just like today, what do you hope never changes?",
+        "Write down a code word only you two understand.",
+        "How does your body feel: tired, full, light, or heavy?",
+        "What was your last \"I'm sorry\" or \"it's okay\" about?",
+        "What do you hope your future self will forgive?",
+        "What do you need to hear right now? Say it to yourself.",
+        "What promise is still unkept? Write it down.",
+        "What does the world outside your window look like?",
+        "Seal this moment. Dear future you — see you soon.",
+    )
+
+    override val blindBoxLabel = "Sealed blind box"
+    override val blindBoxDesc = "Hidden even from you: title and conditions stay masked until unlock"
+    override val blindAskTitle = "Keep it secret from yourself?"
+    override val blindAskBody = "Until this capsule unlocks, its title and conditions stay masked in previews. The reveal happens the moment it opens."
+    override val blindBoxTag = "Blind box"
+    override val blindMaskTitle = "???"
+    override val blindMaskSentence = "The reveal waits for unlock day"
+    override val summaryBlindBox = "Sealed blind box: masked in previews until unlock"
+
+    override val giftEntry = "Gift this capsule"
+    override val giftExportTitle = "Gift capsule"
+    override val giftExportInfo = "Export one encrypted capsule file. The recipient must enter the passphrase you tell them to open it."
+    override val giftExportNote = "The passphrase is never written into the file — share it in person or separately. Prerequisite capsules don't travel with a gift."
+    override val giftExportDone = "Gift file exported:"
+    override val giftImportTitle = "Accept a gift"
+    override val giftImportInfo = "Import an encrypted capsule gifted to you. Its content will be re-encrypted with your local passphrase."
+    override val giftImportAskPw = "Enter the passphrase the sealer told you"
+    override val giftImportDoneFmt = $$"Accepted %1$d capsule(s); %2$d already existed and were skipped"
+    override val giftErrDestroyed = "This capsule was destroyed; there is nothing left to gift"
+    override val giftErrNeedLocalUnlock = "Local passphrase locked: set or unlock your own passphrase first"
+    override val giftErrNoCapsule = "No capsule found in this file"
+    override val setGiftImport = "Accept a gift"
+    override val setGiftImportDesc = "Import a single encrypted capsule gifted by someone"
+
+    override val bioTitle = "Life of a capsule"
+    override val bioSealLabel = "Sealed"
+    override val bioOpenLabel = "Opened"
+    override val bioDustLabel = "To dust"
+    override val bioNeverOpened = "This capsule was never opened"
+    override val bioConditionsLabel = "Conditions met"
+    override val bioMomentFmt = "met %s"
+    override val bioMomentUnrecorded = "moment not recorded"
+    override val bioViewsFmt = $$"%1$d views"
+    override val bioWatchMinFmt = $$"about %1$d min together"
+    override val bioWatchSecFmt = $$"%1$d s together"
+    override val bioNoteLabel = "Sealing note"
+    override val bioRowGone = "Content and metadata were deleted; only this span of time remains"
+
+    // ---- Experience backlog §1–§2 increment (voice note / sketch / paper style / maturity / daily pick) ----
+
+    override val voiceLabel = "Voice note"
+    override val voiceHint = "Seal a voice; on unlock it will sound before the words (encrypted, stays local)"
+    override val voiceRecordStart = "Tap to start recording"
+    override val voiceRecordingFmt = $$"Recording · %1$d s, tap to stop"
+    override val voiceRerecord = "Record again"
+    override val voiceRecordedFmt = $$"Recorded %1$d s"
+    override val voicePermHint = "Microphone permission not granted; cannot record a voice note"
+    override val voicePlay = "Play this voice"
+    override val voiceStopPlaying = "Stop playing"
+
+    override val paperLabel = "Paper style"
+    override val paperHint = "Choose the letter paper; the letter will wear it when unlocked"
+    override val paperNamePlain = "Plain"
+    override val paperNameMist = "Mist"
+    override val paperNameEmber = "Ember"
+
+    override val handDrawTile = "Sketch"
+    override val handDrawTitle = "Draw an enclosure"
+    override val handDrawHint = "Draw with one finger; it will be sealed alongside your photos"
+    override val handDrawUndo = "Undo stroke"
+    override val handDrawClear = "Clear"
+
+    override val previewToday = "Today's pick"
+
+    // ---- Experience backlog §3–§5 increment (puzzle / nested / NFC anchor / reply / annual report) ----
+
+    override val replyWrite = "Write a reply"
+    override val replyEdit = "Edit reply"
+    override val replyLabel = "Reply"
+    override val replyPlaceholder = "A line for the future reader"
+    override val replyHint = "The reply stays with the archive; even after destruction, the dust keeps this conversation."
+
+    override val nfcLinkTitle = "Write NFC tag"
+    override val nfcLinkInfo = "Stick this tag on a real object (envelope, book, keys); tapping it opens this capsule."
+
+    override val puzzleLabel = "Puzzle group"
+    override val puzzleDesc = "Split one letter into fragments; read the joined letter when all unlock"
+    override val puzzleJoin = "Join a puzzle"
+    override val puzzleJoinedFmt = $$"Piece %1$d of %2$d (tap to leave)"
+    override val puzzleSheetDesc = "Create a new group, or join one that is still incomplete."
+    override val puzzlePieceCountFmt = $$"Split into %1$d pieces"
+    override val puzzleNewGroup = "New puzzle group"
+    override val puzzleExistingGroups = "Groups you can join"
+    override val puzzleGroupRowFmt = $$"%1$d pieces · %2$d sealed"
+    override val puzzleOpen = "Open the joined letter"
+    override val puzzleSheetTitle = "Joined letter"
+    override val puzzleEmpty = "No readable pieces yet"
+    override val puzzlePieceFmt = $$"Piece %1$d"
+    override val puzzleStatusFmt = $$"Puzzle %1$d / %2$d · %3$d to go"
+    override val puzzleReadyFmt = $$"Puzzle complete (%1$d / %2$d) — the letter can be joined"
+
+    override val seedLabel = "Nested seed"
+    override val seedDesc = "Hide this capsule inside another; it appears when that one is opened"
+    override val seedPick = "Pick a host"
+    override val seedBoundFmt = $$"Hidden inside \"%1$s\" (tap to unlink)"
+    override val seedPickTitle = "Choose a host capsule"
+    override val seedPickDesc = "The seed sprouts the moment its host is opened."
+    override val seedEmpty = "No host capsules available"
+
+    override val setAnnualReport = "Annual star chart"
+    override val reportTitleFmt = $$"Annual star chart · %1$d"
+    override val setAnnualReportDesc = "This year's sealing, opening and waiting — as a shareable poster"
+    override val reportSealedFmt = $$"%1$d capsules sealed"
+    override val reportOpenedFmt = $$"%1$d capsules opened"
+    override val reportDustFmt = $$"%1$d capsules laid to rest"
+    override val reportLongestWaitFmt = $$"Longest wait: %1$s · %2$d days"
+    override val reportTopConditionFmt = $$"Favorite condition: %1$s · %2$d times"
+    override val reportShare = "Make poster & share"
+    override val reportComputing = "Charting this year's stars…"
+    override val reportNote = "Time never left; it only changed shape."
+    override val narrIdleVariants = listOf(
+        "Spring is waiting for a letter to ripen." to "No rush — it is more patient than you.",
+        "Three willow-catkin seasons gone, still sealed." to "Some words simply take this long.",
+        "The cicadas are at their loudest; don't open yet." to "The hottest words deserve to cool first.",
+        "Summer stretches the days long." to "It is stretching the waiting too.",
+        "Falling leaves are counting the days for you." to "One a day, neither fast nor slow.",
+        "Autumn suits receiving letters, and waiting for them." to "It is almost here.",
+        "Winter letters are the warmest." to "Only deep cold knows how long it kept that warmth.",
+        "When snow falls, it is listening." to "Listening for whether you thought of it.",
+    )
+    override val condAtLeastGapFmt = $$"Any %1$d · %2$d met · %3$d to go"
+    override val hapticLabel = "Haptic signature"
+    override val hapticDesc = "The vibration pattern when this capsule unlocks or is destroyed"
+    override val hapticNone = "None"
+    override val hapticDouble = "Double tap"
+    override val hapticPulse = "Long pulse"
+    override val hapticRipple = "Ripple"
+    override val ambientLabel = "Ambient sound"
+    override val ambientDesc = "A looping background tone that fades in on unlock (synthesized, no size cost)"
+    override val ambientNone = "None"
+    override val ambientRain = "Rainy night"
+    override val ambientDrone = "Deep space"
+    override val shardLabel = "Sharded key"
+    override val shardDesc = "Split the key into shares handed out offline; M shares required to open"
+    override val shardNote = "Shares are shown once after sealing and never stored on this device. Keep them safe and hand them out separately."
+    override val shardTotalFmt = $$"Split into %1$d shares"
+    override val shardThresholdFmt = $$"%1$d shares required to open"
+    override val shardSharesTitle = "The shares appear only once"
+    override val shardSharesNote = "Copy and distribute them now. Once this dialog closes, they can never be seen on this device again."
+    override val shardShareDone = "I've saved them safely"
+    override val shardGateHintFmt = $$"This capsule needs %1$d shares to rebuild its key. Paste each share string on its own line:"
+    override val shardGateInputHint = "One TIMART-SHARD-… string per line"
+    override val shardGateSubmit = "Unseal"
+    override val shardInvalid = "Invalid or insufficient shares: check that they are complete and from the same set."
+    override val tplUserSection = "My templates"
+    override val tplUserSaveCurrent = "Save current conditions as a template"
+    override val tplUserNeedConditions = "Add some conditions first, then save as a template"
 }

@@ -17,6 +17,8 @@ val tiandituTk: String by lazy {
     props.getProperty("TIANDITU_TK").orEmpty()
 }
 
+// localeFilters（资源语言收缩）在当前 AGP 仍为 @Incubating API，抑制 UnstableApiUsage
+@Suppress("UnstableApiUsage")
 android {
     namespace = "com.muxiao.timart"
     compileSdk = 37
@@ -132,6 +134,7 @@ dependencies {
     implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.biometric)
     implementation(libs.bcprov.jdk18on)
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)

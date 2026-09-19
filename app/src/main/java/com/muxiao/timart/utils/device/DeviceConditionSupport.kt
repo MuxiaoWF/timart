@@ -20,6 +20,8 @@ enum class DeviceHardware {
     STEP_COUNTER,
     STEP_DETECTOR,
     ACCELEROMETER,
+    GYROSCOPE,
+    PROXIMITY,
     NFC,
     LIGHT_SENSOR,
     CAMERA,
@@ -35,6 +37,8 @@ fun missingDeviceHardware(context: Context): Set<DeviceHardware> {
         if (sm?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) == null) add(DeviceHardware.STEP_COUNTER)
         if (sm?.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) == null) add(DeviceHardware.STEP_DETECTOR)
         if (sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) == null) add(DeviceHardware.ACCELEROMETER)
+        if (sm?.getDefaultSensor(Sensor.TYPE_GYROSCOPE) == null) add(DeviceHardware.GYROSCOPE)
+        if (sm?.getDefaultSensor(Sensor.TYPE_PROXIMITY) == null) add(DeviceHardware.PROXIMITY)
         if (sm?.getDefaultSensor(Sensor.TYPE_LIGHT) == null) add(DeviceHardware.LIGHT_SENSOR)
         if (!context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)) {
             add(DeviceHardware.CAMERA)
@@ -52,14 +56,20 @@ fun missingDeviceHardware(context: Context): Set<DeviceHardware> {
 
 /** 条件依赖的硬件（纯映射；不依赖硬件的条件返回空集） */
 fun UnlockCondition.requiredHardware(): Set<DeviceHardware> = when (this) {
-    is UnlockCondition.AltitudeRange -> setOf(DeviceHardware.PRESSURE)
+    is UnlockCondition.AltitudeRange, is UnlockCondition.RelativeAltitude -> setOf(DeviceHardware.PRESSURE)
+    is UnlockCondition.LiftHighLowerLow, is UnlockCondition.ClimbFloors -> setOf(DeviceHardware.PRESSURE)
     is UnlockCondition.CompassHeading -> setOf(DeviceHardware.ROTATION_VECTOR)
-    is UnlockCondition.StepCount, is UnlockCondition.StepStreak -> setOf(DeviceHardware.STEP_COUNTER)
+    is UnlockCondition.StepCount, is UnlockCondition.StepStreak, is UnlockCondition.WalkStepsNow ->
+        setOf(DeviceHardware.STEP_COUNTER)
     is UnlockCondition.MotionActivity -> setOf(DeviceHardware.STEP_DETECTOR)
-    is UnlockCondition.ShakeCount, is UnlockCondition.FlipOrHold -> setOf(DeviceHardware.ACCELEROMETER)
+    is UnlockCondition.SpinPhone -> setOf(DeviceHardware.GYROSCOPE)
+    is UnlockCondition.ShakeCount, is UnlockCondition.FlipOrHold, is UnlockCondition.StayStill,
+    is UnlockCondition.DevicePose,
+    -> setOf(DeviceHardware.ACCELEROMETER)
+    is UnlockCondition.ProximityCovered -> setOf(DeviceHardware.PROXIMITY)
     is UnlockCondition.NfcTap -> setOf(DeviceHardware.NFC)
     is UnlockCondition.AmbientLight -> setOf(DeviceHardware.LIGHT_SENSOR)
-    is UnlockCondition.PhotoKeepsake -> setOf(DeviceHardware.CAMERA)
+    is UnlockCondition.PhotoKeepsake, is UnlockCondition.ScanQr -> setOf(DeviceHardware.CAMERA)
     is UnlockCondition.BiometricUnlock -> setOf(DeviceHardware.BIOMETRIC)
     else -> emptySet()
 }
@@ -92,6 +102,15 @@ fun unsupportedConditionNames(
             is UnlockCondition.AmbientLight -> L.condAmbientLight
             is UnlockCondition.PhotoKeepsake -> L.condPhotoKeepsake
             is UnlockCondition.BiometricUnlock -> L.condBiometric
+            // ---- 储备池 v4 ----
+            is UnlockCondition.DevicePose -> L.condPose
+            is UnlockCondition.ProximityCovered -> L.condProximity
+            is UnlockCondition.WalkStepsNow -> L.condWalkNow
+            is UnlockCondition.SpinPhone -> L.condSpin
+            is UnlockCondition.LiftHighLowerLow -> L.condLift
+            is UnlockCondition.ClimbFloors -> L.condClimb
+            is UnlockCondition.RelativeAltitude -> L.condRelAltitude
+            is UnlockCondition.ScanQr -> L.condScanQr
             else -> continue
         }
     }

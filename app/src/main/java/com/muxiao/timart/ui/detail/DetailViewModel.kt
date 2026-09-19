@@ -11,6 +11,7 @@ import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.CapsuleState
 import com.muxiao.timart.domain.model.ConditionStatus
 import com.muxiao.timart.domain.usecase.ReadCapsuleUseCase
+import com.muxiao.timart.domain.usecase.ShardSecretUseCase
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,6 +95,38 @@ class DetailViewModel(
          * 若再跑一次 reveal 会出现"文字完整 → 消失 → 重敲"的倒退观感）。
          */
         val playedFullUnseal: Boolean = false,
+
+        /** 信纸样式（体验储备池 §1；meta `capsule.paper.<id>`，0 = 原纸，解封信笺按此呈现） */
+        val paperStyle: Int = 0,
+
+        /** 声音留言（体验储备池 §1）：有无语音 / 播放态（播放走 VoicePlayer，明文只进 cache 临时文件） */
+        val voiceAvailable: Boolean = false,
+        val voicePlaying: Boolean = false,
+
+        /** 回信（体验储备池 §5）：已写的回信文本（null = 未写过） */
+        val reply: String? = null,
+        val showReplyDialog: Boolean = false,
+
+        /** 拼图分组（体验储备池 §3）：本片序号（0 起）/ 总片数 / 已解锁片数；未分组 = null */
+        val puzzleIndex: Int? = null,
+        val puzzleTotal: Int? = null,
+        val puzzleUnlockedCount: Int? = null,
+
+        /** 合信视图（全部片解锁后可开）：fragments 非空 = 已解密就绪 */
+        val puzzleReady: Boolean = false,
+        val showPuzzleSheet: Boolean = false,
+        val puzzleFragments: List<PuzzleFragment>? = null,
+
+        /** 口令分片（体验储备池 §7.1）：外层已解、内层仍锁 → 显示集分片面板 */
+        val shardGate: Boolean = false,
+    )
+
+    /** 合信视图分片内容（全部 UNLOCKED 后按序解密聚合） */
+    data class PuzzleFragment(
+        val capsuleId: String,
+        val index: Int,
+        val title: String,
+        val paragraphs: List<String>,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -127,6 +160,20 @@ class DetailViewModel(
 
     private var latestCapsule: Capsule? = null
 
+    /**
+     * 本会话已确认落库/尝试落库的条件达成键（`capsuleId:index`）。
+     * judgeOnce 可能被 30s 周期与挑战提交并发触发，用并发集合去重避免反复读 meta。
+     * 契约见 CapsuleMetaKeys（另一写入点 MainActivity 全量判定，读取点 DustRecordsViewModel）。
+     */
+    private val condMetRecorded = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * 分片胶囊的内层密文（体验储备池 §7.1）：外层解密产物，仅存 VM 内存，
+     * 解出明文 / 离开页面即清。设备任何持久存储都不保留内层密文副本。
+     */
+    @Volatile
+    private var pendingInnerCipher: ByteArray? = null
+
     init {
         viewModelScope.launch(Dispatchers.Default) {
             repo.observeById(capsuleId).collect { onCapsule(it) }
@@ -145,6 +192,47 @@ class DetailViewModel(
                 val dao = container.database.metaDao()
                 val current = dao.get(viewCountKey())?.toIntOrNull() ?: 0
                 dao.put(com.muxiao.timart.data.local.db.entity.MetaEntity(viewCountKey(), (current + 1).toString()))
+            }
+        }
+        // 信纸样式（体验储备池 §1）：meta `capsule.paper.<id>`（写入点 CreateViewModel.performCreate）；
+        // 读失败按原纸（0），fail-closed 不影响阅读
+        viewModelScope.launch(Dispatchers.IO) {
+            val style = runCatching {
+                container.database.metaDao()
+                    .get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.paper(capsuleId))
+                    ?.toIntOrNull() ?: 0
+            }.getOrDefault(0)
+            _state.update { it.copy(paperStyle = style) }
+        }
+        // 回信（体验储备池 §5）：meta `capsule.reply.<id>`（写入点本类 saveReply）
+        viewModelScope.launch(Dispatchers.IO) {
+            val saved = runCatching {
+                container.database.metaDao()
+                    .get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.reply(capsuleId))
+            }.getOrNull()
+            if (saved != null) _state.update { it.copy(reply = saved) }
+        }
+        // 拼图分组（体验储备池 §3）：本片归属 + 各片解锁进度（读失败按未分组处理）
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { loadPuzzleState() }
+        }
+        // 声音留言可用性（体验储备池 §1）：audio 目录在位即有语音（不落 Room，见 AudioCipherStore）
+        viewModelScope.launch(Dispatchers.IO) {
+            val available = runCatching {
+                container.audioCipherStore.listIndexes(capsuleId).isNotEmpty()
+            }.getOrDefault(false)
+            _state.update { it.copy(voiceAvailable = available) }
+        }
+        // 凝视时长累计：详情页存活期间每 5 秒 +5（meta `capsule.watch.<id>`，
+        // 判定侧 AppContainer.capsuleMetaProvider.watchSeconds；VM 销毁即停止）
+        viewModelScope.launch(Dispatchers.IO) {
+            val dao = container.database.metaDao()
+            while (isActive) {
+                delay(5000.milliseconds)
+                runCatching {
+                    val current = dao.get(watchKey())?.toIntOrNull() ?: 0
+                    dao.put(com.muxiao.timart.data.local.db.entity.MetaEntity(watchKey(), (current + 5).toString()))
+                }
             }
         }
     }
@@ -199,18 +287,50 @@ class DetailViewModel(
         readMarkChecked = true
     }
 
-    /** UNLOCKED 后首次进入阅读：写已读标记（之后重读走 450ms 简化过渡） */
+    /** UNLOCKED 后首次进入阅读：写已读标记 + 开启时刻（之后重读走 450ms 简化过渡） */
     private fun markAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                container.database.metaDao().put(
+                val dao = container.database.metaDao()
+                dao.put(
                     com.muxiao.timart.data.local.db.entity.MetaEntity(readMarkKey(), "true"),
                 )
+                // 开启时刻（SameDayAsCapsuleRead / DaysSinceCapsuleRead 判定通道）
+                dao.put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        readAtKey(),
+                        container.timeProvider.nowMillis().toString(),
+                    ),
+                )
+                // 嵌套种子播种（体验储备池 §3）：父胶囊已读 → 写萌芽标记，休眠种子转为正常胶囊。
+                // 播种是 meta 标记而非内容复制——种子在父封存时就已完整入库（独立加密、独立规则）
+                runCatching {
+                    dao.listLike(com.muxiao.timart.data.local.db.CapsuleMetaKeys.SEED_OF_KEY_PREFIX)
+                        .filter { it.value == capsuleId }
+                        .forEach { seed ->
+                            dao.put(
+                                com.muxiao.timart.data.local.db.entity.MetaEntity(
+                                    com.muxiao.timart.data.local.db.CapsuleMetaKeys.sprout(
+                                        seed.key.removePrefix(
+                                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.SEED_OF_KEY_PREFIX,
+                                        ),
+                                    ),
+                                    "true",
+                                ),
+                            )
+                        }
+                }
             }
         }
     }
 
     private fun readMarkKey() = "capsule.read.$capsuleId"
+
+    /** 凝视时长键（跨 VM meta 契约：写入点本类 init，读取点 AppContainer.capsuleMetaProvider.watchSeconds） */
+    private fun watchKey() = "capsule.watch.$capsuleId"
+
+    /** 开启时刻键（跨 VM meta 契约：写入点本类 markAsRead，读取点 capsuleMetaProvider.lastReadAt） */
+    private fun readAtKey() = "capsule.readAt.$capsuleId"
 
     /** 凝视计数键（跨 VM meta 契约：写入点本类 init，读取点 AppContainer.capsuleMetaProvider.viewCount） */
     private fun viewCountKey() = "capsule.views.$capsuleId"
@@ -263,6 +383,26 @@ class DetailViewModel(
             sessionChallengeAnswers,
         )
 
+        // 条件达成时刻埋点（只写不覆写，先到先记；失败静默，生平页该刻度显示为「—」）
+        result.items.forEachIndexed { index, item ->
+            if (item.satisfied && condMetRecorded.add("$capsuleId:$index")) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        val dao = container.database.metaDao()
+                        val key = com.muxiao.timart.data.local.db.CapsuleMetaKeys.condMet(capsuleId, index)
+                        if (dao.get(key) == null) {
+                            dao.put(
+                                com.muxiao.timart.data.local.db.entity.MetaEntity(
+                                    key,
+                                    container.timeProvider.nowMillis().toString(),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // 挑战应答反馈：仅「刚提交且判错」才提示（正确提交不打扰，其余未满足原因时间线行内已明示）
         if (newAnswers.isNotEmpty()) {
             val reasons = com.muxiao.timart.domain.model.unlock.JudgeReasons.forLang(RuntimeSettings.resolvedLang)
@@ -302,6 +442,7 @@ class DetailViewModel(
             // 业务先行：回写 UNLOCKED，Room Flow 回流后进入 UNSEAL/CONTENT
             repo.updateState(capsule.id, CapsuleState.UNLOCKED, container.timeProvider.nowMillis())
             container.notifier.notifyUnlock(capsule.id, capsule.title)
+            container.playCapsuleHaptic(capsule.id, destroy = false)
         }
 
         _state.update {
@@ -433,7 +574,13 @@ class DetailViewModel(
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val content = reader.read(capsule, RuntimeSettings.resolvedLang)
-                _state.update { it.copy(content = content, errorText = null) }
+                if (content.lockedInner != null) {
+                    // 分片胶囊：外层已解、内层待分片重构（体验储备池 §7.1）
+                    pendingInnerCipher = content.lockedInner
+                    _state.update { it.copy(content = content, shardGate = true, errorText = null) }
+                } else {
+                    _state.update { it.copy(content = content, errorText = null) }
+                }
             } catch (e: CryptoException) {
                 _state.update {
                     val L = currentStrings()
@@ -443,6 +590,222 @@ class DetailViewModel(
                 _state.update { it.copy(errorText = currentStrings().dvContentUnreadable) }
             }
         }
+    }
+
+    // ================= 声音留言播放（体验储备池 §1） =================
+
+    /** 播放/停止切换（VoicePlayer 解密 → cache 临时文件 → MediaPlayer；播完自动回落） */
+    fun toggleVoice() {
+        if (!_state.value.voiceAvailable) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val playing = runCatching { container.voicePlayer.toggle(capsuleId) }.getOrDefault(false)
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _state.update { it.copy(voicePlaying = playing) }
+            }
+        }
+    }
+
+    // ================= 回信（体验储备池 §5，仅作档案附言，不触碰销毁路径） =================
+
+    /** 仅 CONTENT 态可写回信（绑定开启后的档案） */
+    fun openReplyDialog() {
+        if (_state.value.phase == Phase.CONTENT) _state.update { it.copy(showReplyDialog = true) }
+    }
+
+    fun dismissReplyDialog() {
+        _state.update { it.copy(showReplyDialog = false) }
+    }
+
+    /** 回信落 meta `capsule.reply.<id>`；销毁流程不清理该 key，回信随档案留存 */
+    fun saveReply(text: String) {
+        val trimmed = text.trim().take(REPLY_MAX)
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                container.database.metaDao().put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        com.muxiao.timart.data.local.db.CapsuleMetaKeys.reply(capsuleId),
+                        trimmed,
+                    ),
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _state.update { it.copy(reply = trimmed, showReplyDialog = false) }
+            }
+        }
+    }
+
+    // ================= 拼图分组与合信视图（体验储备池 §3，判定引擎零改动） =================
+
+    /** 装载本片拼图归属与全组进度：扫描 `capsule.puzzle.%`（键值契约见 CapsuleMetaKeys） */
+    private suspend fun loadPuzzleState() {
+        val dao = container.database.metaDao()
+        val selfValue = dao.get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzle(capsuleId))
+            ?: return
+        val (groupId, index, total) = com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzleDecodeValue(selfValue)
+            ?: return
+        val members = collectGroupMembers(dao, groupId)
+        val unlockedCount = members.count { (id, _) ->
+            repo.byIdSync(id)?.state == CapsuleState.UNLOCKED
+        }
+        _state.update {
+            it.copy(
+                puzzleIndex = index,
+                puzzleTotal = total,
+                puzzleUnlockedCount = unlockedCount,
+                puzzleReady = members.size >= total && unlockedCount >= total,
+            )
+        }
+    }
+
+    /** 同组成员列表：(胶囊 id, 片序)；值解析失败的条目跳过 */
+    private suspend fun collectGroupMembers(
+        dao: com.muxiao.timart.data.local.db.MetaDao,
+        groupId: String,
+    ): List<Pair<String, Int>> =
+        dao.listLike(com.muxiao.timart.data.local.db.CapsuleMetaKeys.PUZZLE_KEY_PREFIX)
+            .mapNotNull { entity ->
+                val parsed = com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzleDecodeValue(entity.value)
+                    ?: return@mapNotNull null
+                if (parsed.first != groupId) return@mapNotNull null
+                entity.key.removePrefix(com.muxiao.timart.data.local.db.CapsuleMetaKeys.PUZZLE_KEY_PREFIX) to parsed.second
+            }
+
+    /** 打开合信视图：全部片解锁后按片序解密各片正文聚合（不解密任何未解锁片，密文边界不变） */
+    fun openPuzzleView() {
+        val current = _state.value
+        if (!current.puzzleReady || current.showPuzzleSheet) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val dao = container.database.metaDao()
+            val selfValue = dao.get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzle(capsuleId))
+                ?: return@launch
+            val (groupId, _, _) = com.muxiao.timart.data.local.db.CapsuleMetaKeys.puzzleDecodeValue(selfValue)
+                ?: return@launch
+            val fragments = collectGroupMembers(dao, groupId)
+                .sortedBy { it.second }
+                .mapNotNull { (id, index) ->
+                    val capsule = repo.byIdSync(id) ?: return@mapNotNull null
+                    if (capsule.state != CapsuleState.UNLOCKED) return@mapNotNull null
+                    runCatching { reader.read(capsule, RuntimeSettings.resolvedLang) }.getOrNull()
+                        ?.let { content -> PuzzleFragment(id, index, content.title, content.paragraphs) }
+                }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _state.update { it.copy(showPuzzleSheet = true, puzzleFragments = fragments) }
+            }
+        }
+    }
+
+    fun dismissPuzzleSheet() {
+        _state.update { it.copy(showPuzzleSheet = false) }
+    }
+
+    /**
+     * 拼图进度短句（信笺行用）：未分组 null；就绪 = 「合信就绪」句；
+     * 未就绪 = 「拼图 x/y · 还差 n 片」句。
+     */
+    fun puzzleStatusText(L: com.muxiao.timart.l10n.Strings): String? {
+        val current = _state.value
+        val total = current.puzzleTotal ?: return null
+        val unlocked = current.puzzleUnlockedCount ?: return null
+        return if (current.puzzleReady) {
+            L.puzzleReadyFmt.format(unlocked, total)
+        } else {
+            L.puzzleStatusFmt.format(unlocked, total, total - unlocked)
+        }
+    }
+
+    // ================= 口令分片重构（体验储备池 §7.1） =================
+
+    /**
+     * 提交分片串（每行一份）：解析 → 重构 S → 派生 k2 → 校验 verifier₂ → 解内层。
+     * 任一步失败都显式报错（fail-closed），不解密任何内容、不产生半开放状态；
+     * 成功后内层密文与 k2 副本全部清零。
+     */
+    fun submitShardShares(raw: String) {
+        val capsule = latestCapsule ?: return
+        val threshold = capsule.shardThreshold ?: return
+        val total = capsule.shardTotal
+        val inner = pendingInnerCipher ?: return
+        val paramsJson = capsule.shardParams ?: return
+        val expectedVerifier = capsule.shardVerifier ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            val useCase = container.shardSecretUseCase
+            val shares = raw.lines().mapNotNull { line ->
+                if (line.isBlank()) return@mapNotNull null
+                val decoded = runCatching { useCase.decodeShare(line) }.getOrNull() ?: return@mapNotNull null
+                // 参数一致性：串上 total/threshold 与胶囊列不符的分片直接忽略
+                if (decoded.total != total || decoded.threshold != threshold) return@mapNotNull null
+                ShardSecretUseCase.Share(decoded.index, decoded.bytes)
+            }
+            val secret = useCase.combine(shares, threshold)
+            val plainText: String? = secret?.let { secretBytes ->
+                runCatching {
+                    val params = com.muxiao.timart.data.local.crypto.KdfEngines.paramsFromJson(paramsJson)
+                    val k2 = com.muxiao.timart.data.local.crypto.KdfEngines
+                        .byAlgo(params.algo)
+                        .derive(useCase.secretToPassword(secretBytes), params)
+                    val ok = java.security.MessageDigest.isEqual(
+                        useCase.verifierHex(k2).toByteArray(),
+                        expectedVerifier.lowercase().toByteArray(),
+                    )
+                    if (!ok) {
+                        java.util.Arrays.fill(k2, 0)
+                        null
+                    } else {
+                        val plain = container.aesGcmCipher.decrypt(k2, inner)
+                        java.util.Arrays.fill(k2, 0)
+                        plain.decodeToString()
+                    }
+                }.getOrNull()
+            }
+            java.util.Arrays.fill(secret ?: ByteArray(0), 0)
+            if (plainText == null) {
+                // 错分片：显式报错（verifier₂ 校验 fail-closed），已录入的串留在输入框供修正
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    _state.update { it.copy(errorText = currentStrings().shardInvalid) }
+                }
+                return@launch
+            }
+            java.util.Arrays.fill(pendingInnerCipher ?: ByteArray(0), 0)
+            pendingInnerCipher = null
+            val paragraphs = plainText.split("\n\n")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .ifEmpty { listOf("") }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _state.update { state ->
+                    state.copy(
+                        content = state.content?.copy(paragraphs = paragraphs, lockedInner = null),
+                        shardGate = false,
+                        errorText = null,
+                    )
+                }
+            }
+        }
+    }
+
+    // ================= 环境音（体验储备池 §6：解封淡入 / 离场淡出） =================
+
+    private var ambientStarted = false
+
+    fun startAmbient() {
+        if (ambientStarted) return
+        val capsule = latestCapsule ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val sceneName = runCatching {
+                container.database.metaDao().get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.ambient(capsule.id))
+            }.getOrNull() ?: return@launch
+            val scene = com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.entries
+                .firstOrNull { it.name == sceneName } ?: return@launch
+            container.ambientSoundPlayer.start(scene)
+            ambientStarted = true
+        }
+    }
+
+    fun stopAmbient() {
+        if (!ambientStarted) return
+        ambientStarted = false
+        container.ambientSoundPlayer.stop()
     }
 
     // ================= UNSEAL 视觉层控制（跳过即落 CONTENT） =================
@@ -472,6 +835,7 @@ class DetailViewModel(
         _state.update {
             it.copy(phase = Phase.DISSOLVE, destroyConfirmVisible = false, backConfirmVisible = false)
         }
+        container.playCapsuleHaptic(capsuleId, destroy = true)
         container.audioManager.playDissolve()
     }
 
@@ -525,5 +889,14 @@ class DetailViewModel(
     companion object {
         /** LOCKED 态周期重判间隔（PRD：详情页 30s 周期 + 进页一次） */
         const val REJUDGE_INTERVAL_MS = 30_000L
+
+        /** 回信长度上限（一句附言） */
+        const val REPLY_MAX = 60
+    }
+
+    override fun onCleared() {
+        // 停止语音播放并删除明文缓存（明文语音不留盘）；环境音淡出通道随 VM 终止
+        container.voicePlayer.stop()
+        container.ambientSoundPlayer.shutdown()
     }
 }

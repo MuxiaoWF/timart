@@ -34,6 +34,8 @@ class ConditionCheckWorker(
                     container.notifier.notifyUnlock(capsule.id, capsule.title)
                 },
                 lang = RuntimeSettings.resolvedLang,
+                // 休眠种子（嵌套胶囊未萌芽）不参与周期判定：藏着的种子条件达成也不解锁
+                shouldJudge = { capsule -> !container.isSeedDormant(capsule.id) },
             )
             Result.success()
         } catch (_: Throwable) {

@@ -209,6 +209,230 @@ sealed class UnlockCondition {
     data class PhotoKeepsake(
         override val challengeId: String,
     ) : UnlockCondition(), ChallengeCondition
+
+    // ---- 时间类扩展（储备池 §1；delta D-1.2）----
+
+    /** 今日处于指定节气集合（太阳黄经每 15° 一气，离线纯计算，长期误差 ≤1 天） */
+    data class SolarTerm(val solarTerms: Set<SolarTermKind>) : UnlockCondition()
+
+    /** 距创建天数恰为 [modulus] 的整数倍（百日/千日/万日纪念；满 1 天才起算） */
+    data class RoundDaysElapsed(val modulus: Int) : UnlockCondition()
+
+    /** 当前季节属于指定集合（气象四季：3–5 春 / 6–8 夏 / 9–11 秋 / 12–2 冬） */
+    data class Season(val seasons: Set<SeasonKind>) : UnlockCondition()
+
+    /** 距创建满 [months] 个整月（严格历月语义） */
+    data class MinElapsedMonths(val months: Int) : UnlockCondition()
+
+    /** 每月第 [nth] 个 [dayOfWeek]（如"每月第一个周一"） */
+    data class NthWeekdayOfMonth(val nth: Int, val dayOfWeek: DayOfWeek) : UnlockCondition()
+
+    /** 每年 [month] 月第 [nth] 个 [dayOfWeek]（母亲节/感恩节等浮动节日） */
+    data class YearlyNthWeekday(val month: Int, val nth: Int, val dayOfWeek: DayOfWeek) : UnlockCondition()
+
+    /** 2 月 29 日当天满足（四年一遇；非闰年恒不满足） */
+    data object LeapDay : UnlockCondition()
+
+    /** 每月最后一天当天满足 */
+    data object LastDayOfMonth : UnlockCondition()
+
+    /** 封存满 [minDays] 天后的首个 [dayOfWeek] 当天满足（错过该 7 天窗口即不再满足） */
+    data class NthWeekdaySince(val minDays: Int, val dayOfWeek: DayOfWeek) : UnlockCondition()
+
+    /** 太阳黄经处于指定星座区间（占星月份，与节气同源计算） */
+    data class ZodiacSeason(val zodiac: ZodiacKind) : UnlockCondition()
+
+    /** 白昼长度处于 [minHours, maxHours] 小时（任一端可空；随纬度/季节变化，需定位换算） */
+    data class DayLength(val minHours: Double?, val maxHours: Double?) : UnlockCondition()
+
+    /** 日出钟点处于 [minMinute, maxMinute]（当日 0 点起算的本地分钟数，任一端可空；需定位换算） */
+    data class SunriseTimeRange(val minMinute: Int?, val maxMinute: Int?) : UnlockCondition()
+
+    /** 今日处于农历 [month] 月整月（含闰同月） */
+    data class LunarMonthRange(val month: Int) : UnlockCondition()
+
+    /** 每月固定多天（如发薪日 + 前一天） */
+    data class MonthlyDaySet(val days: Set<Int>) : UnlockCondition()
+
+    // ---- 设备状态扩展（储备池 §2；delta D-1.2）----
+
+    /** 系统深色模式开关状态匹配（零权限） */
+    data class DarkTheme(val isDark: Boolean) : UnlockCondition()
+
+    /** 系统勿扰模式开启状态匹配（零权限） */
+    data class DoNotDisturb(val isActive: Boolean) : UnlockCondition()
+
+    /** 当前设备姿态属于指定集合（加速度计快照：平放/直立/倒置；硬件门控） */
+    data class DevicePose(val kinds: Set<PoseKind>) : UnlockCondition()
+
+    /** 屏幕亮度 ≤ [maxLevel]（0–255，读系统设置，零权限） */
+    data class ScreenBrightness(val maxLevel: Int) : UnlockCondition()
+
+    /** 媒体音量静音（音量 0）状态匹配 */
+    data class MediaVolume(val isMuted: Boolean) : UnlockCondition()
+
+    /** VPN 连接状态匹配（TRANSPORT_VPN 检测，零权限） */
+    data class VpnActive(val isActive: Boolean) : UnlockCondition()
+
+    /** 当前充电方式属于指定集合（AC / USB / 无线；未充电判不满足） */
+    data class PlugType(val kinds: Set<PlugKind>) : UnlockCondition()
+
+    /** 电池温度处于 [minC, maxC] °C（任一端可空；读取失败给原因） */
+    data class BatteryTemp(val minC: Double?, val maxC: Double?) : UnlockCondition()
+
+    /** 横竖屏状态匹配（快照语义） */
+    data class Orientation(val isLandscape: Boolean) : UnlockCondition()
+
+    /** 定位速度处于 [minKmh, maxKmh] km/h（任一端可空；通道与 [MovingAboveSpeed] 一致） */
+    data class SpeedRange(val minKmh: Int?, val maxKmh: Int?) : UnlockCondition()
+
+    /** 当前连接的 Wi-Fi BSSID 属于指定集合（精确到具体路由器；权限语义同 [SsidMatch]） */
+    data class SsidBssidMatch(val bssids: Set<String>) : UnlockCondition()
+
+    /** 已连接蓝牙设备名与 [deviceNames] 有交集（附近设备权限未授权判不满足并给原因） */
+    data class BluetoothDevice(val deviceNames: Set<String>) : UnlockCondition()
+
+    /** 接近传感器被遮挡（手捂住手机顶部；硬件门控） */
+    data object ProximityCovered : UnlockCondition()
+
+    /** 距上次开机不足 [withinMinutes] 分钟（重启手机后解锁） */
+    data class FreshBoot(val withinMinutes: Int) : UnlockCondition()
+
+    /** 本机已安装 [packageName] 指定的应用（queries 声明，零运行时权限） */
+    data class InstalledApp(val packageName: String) : UnlockCondition()
+
+    // ---- 网络 & 环境扩展（储备池 §3；delta D-1.2）----
+
+    /** 指定快照城市当前空气质量 AQI ≤ [maxAqi]（Open-Meteo Air Quality API，同天气链路） */
+    data class AirQuality(val maxAqi: Int) : UnlockCondition()
+
+    /** 当前风向属于指定集合（八方位，Open-Meteo 现有字段） */
+    data class WindDirection(val dirs: Set<WindDirKind>) : UnlockCondition()
+
+    /** 当前位于北/南半球（纬度符号判定） */
+    data class Hemisphere(val north: Boolean) : UnlockCondition()
+
+    /** 气温比昨日均温低 ≥ [minDropC] °C（"大幅降温那天"；复用天气链路） */
+    data class TempDelta(val minDropC: Double) : UnlockCondition()
+
+    /** 到达指定城市（城市中心 ± 半径；[cityName] 仅用于条件句展示，判定同 [GpsLocation] 通道） */
+    data class CityLocation(
+        val cityName: String,
+        val lat: Double,
+        val lng: Double,
+        val radiusMeter: Int,
+    ) : UnlockCondition()
+
+    /** 海拔较封存时升高/降低 ≥ [deltaM] 米（气压计通道；[baseAltM] 为封存时海拔） */
+    data class RelativeAltitude(
+        val baseAltM: Double,
+        val deltaM: Double,
+        val direction: LiftDirection,
+    ) : UnlockCondition()
+
+    /** 今日降水概率 ≥ [minProb]%（Open-Meteo daily 字段） */
+    data class PrecipitationProbability(val minProb: Int) : UnlockCondition()
+
+    // ---- 应用内统计扩展（储备池 §4；delta D-1.2）----
+
+    /** 累计凝视这颗胶囊 ≥ [seconds] 秒（meta `capsule.watch.<id>`，详情页前台累计） */
+    data class WatchDurationAtLeast(val seconds: Int) : UnlockCondition()
+
+    /** 已开启阅读过的胶囊总数 ≥ [count] 颗 */
+    data class ReadCountAtLeast(val count: Int) : UnlockCondition()
+
+    /** 尘迹档案数 ≥ [count] 条（"送走 N 颗后解锁"） */
+    data class DestroyCountAtLeast(val count: Int) : UnlockCondition()
+
+    /** 指定胶囊仍处于锁定（否定依赖："另一颗没被打开前你也不能开"） */
+    data class OtherCapsuleStillLocked(val capsuleId: String) : UnlockCondition()
+
+    /** 完成过一次备份导出（meta `app.backup.done`，正向引导数据安全习惯） */
+    data object BackupDone : UnlockCondition()
+
+    /** 累计创建胶囊总数 ≥ [count]（含已删/已毁；meta `app.created.total`） */
+    data class TotalCreatedCount(val count: Int) : UnlockCondition()
+
+    /** 指定胶囊被开启阅读的当天满足（同日联动，快照语义） */
+    data class SameDayAsCapsuleRead(val capsuleId: String) : UnlockCondition()
+
+    /** 指定胶囊被开启阅读已满 [days] 天（时间轴联动） */
+    data class DaysSinceCapsuleRead(val days: Int, val capsuleId: String) : UnlockCondition()
+
+    /** 本应用的桌面小组件已绑定到启动器（零权限，功能引导） */
+    data object WidgetBound : UnlockCondition()
+
+    /** 今日打开时粒 ≥ [count] 次（按会话计，去重口径同 [OpenCountAtLeast]） */
+    data class TodayOpenCount(val count: Int) : UnlockCondition()
+
+    // ---- 即时挑战扩展（储备池 §5；delta D-1.2；周期巡检 fail-closed）----
+
+    /** 手势图案挑战：连接九宫格点位的规范化序列 SHA-256 比对（答案不入明文存储） */
+    data class GesturePattern(
+        override val challengeId: String,
+        val answerHash: String,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 当场走 [steps] 步（硬件计步器会话差值，当场完成） */
+    data class WalkStepsNow(
+        override val challengeId: String,
+        val steps: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 把手机水平旋转累计 [degrees] 度（陀螺仪积分，当场完成） */
+    data class SpinPhone(
+        override val challengeId: String,
+        val degrees: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 同时按住两个音量键 [holdSeconds] 秒（当场完成） */
+    data class VolumeKeyCombo(
+        override val challengeId: String,
+        val holdSeconds: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 让手机保持静止 [holdSeconds] 秒（加速度方差判定，当场完成） */
+    data class StayStill(
+        override val challengeId: String,
+        val holdSeconds: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 把手机举起/放低 [meters] 米（气压差判定，当场完成；[direction] 二选一） */
+    data class LiftHighLowerLow(
+        override val challengeId: String,
+        val direction: LiftDirection,
+        val meters: Double,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 说出预设口令（语音识别当场应答；文本比对口径同 [QuestionAnswer]） */
+    data class VoicePassword(
+        override val challengeId: String,
+        val expectedAnswer: String,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 连续点击屏幕 [taps] 下（当场完成） */
+    data class TapCount(
+        override val challengeId: String,
+        val taps: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 当场爬 [floors] 层楼（气压差判定，每层约 3 米，当场完成） */
+    data class ClimbFloors(
+        override val challengeId: String,
+        val floors: Int,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 扫一枚二维码（[expectedPayload] 非空表示扫码内容须一致，null=任意二维码） */
+    data class ScanQr(
+        override val challengeId: String,
+        val expectedPayload: String? = null,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 算力挑战：找到 nonce 使 SHA-256(challengeId:nonce) 前导 0 ≥ [difficulty] 位（当场计算） */
+    data class ProofOfWork(
+        override val challengeId: String,
+        val difficulty: Int,
+    ) : UnlockCondition(), ChallengeCondition
 }
 
 /** 太阳相位 */
@@ -238,14 +462,49 @@ enum class MeteorShowerKind { QUADRANTIDS, LYRIDS, ETA_AQUARIIDS, DELTA_AQUARIID
 /** 运动状态（受系统限制：无 GMS 仅能识别步行/静止，故只保留两态） */
 enum class MotionKind { STILL, WALKING }
 
+/** 二十四节气（太阳黄经每 15° 一气；立春 315°、春分 0°，详推算见 [SolarTermCalendar]） */
+enum class SolarTermKind {
+    LICHUN, YUSHUI, JINGZHE, CHUNFEN, QINGMING, GUYU,
+    LIXIA, XIAOMAN, MANGZHONG, XIAZHI, XIAOSHU, DASHU,
+    LIQIU, CHUSHU, BAILU, QIUFEN, HANLU, SHUANGJIANG,
+    LIDONG, XIAOXUE, DAXUE, DONGZHI, XIAOHAN, DAHAN,
+}
+
+/** 黄道十二宫（太阳黄经 30° 一宫，白羊 0° 起） */
+enum class ZodiacKind {
+    ARIES, TAURUS, GEMINI, CANCER, LEO, VIRGO,
+    LIBRA, SCORPIO, SAGITTARIUS, CAPRICORN, AQUARIUS, PISCES,
+}
+
+/** 气象四季（3–5 春 / 6–8 夏 / 9–11 秋 / 12–2 冬，北半球口径） */
+enum class SeasonKind { SPRING, SUMMER, AUTUMN, WINTER }
+
+/** 充电方式（AC 电源 / USB / 无线） */
+enum class PlugKind { AC, USB, WIRELESS }
+
+/** 八方位风向（气象惯例 0° = 北，90° = 东） */
+enum class WindDirKind { N, NE, E, SE, S, SW, W, NW }
+
+/** 设备姿态（加速度计快照三态） */
+enum class PoseKind { FLAT, UPRIGHT, UPSIDE_DOWN }
+
+/** 垂直方向（举起 / 放低） */
+enum class LiftDirection { UP, DOWN }
+
+/** 风向度数 → 八方位（每 45° 一方位，北居中 ±22.5°） */
+fun windDirFromDeg(deg: Int): WindDirKind {
+    val normalized = ((deg % 360) + 360) % 360
+    return WindDirKind.entries[((normalized + 22) % 360) / 45]
+}
+
 /** 手势挑战类型 */
 enum class GestureKind { FLIP, HOLD }
 
 /** 当前网络类型 */
 enum class NetType { WIFI, CELLULAR, NONE }
 
-/** 条件合并逻辑：AND 全部满足；OR 任意满足 */
-enum class LogicType { AND, OR }
+/** 条件合并逻辑：AND 全部满足；OR 任意满足；AT_LEAST 达到阈值条数即满足（M-of-N） */
+enum class LogicType { AND, OR, AT_LEAST }
 
 /**
  * 状态类条件（判定语义 = 当前状态 == 要求状态 的六种二元开关）取否定态：
@@ -259,14 +518,24 @@ fun UnlockCondition.oppositeState(): UnlockCondition? = when (this) {
     is UnlockCondition.SilentMode -> copy(isSilent = !isSilent)
     is UnlockCondition.AirplaneMode -> copy(isEnabled = !isEnabled)
     is UnlockCondition.MusicPlaying -> copy(isPlaying = !isPlaying)
+    is UnlockCondition.DarkTheme -> copy(isDark = !isDark)
+    is UnlockCondition.DoNotDisturb -> copy(isActive = !isActive)
+    is UnlockCondition.MediaVolume -> copy(isMuted = !isMuted)
+    is UnlockCondition.Orientation -> copy(isLandscape = !isLandscape)
+    is UnlockCondition.VpnActive -> copy(isActive = !isActive)
     else -> null
 }
 
 /** 地理坐标点（GPS 条件与地图画布共用） */
 data class GeoPoint(val lat: Double, val lng: Double)
 
-/** 解锁规则：逻辑类型 + 条件列表 */
+/**
+ * 解锁规则：逻辑类型 + 条件列表 + 阈值。
+ * [threshold] 仅在 [LogicType.AT_LEAST] 下生效（"N 条满足 M 条即可"，备用钥匙语义）；
+ * 其余逻辑类型应为 null。挑战条目照常计入 N 与 M（未应答按不满足，快照 fail-closed 不变）。
+ */
 data class UnlockRule(
     val logicType: LogicType,
     val conditionList: List<UnlockCondition>,
+    val threshold: Int? = null,
 )

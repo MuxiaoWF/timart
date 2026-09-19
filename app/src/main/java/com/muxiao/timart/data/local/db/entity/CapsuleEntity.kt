@@ -1,5 +1,6 @@
 package com.muxiao.timart.data.local.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -37,6 +38,17 @@ data class CapsuleEntity(
     /** 用户自定义星图坐标（仅视觉，不改变时间数据） */
     val layoutX: Float?,
     val layoutY: Float?,
+    /**
+     * 盲盒封存（v2 迁移新增；seal-time 标志位）：LOCKED 期间预览面遮蔽标题与条件句。
+     * defaultValue 与 MIGRATION_1_2 的 ALTER TABLE 子句保持一致（Room 打开时校验 schema）。
+     */
+    @ColumnInfo(defaultValue = "0") val blindBox: Boolean = false,
+    /** 口令分片（v3 迁移新增，体验储备池 §7.1）：五者同非 null = 分片胶囊（语义见 Capsule.shard* KDoc） */
+    val shardSalt: String? = null,
+    val shardParams: String? = null,
+    val shardVerifier: String? = null,
+    val shardThreshold: Int? = null,
+    val shardTotal: Int? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

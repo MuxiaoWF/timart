@@ -27,7 +27,27 @@ class ReadCapsuleUseCase(
         val tags: List<String>,
         val note: String,
         val createdAt: Long,
-    )
+        /**
+         * 口令分片胶囊（体验储备池 §7.1）专用：外层已解、内层仍锁定的密文块。
+         * 非 null = 需要集齐分片重构 k2 才能解出正文（paragraphs 恒为空）；
+         * 调用方解出明文后自行拼装 CapsuleContent。明文/内层密文均不落盘。
+         */
+        val lockedInner: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is CapsuleContent &&
+                other.title == title &&
+                other.paragraphs == paragraphs &&
+                other.images.size == images.size &&
+                other.images.zip(images).all { (a, b) -> a.contentEquals(b) } &&
+                other.snapshot == snapshot &&
+                other.tags == tags &&
+                other.note == note &&
+                other.createdAt == createdAt &&
+                other.lockedInner.contentEquals(lockedInner)
+
+        override fun hashCode(): Int = title.hashCode() * 31 + createdAt.hashCode()
+    }
 
     /** 阅读胶囊内容 */
     fun read(capsule: Capsule, lang: Lang = Lang.ZH_HANS): CapsuleContent {
@@ -36,7 +56,21 @@ class ReadCapsuleUseCase(
         }
         val cipher = capsule.contentCipher
             ?: throw CryptoException(readMsgs(lang).contentGone)
-        val plainText = crypto.decryptContent(cipher).decodeToString()
+        val outerPlain = crypto.decryptContent(cipher)
+        // 分片胶囊：外层会话密钥解出的只是内层密文——集分片界面重构 k2 后再解内层
+        if (capsule.shardVerifier != null) {
+            return CapsuleContent(
+                title = capsule.title,
+                paragraphs = emptyList(),
+                images = emptyList(),
+                snapshot = capsule.weather,
+                tags = capsule.tags,
+                note = capsule.createNote,
+                createdAt = capsule.createTimestamp,
+                lockedInner = outerPlain,
+            )
+        }
+        val plainText = outerPlain.decodeToString()
         val images = capsule.imageFiles.indices.mapNotNull { index ->
             imageStore.read(capsule.id, index)
         }

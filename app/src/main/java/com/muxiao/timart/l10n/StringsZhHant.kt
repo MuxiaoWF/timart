@@ -584,4 +584,289 @@ object StringsZhHant : Strings {
     override val bkErrReadFile = "無法讀取所選檔案"
     override val bkErrReadFailFmt = $$"備份檔案讀取失敗：%1$s"
     override val bkErrFormat = "格式錯誤"
+
+    // ---- 儲備池 v4 條件名 ----
+    override val condSolarTerm = "二十四節氣"
+    override val condRoundDays = "滿整數紀念日"
+    override val condSeason = "季節"
+    override val condElapsedMonths = "封存滿 N 個月"
+    override val condNthWeekdayMonth = "每月第 N 個星期幾"
+    override val condNthWeekdayYear = "每年浮動節日"
+    override val condLeapDay = "閏日（2 月 29 日）"
+    override val condLastDayMonth = "每月最後一天"
+    override val condNthWeekdaySince = "封存後的第一個星期幾"
+    override val condZodiac = "黃道十二宮"
+    override val condDayLength = "白晝長度"
+    override val condSunriseRange = "日出鐘點"
+    override val condLunarMonth = "農曆整月"
+    override val condMonthlyDays = "每月固定多天"
+    override val condDarkTheme = "深色模式"
+    override val condDnd = "勿擾模式"
+    override val condPose = "裝置姿態"
+    override val condBrightness = "螢幕亮度"
+    override val condMediaVolume = "媒體靜音"
+    override val condVpn = "VPN 連線"
+    override val condPlugType = "充電方式"
+    override val condBatteryTemp = "電池溫度"
+    override val condOrientation = "橫直向"
+    override val condSpeedRange = "移動速度區間"
+    override val condBssid = "指定路由器（BSSID）"
+    override val condBluetooth = "指定藍牙裝置"
+    override val condProximity = "摀住手機"
+    override val condFreshBoot = "剛重啟手機"
+    override val condInstalledApp = "已安裝某應用"
+    override val condAirQuality = "空氣品質"
+    override val condWindDir = "風向"
+    override val condHemisphere = "南北半球"
+    override val condTempDelta = "大幅降溫"
+    override val condCityLocation = "抵達某城市"
+    override val condRelAltitude = "相對海拔"
+    override val condPrecipProb = "降水機率"
+    override val condWatchDuration = "凝視時長"
+    override val condReadCount = "已閱膠囊數"
+    override val condDestroyCount = "塵跡數量"
+    override val condStillLocked = "另一顆仍鎖定"
+    override val condBackupDone = "完成過備份"
+    override val condTotalCreated = "累計封存數"
+    override val condSameDayRead = "同天解鎖聯動"
+    override val condDaysSinceRead = "開啟後滿 N 天"
+    override val condWidgetBound = "桌面小工具"
+    override val condTodayOpen = "今日開啟次數"
+    override val condGesturePattern = "手勢圖案"
+    override val condWalkNow = "當場走 N 步"
+    override val condSpin = "轉手機一圈"
+    override val condVolumeKeys = "音量鍵同按"
+    override val condStayStill = "靜止挑戰"
+    override val condLift = "舉高 / 放低"
+    override val condVoice = "語音通關密語"
+    override val condTap = "連點螢幕"
+    override val condClimb = "當場爬樓"
+    override val condScanQr = "掃 QR 碼"
+    override val condPow = "算力挑戰"
+
+    // ---- 儲備池 v4 表單 / 挑戰提示 ----
+    override val condGpsNeeded = "此條件需要定位權限換取位置資訊，背景巡檢跳過、開啟 App 時判定"
+    override val cityLocNote = "以城市中心為圓心近似判定，半徑建議涵蓋常用活動範圍"
+    override val gestureFormHint = "在九宮格上畫出手勢圖案（至少連接 4 個點位），圖案以雜湊保存、不可回看"
+    override val gesturePadHint = "在此畫出圖案（至少連接 4 個點位）"
+    override val voiceFormHint = "開啟者需當場用語音說出該通關密語（依賴系統語音辨識，不可用時判不滿足）"
+    override val btFormHint = "開啟者需已連接名稱相符的藍牙音訊裝置（耳機 / 音箱）"
+    override val installedPkgLabel = "應用套件名（如 com.example.app）"
+    override val sfUseCurrentBssid = "讀取目前路由器"
+    override val sfNoCurrentBssid = "目前讀不到路由器 BSSID（未連線或系統限制）"
+    override val powFormNote = "難度越高，開啟者所需的計算時間越長"
+    override val challengeVolumeKeysHint = "同時按住音量上鍵和音量下鍵"
+    override val challengeSpinHint = "水平轉動手機，進度隨轉動累積"
+    override val citySearchHint = "搜尋城市"
+
+    // ---- 儲備池 §6：M-of-N 邏輯 + 場景模板 ----
+    override val logicAtLeastPill = "任選"
+    override val logicAtLeastDesc = "N 條中滿足 M 條即可（備用鑰匙）"
+    override val thresholdFmt = $$"滿足其中 %1$d 項即可（共 %2$d 項）"
+    override val summaryAtLeastPrefix = $$"滿足其中 %1$d 項即可（共 %2$d 項）："
+    override val condAtLeastMetFmt = $$"已達任選閾值（%1$d / %2$d）"
+    override val scenarioEntry = "從場景模板開始"
+    override val scenarioSheetTitle = "場景模板"
+    override val tplNightName = "深夜彩蛋"
+    override val tplNightNote = "深色模式 + 勿擾 + 22 點後才能看"
+    override val tplFarName = "遊子"
+    override val tplFarNote = "時區變更 + 身處南半球"
+    override val tplRunName = "週末晨跑"
+    override val tplRunNote = "週末 + 步數 6000 + 清晨 5–9 點"
+    override val tplMoonName = "滿月夜"
+    override val tplMoonNote = "滿月 + 晚上 8–11 點"
+    override val tplLunarName = "春節信"
+    override val tplLunarNote = "農曆正月初一 + 上午 8–12 點"
+    override val tplMotherName = "母親節信"
+    override val tplMotherNote = "每年五月第二個週日"
+    override val tplUnplugName = "數位戒斷"
+    override val tplUnplugNote = "飛航模式 + 晚上 9–11 點"
+    override val tplCafeName = "咖啡館午後"
+    override val tplCafeNote = "Wi-Fi 環境 + 工作日下午 2–5 點"
+
+    // ---- 體驗儲備池增量（docs/backlog-experience.md ★五件套）----
+
+    override val promptSectionLabel = "靈感卡"
+    override val promptSectionHint = "沒有頭緒時抽一葉，寫給未來的一句引子"
+    override val promptDrawHint = "輕觸卡片，換一張"
+    override val sealPrompts = listOf(
+        "現在最重要的事是什麼？",
+        "最近一次大笑是為了什麼？",
+        "如果一年後的你讀到這句話，你希望TA記住現在的什麼？",
+        "今天的天空是什麼顏色？",
+        "此刻你身邊最近的三個物件是什麼？",
+        "最近在循環播放的一首歌？",
+        "有什麼話現在說不出口，寫下來？",
+        "你最近做的一個小決定？",
+        "此刻的煩惱，值得佔用未來的記憶嗎？",
+        "現在的你，最想收到誰的來信？",
+        "描述一下此刻的空氣：溫度、氣味、聲音。",
+        "最近一次覺得「活著真好」是什麼時候？",
+        "你在害怕什麼？寫下來看看它還剩多大。",
+        "如果只能帶走一段記憶，你選哪段？",
+        "此刻你想對誰說謝謝？",
+        "最近學會的一件小事？",
+        "你的口袋或包裡現在裝著什麼？",
+        "今晚想做什麼夢？",
+        "有什麼遺憾正在過去？放手讓它走吧。",
+        "現在的你和三年前的你，最大的不同是什麼？",
+        "最近一次抬頭看月亮是什麼時候？",
+        "如果明天一切照舊，你希望哪件事別變？",
+        "寫下一個只屬於你們的暗號。",
+        "此刻身體的感覺：累、飽、輕盈還是沉重？",
+        "最近一次說「對不起」或「沒關係」是為了什麼？",
+        "你希望未來的自己原諒現在的什麼？",
+        "現在的你需要聽到哪句話？寫給自己。",
+        "有什麼約定還沒有兌現？記下它。",
+        "此刻窗外的世界是什麼樣的？",
+        "把此刻封好。未來的你，見字如面。",
+    )
+
+    override val blindBoxLabel = "盲盒封存"
+    override val blindBoxDesc = "解鎖前自己也看不到：標題與條件句在預覽處全部遮蔽"
+    override val blindAskTitle = "連自己也保密？"
+    override val blindAskBody = "開啟之前，這顆膠囊的標題與條件句會在預覽處遮蔽，直到解鎖那刻才揭曉。"
+    override val blindBoxTag = "盲盒"
+    override val blindMaskTitle = "？？？"
+    override val blindMaskSentence = "解開那天才見分曉"
+    override val summaryBlindBox = "盲盒封存：解鎖前預覽處遮蔽"
+
+    override val giftEntry = "把這顆膠囊贈予他人"
+    override val giftExportTitle = "贈予膠囊"
+    override val giftExportInfo = "匯出一顆加密膠囊檔案。接受者匯入後，須輸入你告知的口令才能開封。"
+    override val giftExportNote = "口令不會寫入檔案，請當面或另行告知；依賴的前置膠囊不會隨贈予攜帶。"
+    override val giftExportDone = "贈予檔案已匯出："
+    override val giftImportTitle = "收下贈予"
+    override val giftImportInfo = "匯入他人贈予的加密膠囊檔案，內容將以你的本機口令重新加密保存。"
+    override val giftImportAskPw = "輸入封存者告知的口令"
+    override val giftImportDoneFmt = $$"已收下 %1$d 顆膠囊（%2$d 顆已存在，略過）"
+    override val giftErrDestroyed = "這顆膠囊已銷毀，無物可贈"
+    override val giftErrNeedLocalUnlock = "本機口令未解鎖：請先設定或解鎖本機口令，再收下贈予"
+    override val giftErrNoCapsule = "檔案裡沒有膠囊"
+    override val setGiftImport = "收下贈予"
+    override val setGiftImportDesc = "匯入他人贈予的單顆加密膠囊"
+
+    override val bioTitle = "膠囊的一生"
+    override val bioSealLabel = "封存"
+    override val bioOpenLabel = "開啟"
+    override val bioDustLabel = "歸塵"
+    override val bioNeverOpened = "這顆膠囊未開啟過"
+    override val bioConditionsLabel = "條件達成"
+    override val bioMomentFmt = "達成於 %s"
+    override val bioMomentUnrecorded = "時刻未記錄"
+    override val bioViewsFmt = $$"凝視 %1$d 次"
+    override val bioWatchMinFmt = $$"累計約 %1$d 分鐘"
+    override val bioWatchSecFmt = $$"累計 %1$d 秒"
+    override val bioNoteLabel = "封存筆記"
+    override val bioRowGone = "內容與元記錄已刪除，僅存這段時間跨度"
+
+    // ---- 體驗儲備池 §1–§2 增量（聲音留言 / 手繪附件 / 信紙樣式 / 成熟度漸變 / 今日抽一顆）----
+
+    override val voiceLabel = "聲音留言"
+    override val voiceHint = "封存一段聲音，解封時它會先於文字響起（僅本地加密儲存）"
+    override val voiceRecordStart = "點按開始錄音"
+    override val voiceRecordingFmt = $$"錄音中 · %1$d 秒，點按結束"
+    override val voiceRerecord = "重新錄製"
+    override val voiceRecordedFmt = $$"已錄 %1$d 秒"
+    override val voicePermHint = "未授予錄音權限，無法錄製聲音留言"
+    override val voicePlay = "播放這段聲音"
+    override val voiceStopPlaying = "停止播放"
+
+    override val paperLabel = "信紙樣式"
+    override val paperHint = "選定一張信紙，解封那天按它呈現"
+    override val paperNamePlain = "原紙"
+    override val paperNameMist = "月白"
+    override val paperNameEmber = "暮棕"
+
+    override val handDrawTile = "手繪"
+    override val handDrawTitle = "畫一幅隨信附件"
+    override val handDrawHint = "單指拖拽即可作畫，儲存後與照片並列封存"
+    override val handDrawUndo = "復原一筆"
+    override val handDrawClear = "清空"
+
+    override val previewToday = "今日的一顆"
+
+    // ---- 體驗儲備池 §3–§5 增量（拼圖 / 嵌套 / NFC 錨點 / 回信 / 年度報告）----
+
+    override val replyWrite = "寫一句回信"
+    override val replyEdit = "修改回信"
+    override val replyLabel = "回信"
+    override val replyPlaceholder = "給未來的讀信人留一句話"
+    override val replyHint = "回信會隨檔案留存；即使銷毀，塵跡裡也留著這句對話。"
+
+    override val nfcLinkTitle = "寫入 NFC 卡貼"
+    override val nfcLinkInfo = "把這張卡貼在實物上（信封、書本、鑰匙），碰卡即可直達這顆膠囊。"
+
+    override val puzzleLabel = "拼圖分組"
+    override val puzzleDesc = "把一封信切成幾片分別封存，全部解鎖後可讀合信"
+    override val puzzleJoin = "加入拼圖"
+    override val puzzleJoinedFmt = $$"第 %1$d 片 · 共 %2$d 片（點按退出）"
+    override val puzzleSheetDesc = "新建一組，或加入一封還沒集齊的拼圖。"
+    override val puzzlePieceCountFmt = $$"切成 %1$d 片"
+    override val puzzleNewGroup = "新建拼圖組"
+    override val puzzleExistingGroups = "可加入的拼圖組"
+    override val puzzleGroupRowFmt = $$"共 %1$d 片 · 已封存 %2$d 片"
+    override val puzzleOpen = "打開合信視圖"
+    override val puzzleSheetTitle = "合信視圖"
+    override val puzzleEmpty = "還沒有可讀的片"
+    override val puzzlePieceFmt = $$"第 %1$d 片"
+    override val puzzleStatusFmt = $$"拼圖 %1$d / %2$d · 還差 %3$d 片"
+    override val puzzleReadyFmt = $$"拼圖已集齊（%1$d / %2$d），可以合信了"
+
+    override val seedLabel = "嵌套種子"
+    override val seedDesc = "這顆膠囊藏進另一顆裡，對方開啟後它才會出現"
+    override val seedPick = "選一顆宿主"
+    override val seedBoundFmt = $$"藏在「%1$s」裡（點按解除）"
+    override val seedPickTitle = "選擇宿主膠囊"
+    override val seedPickDesc = "宿主被開啟的那一刻，這顆種子才會萌芽出現。"
+    override val seedEmpty = "還沒有可選的宿主膠囊"
+
+    override val setAnnualReport = "年度星圖報告"
+    override val setAnnualReportDesc = "這一年的封存、開啟與等待，生成可分享的海報"
+    override val reportTitleFmt = $$"年度星圖報告 · %1$d"
+    override val reportSealedFmt = $$"封存了 %1$d 顆膠囊"
+    override val reportOpenedFmt = $$"開啟了 %1$d 顆膠囊"
+    override val reportDustFmt = $$"送別了 %1$d 顆膠囊"
+    override val reportLongestWaitFmt = $$"等待最久：%1$s · %2$d 天"
+    override val reportTopConditionFmt = $$"最常用條件：%1$s · %2$d 次"
+    override val reportShare = "產生海報並分享"
+    override val reportComputing = "正在整理這一年的星圖…"
+    override val reportNote = "時間從未離開，只是換了一種形狀。"
+    override val narrIdleVariants = listOf(
+        "春天在等一顆慢慢成熟的信。" to "不著急，它比你更有耐心。",
+        "柳絮都飛過三回了，它還鎖著。" to "有些話就是需要這麼久。",
+        "蟬聲最盛的時候，別急著開。" to "最燙的話，適合等它涼一涼。",
+        "夏天把日子拉得很長。" to "它也在把期待拉長。",
+        "落葉在替你數著日子。" to "一天一片，不快也不慢。",
+        "秋天適合收信，也適合等信。" to "它快到了。",
+        "冬天的信總是格外暖。" to "冷到極處，才懂它存了多久的溫度。",
+        "雪落下來的時候，它在聽。" to "聽你有沒有想起它。",
+    )
+    override val condAtLeastGapFmt = $$"任選 %1$d 項 · 已滿足 %2$d 項 · 還差 %3$d 項"
+    override val hapticLabel = "觸覺簽名"
+    override val hapticDesc = "解鎖或銷毀這顆膠囊時的振動紋樣"
+    override val hapticNone = "無"
+    override val hapticDouble = "雙擊"
+    override val hapticPulse = "長振"
+    override val hapticRipple = "漣漪"
+    override val ambientLabel = "環境音"
+    override val ambientDesc = "解封時淡入的循環背景音（純合成，不佔體積）"
+    override val ambientNone = "無"
+    override val ambientRain = "雨夜"
+    override val ambientDrone = "深空"
+    override val shardLabel = "口令分片"
+    override val shardDesc = "把鑰匙拆成幾份線下分發，集齊 M 份才能開封"
+    override val shardNote = "分片串只在封存完成後展示一次，裝置不留任何副本；請分頭妥善保存。"
+    override val shardTotalFmt = $$"拆成 %1$d 份"
+    override val shardThresholdFmt = $$"集齊 %1$d 份即可開封"
+    override val shardSharesTitle = "分片只出現這一次"
+    override val shardSharesNote = "請立即複製儲存並分發給各持有人。此彈窗關閉後，任何人都無法再從裝置上看到它們。"
+    override val shardShareDone = "我已妥善保存"
+    override val shardGateHintFmt = $$"這顆膠囊需要 %1$d 份分片重構鑰匙。請把持有人給你的分片串逐行貼上："
+    override val shardGateInputHint = "每行一條 TIMART-SHARD-… 分片串"
+    override val shardGateSubmit = "解開封印"
+    override val shardInvalid = "分片無效或不足：檢查是否完整貼上、是否屬於同一組。"
+    override val tplUserSection = "我的範本"
+    override val tplUserSaveCurrent = "把目前條件組合存為範本"
+    override val tplUserNeedConditions = "先新增條件，再儲存為範本"
 }

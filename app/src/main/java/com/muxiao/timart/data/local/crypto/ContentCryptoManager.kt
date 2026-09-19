@@ -25,6 +25,8 @@ class ContentCryptoManager(
     private val imageStore: ImageCipherStore,
     /** Keystore 包裹的会话保险库（null = 每次冷启动都需口令） */
     private val sessionVault: SessionKeyVault? = null,
+    /** 加密语音仓库（体验储备池 §1 声音留言；改口令时随图片一同重加密，null = 无语音库） */
+    private val audioStore: AudioCipherStore? = null,
 ) {
 
     /** 会话密钥：仅内存，进程结束即失效（TTL 内冷启动经保险库恢复） */
@@ -134,16 +136,19 @@ class ContentCryptoManager(
         val derived = KdfEngines.deriveWithFallback(new, KdfEngines.defaultParams(KdfEngines.newSalt()))
         val newKey = derived.key
 
-        // 收集待重加密对象：全部含密文胶囊 + 全部图片文件
+        // 收集待重加密对象：全部含密文胶囊 + 全部图片文件 + 全部语音文件
         val capsules = capsuleRepository.allSync().filter { it.contentCipher != null }
         val imageIds = imageStore.allCapsuleIds()
         val imageTotal = imageIds.sumOf { imageStore.listIndexes(it).size }
-        val total = capsules.size + imageTotal
+        val audioIds = audioStore?.allCapsuleIds() ?: emptyList()
+        val audioTotal = audioStore?.let { store -> audioIds.sumOf { store.listIndexes(it).size } } ?: 0
+        val total = capsules.size + imageTotal + audioTotal
         var done = 0
 
         // 逐胶囊重加密（记录已处理项；中途失败回滚到旧口令可解状态——旧 Verifier 此时仍未被覆盖）
         val processedCapsules = mutableListOf<Capsule>()
         val processedImages = mutableListOf<Pair<String, Int>>()
+        val processedAudios = mutableListOf<Pair<String, Int>>()
         try {
             for (capsule in capsules) {
                 val blob = checkNotNull(capsule.contentCipher)
@@ -163,8 +168,21 @@ class ContentCryptoManager(
                     onProgress(++done, total)
                 }
             }
+
+            // 逐语音重加密（与图片同构；store 未装配时无对象）
+            if (audioStore != null) {
+                for (id in audioIds) {
+                    for (index in audioStore.listIndexes(id)) {
+                        val blob = audioStore.readEncrypted(id, index) ?: continue
+                        val plain = cipher.decrypt(oldKey, blob)
+                        audioStore.writeEncrypted(id, index, cipher.encrypt(newKey, plain))
+                        processedAudios += id to index
+                        onProgress(++done, total)
+                    }
+                }
+            }
         } catch (e: Throwable) {
-            // 回滚：胶囊直接恢复原实体（旧密文）；图片用旧 key 反向重加密写回。
+            // 回滚：胶囊直接恢复原实体（旧密文）；图片/语音用旧 key 反向重加密写回。
             // 回滚自身失败已无更优解（旧 Verifier 仍在、数据半新半旧），只能如实上抛原始异常。
             runCatching {
                 for (original in processedCapsules) capsuleRepository.update(original)
@@ -172,6 +190,13 @@ class ContentCryptoManager(
                     val blob = imageStore.readEncrypted(id, index) ?: continue
                     val plain = cipher.decrypt(newKey, blob)
                     imageStore.writeEncrypted(id, index, cipher.encrypt(oldKey, plain))
+                }
+                if (audioStore != null) {
+                    for ((id, index) in processedAudios) {
+                        val blob = audioStore.readEncrypted(id, index) ?: continue
+                        val plain = cipher.decrypt(newKey, blob)
+                        audioStore.writeEncrypted(id, index, cipher.encrypt(oldKey, plain))
+                    }
                 }
             }
             throw e
