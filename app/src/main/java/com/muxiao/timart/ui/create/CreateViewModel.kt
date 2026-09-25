@@ -59,6 +59,18 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     var note by mutableStateOf("")
         private set
 
+    /** 待答之问（N20，可选）：封存后落 meta `capsule.question.<id>`，揭封后作回信引导占位 */
+    var question by mutableStateOf("")
+        private set
+
+    /** 火漆印章（N19）：样式序号（0 = 无印，1..5），封存后落 meta `capsule.seal.<id>` */
+    var sealStyle by mutableIntStateOf(0)
+        private set
+
+    fun updateSealStyle(style: Int) {
+        sealStyle = style.coerceIn(0, com.muxiao.timart.ui.components.visual.WaxSealStyle.COUNT)
+    }
+
     /** 已选图片字节（封存时才加密落盘；内存暂存上限 9 张） */
     val images = mutableStateListOf<ByteArray>()
 
@@ -98,6 +110,61 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updateNote(v: String) {
         note = v
+    }
+
+    fun updateQuestion(v: String) {
+        question = v.take(80)
+    }
+
+    // ---- 多章节信件（N10）：创建时一次加密入库，meta 只记段落边界 ----
+
+    /** 分章开关（默认关）：开启后第 2/3 章文本框出现在首章下方 */
+    var chaptersEnabled by mutableStateOf(false)
+        private set
+
+    /** 第 2/3 章草稿（index 0 = 第二章）；首章即 [content] */
+    val chapterTexts = mutableStateListOf("", "")
+
+    fun updateChaptersEnabled(v: Boolean) {
+        chaptersEnabled = v
+        if (!v) chapterTexts.clear()
+    }
+
+    /** 追加一章（上限 3 章）；无更多章为 no-op */
+    fun addChapter() {
+        if (chapterTexts.size < com.muxiao.timart.domain.usecase.ChapterLetter.MAX_CHAPTERS - 1) {
+            chapterTexts.add("")
+        }
+    }
+
+    fun updateChapterText(index: Int, v: String) {
+        if (index in chapterTexts.indices) chapterTexts[index] = v.take(CONTENT_MAX)
+    }
+
+    /**
+     * 分章封存的正文与边界：各章非空段落数（与 ReadCapsuleUseCase.splitParagraphs 同口径），
+     * 章文本以 "\n\n" 拼接为单一明文入库。仅 ≥2 个非空章返回 Pair(全文, 边界)（空章直接剔除）。
+     */
+    private fun chapterAssembly(): Pair<String, List<Int>>? {
+        if (!chaptersEnabled) return null
+        val chapters = (listOf(content) + chapterTexts.toList())
+            .map { text -> text.trim() to text.split("\n\n").map { p -> p.trim() }.count { p -> p.isNotEmpty() } }
+            .filter { (text, _) -> text.isNotEmpty() }
+        if (chapters.size < 2) return null
+        return chapters.joinToString("\n\n") { it.first } to chapters.map { it.second }
+    }
+
+    /** 回信转新胶囊（N5）：预填草稿的来源胶囊 id（封存成功落 meta `capsule.replyTo.<newId>`，失败静默） */
+    private var replyToSourceId: String? = null
+
+    init {
+        // 一次性消费 Detail 页交接的预填草稿（回信转新胶囊；普通入口为 null 不受影响）
+        container.pendingCapsulePrefill?.let { prefill ->
+            container.pendingCapsulePrefill = null
+            title = prefill.title.take(TITLE_MAX)
+            content = prefill.body.take(CONTENT_MAX)
+            replyToSourceId = prefill.replySourceId
+        }
     }
 
     fun addImages(bytes: List<ByteArray>) {
@@ -226,6 +293,33 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun removeCondition(condition: UnlockCondition) {
         conditions.remove(condition)
+    }
+
+    // ---- 沙盘推演（N2）----
+
+    /**
+     * 以当前上下文试算草稿规则（纯只读、零副作用）：构造合成 LOCKED 探针胶囊（不落库、无密文），
+     * 复用 `defaultContext(foregroundOnly = true)`
+     * （用户主动触发且页面在前台，与详情页当场判定同口径）。规则与依赖均为空时返回 null。
+     */
+    suspend fun dryRun(): com.muxiao.timart.domain.model.JudgeResult? = withContext(Dispatchers.Default) {
+        if (conditions.isEmpty() && dependCapsuleId == null) return@withContext null
+        val probe = Capsule(
+            id = DRY_RUN_ID,
+            title = "",
+            contentCipher = null,
+            createTimestamp = System.currentTimeMillis(),
+            unlockRule = currentRule(),
+            state = CapsuleState.LOCKED,
+            dependCapsuleId = dependCapsuleId,
+        )
+        runCatching {
+            container.unlockJudgeUseCase.judge(
+                capsule = probe,
+                ctx = container.defaultContext(foregroundOnly = true),
+                lang = RuntimeSettings.resolvedLang,
+            )
+        }.getOrNull()
     }
 
     // ---- 依赖另一颗胶囊 ----
@@ -569,7 +663,8 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
             }
             val draft = CapsuleCrudUseCase.CapsuleDraft(
                 title = title.trim(),
-                contentText = content,
+                // 多章节信件（N10）：分章时全文 = 各章拼接（一次加密入库），边界另记 meta
+                contentText = chapterAssembly()?.first ?: content,
                 imageBytes = images.toList(),
                 snapshot = snapshot,
                 rule = currentRule(),
@@ -624,6 +719,46 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
                         ambientScene,
                     ),
                 )
+                // 回信转新胶囊（N5）：记录新胶囊 → 原胶囊指针（契约见 CapsuleMetaKeys.replyTo）
+                replyToSourceId?.let { sourceId ->
+                    dao.putSync(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.replyTo(created.id),
+                            sourceId,
+                        ),
+                    )
+                }
+                // 待答之问（N20）：可选；空值不写键，回信占位回退默认文案
+                if (question.isNotBlank()) {
+                    dao.putSync(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.question(created.id),
+                            question.trim(),
+                        ),
+                    )
+                }
+                // 火漆印章（N19）：0 = 无印不写键，省一次 meta 写入
+                if (sealStyle != 0) {
+                    dao.putSync(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.seal(created.id),
+                            sealStyle.toString(),
+                        ),
+                    )
+                }
+                // 多章节信件（N10）：章节段落边界（仅 ≥2 非空章时写键；揭示进度由阅读侧另记）
+                chapterAssembly()?.second
+                    ?.let { counts ->
+                        com.muxiao.timart.domain.usecase.ChapterLetter.encodeBoundaries(counts)
+                    }
+                    ?.let { encoded ->
+                        dao.putSync(
+                            com.muxiao.timart.data.local.db.entity.MetaEntity(
+                                com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapters(created.id),
+                                encoded,
+                            ),
+                        )
+                    }
             }
             // 入库成功才登记一次性分片串（失败重试不残留）
             if (shardPlan != null) pendingShares = shardShareStrings
@@ -671,6 +806,10 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         title = ""
         content = ""
         note = ""
+        question = ""
+        sealStyle = 0
+        chaptersEnabled = false
+        chapterTexts.clear()
         images.clear()
         voice = null
         voiceSeconds = 0
@@ -689,6 +828,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         puzzleTotal = -1
         seedParentId = null
         seedParentTitle = null
+        replyToSourceId = null
         hapticStyle = 0
         ambientScene = com.muxiao.timart.utils.audio.AmbientSoundPlayer.Scene.OFF.name
         shardEnabled = false
@@ -719,6 +859,9 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     companion object {
         private const val TAG = "CreateViewModel"
         private const val DRAFT_ID = "__draft__"
+
+        /** 沙盘推演探针 id（N2；合成胶囊不入库，命名风格与 DRAFT_ID 一致防冲突） */
+        private const val DRY_RUN_ID = "__dry_run__"
 
         /** 累计创建计数 meta key（写入点本类封存成功，读取点 AppContainer.capsuleMetaProvider.totalCreated） */
         const val FLAG_TOTAL_CREATED = "app.created.total"

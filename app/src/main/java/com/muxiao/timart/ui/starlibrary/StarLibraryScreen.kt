@@ -71,6 +71,8 @@ fun StarLibraryScreen(
     val filtered by vm.filtered.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val selectedTag by vm.selectedTag.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    val category by vm.category.collectAsStateWithLifecycle()
 
     // 长按进入批量操作：selection 非空即为选择态，点击在 选中/取消 间切换；
     // 确认后「删除」= 物理删除不档案，「归为销毁」= 内容销毁 + 尘迹档案
@@ -93,27 +95,68 @@ fun StarLibraryScreen(
             modifier = Modifier.padding(top = 14.dp),
         )
 
+        // 标题检索（仅标题明文；正文密文不参与检索——功能边界而非缺失）
+        androidx.compose.foundation.text.BasicTextField(
+            value = query,
+            onValueChange = vm::setQuery,
+            singleLine = true,
+            textStyle = TimartType.body.copy(color = InkPrimary),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(TimeGold),
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .fillMaxWidth()
+                .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            decorationBox = { inner ->
+                Box {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = L.starSearchHint,
+                            style = TimartType.body,
+                            color = InkDisabled,
+                        )
+                    }
+                    inner()
+                }
+            },
+        )
+
+        // 条件大类筛选（ConditionKind 五大类 + 全部；文案走 domain 三语同源 conditionKindName）
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 10.dp),
+        ) {
+            items(
+                listOf<com.muxiao.timart.domain.model.unlock.ConditionKind?>(null) +
+                    com.muxiao.timart.domain.model.unlock.ConditionKind.entries,
+            ) { kind ->
+                val selected = kind == category
+                FilterChip(
+                    label = kind?.let {
+                        com.muxiao.timart.domain.model.unlock.conditionKindName(
+                            it,
+                            com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                        )
+                    } ?: L.starFilterAll,
+                    selected = selected,
+                    onClick = { vm.selectCategory(kind) },
+                )
+            }
+        }
+
         // 标签筛选（有标签才显示）
         if (tags.isNotEmpty()) {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 14.dp),
+                modifier = Modifier.padding(top = 10.dp),
             ) {
                 items(tags) { tag ->
                     val selected = tag == selectedTag
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (selected) TimeGold else SurfaceRaise)
-                            .clickable { vm.selectTag(tag) }
-                            .padding(horizontal = 14.dp, vertical = 7.dp),
-                    ) {
-                        Text(
-                            text = tag,
-                            style = TimartType.caption,
-                            color = if (selected) DeepCharcoal else InkSecondary,
-                        )
-                    }
+                    FilterChip(
+                        label = tag,
+                        selected = selected,
+                        onClick = { vm.selectTag(tag) },
+                    )
                 }
             }
         }
@@ -186,10 +229,10 @@ fun StarLibraryScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = if (selectedTag == null) {
+                    text = if (selectedTag == null && query.isBlank() && category == null) {
                         L.starEmpty
                     } else {
-                        L.starEmptyTag
+                        L.starEmptyQuery
                     },
                     style = TimartType.body,
                     color = InkSecondary,
@@ -359,6 +402,24 @@ private fun StarCard(
             modifier = Modifier.padding(top = 3.dp, start = 12.dp, end = 12.dp),
         )
         Spacer(modifier = Modifier.height(18.dp))
+    }
+}
+
+/** 通用筛选圆角 chip（条件大类与标签共用；选中 = 金底深字） */
+@Composable
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) TimeGold else SurfaceRaise)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text(
+            text = label,
+            style = TimartType.caption,
+            color = if (selected) DeepCharcoal else InkSecondary,
+        )
     }
 }
 

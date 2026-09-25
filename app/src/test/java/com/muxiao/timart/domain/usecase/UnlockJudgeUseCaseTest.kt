@@ -524,7 +524,7 @@ class UnlockJudgeUseCaseTest {
         val repo = FakeRepo(listOf(satisfiable, unsatisfiable))
         val unlockedTitles = mutableListOf<String>()
 
-        judge.judgeAllLocked(context(), repo) { unlockedTitles.add(it.title) }
+        judge.judgeAllLocked(context(), repo, onUnlocked = { unlockedTitles.add(it.title) })
 
         assertEquals(listOf("cap-ok"), repo.unlockedIds)
         assertEquals(1, unlockedTitles.size)

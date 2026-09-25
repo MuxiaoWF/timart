@@ -116,6 +116,33 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    // ---- 昼夜暖色变体（N17，默认关）：只读本地时钟零网络 ----
+
+    private val _dawnDuskTint = MutableStateFlow(RuntimeSettings.dawnDuskTint)
+    val dawnDuskTint: StateFlow<Boolean> = _dawnDuskTint
+
+    /** 切换晨昏暖色叠加：镜像即时生效（下次组合评估相位）+ 持久化 */
+    fun setDawnDuskTint(value: Boolean) {
+        _dawnDuskTint.value = value
+        RuntimeSettings.dawnDuskTint = value
+        viewModelScope.launch(Dispatchers.IO) {
+            metaDao.put(MetaEntity(RuntimeSettings.KEY_DAWN_DUSK, value.toString()))
+        }
+    }
+
+    // ---- 启动隐私锁（N18，默认关）：只挡入口不动数据 ----
+
+    private val _biometricLock = MutableStateFlow(RuntimeSettings.biometricLock)
+    val biometricLock: StateFlow<Boolean> = _biometricLock
+
+    fun setBiometricLock(value: Boolean) {
+        _biometricLock.value = value
+        RuntimeSettings.biometricLock = value
+        viewModelScope.launch(Dispatchers.IO) {
+            metaDao.put(MetaEntity(RuntimeSettings.KEY_BIOMETRIC_LOCK, value.toString()))
+        }
+    }
+
     /** 切换界面语言：写 [RuntimeSettings.appLanguage] 快照状态（全树即时重组换文案）+ 持久化 meta */
     fun setLanguage(value: AppLanguage) {
         if (_language.value == value) return
@@ -157,6 +184,100 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** 消费完成/失败状态（弹窗关闭后调用，回到空闲） */
     fun consumePasswordChangeState() {
         _passwordChange.value = null
+    }
+
+    // ---- 自动定期本地备份（AutoBackupManager；配置读写 meta，执行复用 BackupManager 导出链路） ----
+
+    /** 自动备份 UI 状态：配置 + 最近一次手动触发的结果（lastStatus 供 UI 映射文案）+ 随备份体检摘要（N22） */
+    data class AutoBackupState(
+        val enabled: Boolean = false,
+        val periodDays: Int = com.muxiao.timart.utils.export.AutoBackupManager.DEFAULT_PERIOD_DAYS,
+        val treeUri: String? = null,
+        val lastAt: Long? = null,
+        val running: Boolean = false,
+        val lastStatus: com.muxiao.timart.utils.export.AutoBackupManager.Status? = null,
+        val healthLastAt: Long? = null,
+        val healthFindings: Int? = null,
+    )
+
+    private val _autoBackup = MutableStateFlow(AutoBackupState())
+    val autoBackup: StateFlow<AutoBackupState> = _autoBackup
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            _autoBackup.value = _autoBackup.value.from(container.autoBackupManager.readConfig())
+        }
+    }
+
+    fun setAutoBackupEnabled(value: Boolean) {
+        _autoBackup.value = _autoBackup.value.copy(enabled = value)
+        viewModelScope.launch(Dispatchers.IO) {
+            container.autoBackupManager.setEnabled(value)
+        }
+    }
+
+    fun setAutoBackupPeriod(days: Int) {
+        _autoBackup.value = _autoBackup.value.copy(periodDays = days)
+        viewModelScope.launch(Dispatchers.IO) {
+            container.autoBackupManager.setPeriodDays(days)
+        }
+    }
+
+    /** 目录选择器回调：授权失败时 treeUri 保持空（UI 显示未选择） */
+    fun setAutoBackupTree(uri: android.net.Uri?) {
+        if (uri == null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = container.autoBackupManager.setTreeUri(uri)
+            val config = container.autoBackupManager.readConfig()
+            _autoBackup.value = _autoBackup.value.copy(
+                treeUri = if (ok) uri.toString() else config.treeUri,
+            )
+        }
+    }
+
+    /** 手动触发一次备份（会话未解锁返回 SKIPPED_LOCKED，由 UI 提示） */
+    fun runAutoBackupNow() {
+        val current = _autoBackup.value
+        if (current.running) return
+        _autoBackup.value = current.copy(running = true, lastStatus = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            val status = container.autoBackupManager.runNow()
+            _autoBackup.value = AutoBackupState(
+                enabled = current.enabled,
+                periodDays = current.periodDays,
+                treeUri = current.treeUri,
+                lastAt = container.autoBackupManager.readConfig().lastAt,
+                running = false,
+                lastStatus = status,
+                healthLastAt = metaDao.get(com.muxiao.timart.utils.export.AutoBackupManager.KEY_HEALTH_LAST_AT)
+                    ?.toLongOrNull(),
+                healthFindings = metaDao.get(com.muxiao.timart.utils.export.AutoBackupManager.KEY_HEALTH_FINDINGS)
+                    ?.toIntOrNull(),
+            )
+        }
+    }
+
+    private suspend fun AutoBackupState.from(config: com.muxiao.timart.utils.export.AutoBackupManager.Config) = copy(
+        enabled = config.enabled,
+        periodDays = config.periodDays,
+        treeUri = config.treeUri,
+        lastAt = config.lastAt,
+        healthLastAt = metaDao.get(com.muxiao.timart.utils.export.AutoBackupManager.KEY_HEALTH_LAST_AT)
+            ?.toLongOrNull(),
+        healthFindings = metaDao.get(com.muxiao.timart.utils.export.AutoBackupManager.KEY_HEALTH_FINDINGS)
+            ?.toIntOrNull(),
+    )
+
+    // ---- 历史备份浏览（N4：轮转目录现存份数列表 + 指定份恢复） ----
+
+    private val _autoBackupHistory = MutableStateFlow(emptyList<com.muxiao.timart.utils.export.AutoBackupManager.HistoryCopy>())
+    val autoBackupHistory: StateFlow<List<com.muxiao.timart.utils.export.AutoBackupManager.HistoryCopy>> =
+        _autoBackupHistory
+
+    fun loadAutoBackupHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _autoBackupHistory.value = container.autoBackupManager.listHistory()
+        }
     }
 
     private companion object {

@@ -79,6 +79,12 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     private val satisfiedCache = HashMap<String, Int>()
 
+    /** 那年今日（N8）：历年同日封存的现存档案中最近的一条（须满 1 整年）；无则 null。纯本地日期匹配，不涉密文 */
+    data class TodayMemory(val capsuleId: String, val title: String, val yearsAgo: Int)
+
+    private val _todayMemory = MutableStateFlow<TodayMemory?>(null)
+    val todayMemory: StateFlow<TodayMemory?> = _todayMemory.asStateFlow()
+
     /** 最近胶囊候选缓存：预览刷新不依赖 Room 流（电量/充电等环境量不落库，不会触发 observeAll） */
     @Volatile
     private var latestCandidate: Capsule? = null
@@ -86,6 +92,21 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     /** 即将达成候选缓存：最近一颗之外的锁定胶囊 */
     @Volatile
     private var upcomingCandidates: List<Capsule> = emptyList()
+
+    /** 那年今日匹配（N8）：月-日相同且封存年份早于今年；取最近封存的一条 */
+    private fun computeTodayMemory(list: List<Capsule>): TodayMemory? {
+        val today = java.time.LocalDate.now()
+        val candidate = list
+            .filter { capsule ->
+                val date = java.time.Instant.ofEpochMilli(capsule.createTimestamp)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                date.year < today.year && date.monthValue == today.monthValue && date.dayOfMonth == today.dayOfMonth
+            }
+            .maxByOrNull { it.createTimestamp } ?: return null
+        val createdYear = java.time.Instant.ofEpochMilli(candidate.createTimestamp)
+            .atZone(java.time.ZoneId.systemDefault()).toLocalDate().year
+        return TodayMemory(candidate.id, candidate.title, today.year - createdYear)
+    }
 
     private var judging = false
 
@@ -96,6 +117,10 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         observeCapsules()
+        // 那年今日（N8）：随 Room 流演进重算（当天新封存的 capsule 不满一年不入记忆）
+        viewModelScope.launch(Dispatchers.Default) {
+            capsules.collect { list -> _todayMemory.value = computeTodayMemory(list) }
+        }
         // 已读标记流：详情页首次阅读写入 → 回首页即时反映到预览卡「已开启」态（不等 30s 周期）
         viewModelScope.launch(Dispatchers.Default) {
             container.database.metaDao().observeReadKeys().collect { keys ->

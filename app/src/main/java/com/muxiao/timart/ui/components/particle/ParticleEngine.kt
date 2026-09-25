@@ -158,6 +158,8 @@ class ParticleEngine(tier: AnimationTier) {
             preset == ParticlePreset.REREAD -> spawnReread(anchorX, anchorY, anchorRadius, colorArgb)
             preset == ParticlePreset.DISSOLVE -> spawnDissolve(anchorX, anchorY, anchorRadius, colorArgb)
             preset == ParticlePreset.INPUT_SPARK -> spawnInputSpark(anchorX, anchorY)
+            preset == ParticlePreset.SETTLE -> spawnSettle(anchorX, anchorY, anchorRadius, colorArgb)
+            preset == ParticlePreset.HALO -> spawnHalo(anchorX, anchorY, anchorRadius, colorArgb)
             else -> Unit // DUST_BACKGROUND/BREATHE 由维持逻辑负责，不经 fire
         }
     }
@@ -470,6 +472,50 @@ class ParticleEngine(tier: AnimationTier) {
             p.loop = false
             p.color = GLOW_GOLD
             p.glow = true // 光晕化：深底上 1dp 裸点不可见，预渲染光晕点位清晰可见
+            p.owner = OWNER_NONE
+            p.seed = 0f
+        }
+    }
+
+    /** SETTLE 尘埃落定（N15）：锚点上方整片撒落，DIVERGE 强衰减 → 缓坠近停驻随寿命淡出 */
+    private fun spawnSettle(ax: Float, ay: Float, ar: Float, color: Int) {
+        val count = (budget.dissolve * 60 / 100).coerceAtLeast(8)
+        repeat(count) {
+            val p = pool.obtain() ?: return
+            p.flow = ParticleFlow.DIVERGE.ordinal.toByte()
+            p.x = ax + (random.nextFloat() - 0.5f) * ar * 6f
+            p.y = ay - ar * (1.2f + random.nextFloat() * 2.2f)
+            p.vx = 0f
+            p.vy = dp(14f + random.nextFloat() * 26f) // 缓慢下坠，衰减后近停驻
+            p.size = dp(1f + random.nextFloat() * 1.6f)
+            p.life = 1400L + nextLongBound(900L)
+            p.loop = false
+            p.color = color
+            p.glow = true
+            p.owner = OWNER_NONE
+            p.seed = 0f
+        }
+    }
+
+    /** HALO 星环余晖（N15）：环带切向初速 + 轻微外扩，旋散渐淡；单发复用 DIVERGE 流 */
+    private fun spawnHalo(ax: Float, ay: Float, ar: Float, color: Int) {
+        val count = (budget.dissolve * 60 / 100).coerceAtLeast(10)
+        repeat(count) {
+            val p = pool.obtain() ?: return
+            val angle = random.nextFloat() * 6.28f
+            val dist = ar * (1.05f + random.nextFloat() * 0.5f)
+            val tangential = dp(40f + random.nextFloat() * 50f)
+            val radial = dp(6f + random.nextFloat() * 18f)
+            p.flow = ParticleFlow.DIVERGE.ordinal.toByte()
+            p.x = ax + cos(angle) * dist
+            p.y = ay + sin(angle) * dist
+            p.vx = -sin(angle) * tangential + cos(angle) * radial
+            p.vy = cos(angle) * tangential + sin(angle) * radial
+            p.size = dp(1.2f + random.nextFloat() * 1.8f)
+            p.life = 900L + nextLongBound(700L)
+            p.loop = false
+            p.color = color
+            p.glow = true
             p.owner = OWNER_NONE
             p.seed = 0f
         }

@@ -20,6 +20,13 @@ package com.muxiao.timart.data.local.db
  * - `capsule.seedOf.<capsuleId>`：嵌套种子（体验储备池 §3，值 = 父胶囊 id）。写入点 = CreateViewModel.performCreate。
  * - `capsule.sprout.<capsuleId>`：种子已萌芽（父胶囊已读后播种成功）。写入点 = DetailViewModel.markAsRead；
  *   「休眠 = 有 seedOf 且无 sprout」的判定点 = HomeViewModel 过滤 / AppContainer.isSeedDormant（MainActivity、Worker 判定跳过）。
+ * - `capsule.replyTo.<capsuleId>`：回信转新胶囊（N5，值 = 回信来源胶囊 id，即新胶囊 → 原胶囊指针）。
+ *   写入点 = CreateViewModel.performCreate（预填草稿来自原胶囊回信）；读取点暂无 UI（尘迹互见入口为后续候选），先入契约与体检扫描。
+ * - `capsule.question.<capsuleId>`：待答之问（N20，值 = 问题文本）。写入点 = CreateViewModel.performCreate；
+ *   读取点 = DetailViewModel（揭封后回信编辑区引导占位）。
+ * - `capsule.chapters.<capsuleId>` / `capsule.chapter.<capsuleId>` / `capsule.chapterAt.<capsuleId>`：
+ *   多章节信件（N10，边界 / 已揭示章数 / 最近揭示时刻）。写入点 = CreateViewModel.performCreate（边界）与
+ *   DetailViewModel（揭示进度）；读取点 = DetailViewModel（按章过滤正文段落）。纯阅读侧行为，判定引擎不感知。
  */
 object CapsuleMetaKeys {
 
@@ -34,6 +41,63 @@ object CapsuleMetaKeys {
     private const val SEED_OF_PREFIX = "capsule.seedOf."
 
     private const val SPROUT_PREFIX = "capsule.sprout."
+
+    private const val REPLY_TO_PREFIX = "capsule.replyTo."
+    private const val QUESTION_PREFIX = "capsule.question."
+    private const val SEAL_PREFIX = "capsule.seal."
+
+    /** 多章节信件（N10）：`capsule.chapters.<id>` = 章节段落边界（每章段落数，逗号分隔，如 "3,2"）。
+     *  写入点 = CreateViewModel.performCreate（创建时一次加密入库，边界只记段落计数）；
+     *  读取点 = DetailViewModel（按已揭示章数过滤正文段落）。无该键 = 单章信，行为不变。 */
+    fun chapters(capsuleId: String): String = "$CHAPTERS_PREFIX$capsuleId"
+
+    /** 多章节信件进度：`capsule.chapter.<id>` = 已揭示章数（首揭置 1）。写入/读取点 = DetailViewModel。 */
+    fun chapterRevealed(capsuleId: String): String = "$CHAPTER_REVEALED_PREFIX$capsuleId"
+
+    /** 多章节信件最近揭示时刻：`capsule.chapterAt.<id>` = epoch millis（下一章 ≥3 天间隔的基准）。 */
+    fun chapterRevealedAt(capsuleId: String): String = "$CHAPTER_AT_PREFIX$capsuleId"
+
+    private const val CHAPTERS_PREFIX = "capsule.chapters."
+    private const val CHAPTER_REVEALED_PREFIX = "capsule.chapter."
+    private const val CHAPTER_AT_PREFIX = "capsule.chapterAt."
+
+    /** 回信转新胶囊 key（N5；值 = 回信来源胶囊 id） */
+    fun replyTo(capsuleId: String): String = "$REPLY_TO_PREFIX$capsuleId"
+
+    /** 回信转新胶囊 key 前缀（DAO 前缀扫描用） */
+    const val REPLY_TO_KEY_PREFIX = REPLY_TO_PREFIX
+
+    /**
+     * 待答之问（N20）：`capsule.question.<id>` = 封存时写下的「未来要回答的问题」文本。
+     * 写入点 = CreateViewModel.performCreate；读取点 = DetailViewModel（揭封后回信编辑区引导占位）。
+     * 纯开启侧引导，不动判定与加密；无该键 = 未写问题，回信占位回退默认文案。
+     */
+    fun question(capsuleId: String): String = "$QUESTION_PREFIX$capsuleId"
+
+    /** 待答之问 key 前缀（DAO 前缀扫描用） */
+    const val QUESTION_KEY_PREFIX = QUESTION_PREFIX
+
+    /**
+     * 火漆印章（N19）：`capsule.seal.<id>` = 印章样式序号（0 = 无印，1..5 = 参数化矢量印章）。
+     * 写入点 = CreateViewModel.performCreate；读取点 = DetailViewModel（信笺落款处呈现）。
+     * 印章为纯 Path 参数化绘制（零资源文件），颜色只用主题 Token。
+     */
+    fun seal(capsuleId: String): String = "$SEAL_PREFIX$capsuleId"
+
+    /** 火漆印章 key 前缀（DAO 前缀扫描用） */
+    const val SEAL_KEY_PREFIX = SEAL_PREFIX
+
+    /**
+     * 临近解锁提醒（N1）：`settings.remind.<id>` = 提前量天数（1..30，缺省/删除 = 关），
+     * `settings.remindSent.<id>` = 上次已提醒的剩余天数档位（去重，每档只发一条）。
+     * 写入点 = DetailViewModel（设置）/ ConditionCheckWorker（sent 标记）；读取点 = Worker + 详情页回显。
+     */
+    const val REMIND_KEY_PREFIX = "settings.remind."
+    const val REMIND_SENT_KEY_PREFIX = "settings.remindSent."
+
+    fun remind(capsuleId: String): String = "$REMIND_KEY_PREFIX$capsuleId"
+
+    fun remindSent(capsuleId: String): String = "$REMIND_SENT_KEY_PREFIX$capsuleId"
 
     /** 条件达成时刻 key（index = 解锁规则条件列表下标，0 起） */
     fun condMet(capsuleId: String, index: Int): String = "$COND_MET_PREFIX$capsuleId.$index"
@@ -83,4 +147,36 @@ object CapsuleMetaKeys {
     /** 环境音场景 key（体验储备池 §6；值 = AmbientSoundPlayer.Scene 枚举名，OFF = 不播）。
      *  写入点 = CreateViewModel.performCreate；读取点 = DetailViewModel（解封淡入 / 离场淡出） */
     fun ambient(capsuleId: String): String = "$AMBIENT_PREFIX$capsuleId"
+
+    /** 条件达成时刻 key 前缀（整库体检孤儿扫描用；与 [COND_MET_PREFIX] 同值） */
+    const val COND_MET_KEY_PREFIX = COND_MET_PREFIX
+
+    /**
+     * 胶囊级 meta 前缀全集（整库体检孤儿扫描通道，LibraryHealthCheck.orphanMetaKeys 消费）：
+     * 新增 `capsule.<name>.<id>` 形态的 key 时必须同步补入本清单，否则该类残留无法被体检发现。
+     * key 契约唯一出处 = 本文件 + `docs/spec-storage.md §3.2`。
+     */
+    val ORPHAN_SCAN_PREFIXES: List<String> = listOf(
+        "capsule.read.",
+        "capsule.readAt.",
+        "capsule.views.",
+        "capsule.watch.",
+        "capsule.condEdit.",
+        PAPER_PREFIX,
+        REPLY_PREFIX,
+        PUZZLE_PREFIX,
+        SEED_OF_PREFIX,
+        SPROUT_KEY_PREFIX,
+        HAPTIC_PREFIX,
+        AMBIENT_PREFIX,
+        REPLY_TO_KEY_PREFIX,
+        QUESTION_KEY_PREFIX,
+        SEAL_KEY_PREFIX,
+        CHAPTERS_PREFIX,
+        CHAPTER_REVEALED_PREFIX,
+        CHAPTER_AT_PREFIX,
+        REMIND_KEY_PREFIX,
+        REMIND_SENT_KEY_PREFIX,
+        COND_MET_KEY_PREFIX,
+    )
 }

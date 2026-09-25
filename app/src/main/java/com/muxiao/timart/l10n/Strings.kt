@@ -563,6 +563,10 @@ interface Strings {
     val setSparkDesc: String
     val setSound: String
     val setSoundDesc: String
+
+    /** 昼夜暖色变体（N17：清晨/黄昏时段暖色叠加，默认关，只读本地时钟） */
+    val setDawnDusk: String
+    val setDawnDuskDesc: String
     val setPasswordCard: String
     val setModifyPw: String
     val setModifyPwDesc: String
@@ -605,6 +609,11 @@ interface Strings {
 
     /** 通知正文（带标题格式化，%s = 胶囊标题） */
     val notifUnlockBodyFmt: String
+
+    /** 临近解锁通知（N1：%1$d = 剩余整天数，%2$s = 胶囊标题） */
+    val notifUpcomingTitle: String
+    val notifUpcomingBodyFmt: String
+
     val notifGuideTitle: String
 
     // ---- 海报 ----
@@ -968,4 +977,151 @@ interface Strings {
     val tplUserSection: String
     val tplUserSaveCurrent: String
     val tplUserNeedConditions: String
+
+    // ---- 自动备份 / 整库体检 / 迁移向导 / 星库检索 / 尘迹纪念页 ----
+
+    /** 自动定期本地备份（打开应用达到周期写入所选 SAF 目录；复用 v2 备份链路） */
+    val setAutoBackup: String
+    val setAutoBackupDesc: String
+    val setAutoBackupPeriod: String
+    val setAutoBackupPeriodFmt: String
+    val setAutoBackupDir: String
+    val setAutoBackupDirNone: String
+    val setAutoBackupDirChosen: String
+    val setAutoBackupLastFmt: String
+    val setAutoBackupNever: String
+    val setAutoBackupNow: String
+    val setAutoBackupDone: String
+    val setAutoBackupFailed: String
+    val setAutoBackupNeedSession: String
+
+    /** 随备份体检摘要（N22：备份成功后顺带扫描，摘要只显示不打扰） */
+    val setAutoBackupHealthFmt: String
+
+    /** 历史备份浏览（N4：轮转目录现存份数列表 + 指定份恢复） */
+    val setAutoBackupHistory: String
+    val setAutoBackupHistoryDesc: String
+    val setAutoBackupHistoryEmpty: String
+    val setAutoBackupHistoryRestore: String
+    val setAutoBackupHistoryWarn: String
+
+    /** 星库志（N6：全库统计常驻入口，纯本地聚合） */
+    val ledgerEntryDesc: String
+    val ledgerTitle: String
+    val ledgerComputing: String
+    val ledgerTotalFmt: String
+    val ledgerCurrentFmt: String
+    val ledgerOpenRateFmt: String
+    val ledgerLongestWaitFmt: String
+    val ledgerAvgSealFmt: String
+    val ledgerKindDist: String
+    val ledgerTopTagsFmt: String
+    val ledgerPrivacyNote: String
+
+    /** 模板二维码分享（N7：只有规则结构，零密文零内容） */
+    val tplQrExport: String
+    val tplQrExportTitle: String
+    val tplQrExportNote: String
+    val tplQrEncodeFailed: String
+    val tplQrImport: String
+    val tplQrInvalid: String
+
+    /** 启动隐私锁（N18，默认关：生物识别只挡入口，内容仍由口令加密） */
+    val setPrivacyLock: String
+    val setPrivacyLockDesc: String
+    val privacyLockPromptTitle: String
+    val privacyLockGate: String
+    val privacyLockRetry: String
+
+    /** 火漆印章签名（N19：封存时选参数化矢量印章，信笺落款呈现） */
+    val sealLabel: String
+    val sealNone: String
+
+    /** 待答之问封条（N20：封存时可选写「未来要回答的问题」，揭封后作回信引导占位） */
+    val questionLabel: String
+    val questionHint: String
+    val questionPlaceholder: String
+    val replyQuestionFmt: String
+    val setAutoBackupHealthClean: String
+
+    /** 明文导出（N13：已解锁正文存 .txt；导出即脱离加密保护，须显式确认） */
+    val letterExportText: String
+    val letterExportTextDesc: String
+    val letterExportDone: String
+    val letterExportFail: String
+    val letterExportMetaCreatedFmt: String
+    val letterExportMetaUnlockedFmt: String
+
+    /** 回信转新胶囊（N5：已写回信后的再封存入口，正文预填即回信） */
+    val replyToNewCapsule: String
+
+    /** 那年今日（N8：历年同日封存的轻提示，点击直达详情） */
+    val homeMemoryFmt: String
+
+    /** 沙盘试算（N2：创建页以当前上下文试算草稿规则，纯只读零副作用） */
+    val dryRunEntry: String
+    val dryRunTitle: String
+    val dryRunRunning: String
+    val dryRunAllMet: String
+    val dryRunNotYet: String
+    val dryRunDepFmt: String
+
+    /** 临近解锁提醒（N1：确定性时间条件到点前的本地通知，Worker 周期扫描） */
+    val remindLabel: String
+    val remindOff: String
+    val remindLeadFmt: String
+    val remindDesc: String
+
+    /** 整库体检（孤儿 meta / 依赖死链与环 / 分片材料 / 图片在位） */
+    val setHealthCheck: String
+    val setHealthCheckDesc: String
+    val healthRunning: String
+    val healthAllGood: String
+    val healthOrphanMetaFmt: String
+    val healthDeadDepFmt: String
+    val healthDestroyedDepFmt: String
+    val healthCycleFmt: String
+    val healthShardFmt: String
+    val healthMissingImageFmt: String
+    val healthBackupAgeFmt: String
+    val healthCleanup: String
+    val healthCleanupConfirmBody: String
+    val healthCleanupDoneFmt: String
+
+    /** 跨设备迁移向导（旧机导出分享 / 新机导入核对） */
+    val setMigration: String
+    val setMigrationDesc: String
+    val migrateTitle: String
+    val migrateIntro1: String
+    val migrateIntro2: String
+    val migrateRoleExport: String
+    val migrateRoleExportDesc: String
+    val migrateRoleImport: String
+    val migrateRoleImportDesc: String
+    val migrateExportDone: String
+    val migrateShare: String
+    val migrateImportChecklist: String
+
+    /** 星库检索与条件大类筛选（标题明文检索；正文密文不可搜） */
+    val starSearchHint: String
+    val starFilterAll: String
+    val starEmptyQuery: String
+
+    /** 多章节信件（N10：分章写信 2–3 章，首揭只展开第一章，间隔 ≥3 天提示下一章） */
+    val chapterToggleOff: String
+    val chapterToggleOn: String
+    val chapterLabelFmt: String
+    val chapterAdd: String
+    val chapterNextReady: String
+    val chapterNextEtaFmt: String
+
+    /** 小组件临近行（N21：%1$d = 剩余整天数，%2$s = 目标日期） */
+    val widgetCountdownFmt: String
+
+    /** 生平时间线长图导出（N12：仅元数据与时间戳，复用海报分享链路） */
+    val bioExport: String
+
+    /** 尘迹纪念页导出（销毁态海报：无正文无图片，可被纪念不被庆祝） */
+    val dustPoster: String
+    val dustPosterLineFmt: String
 }

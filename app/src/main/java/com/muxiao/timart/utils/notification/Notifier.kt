@@ -64,6 +64,35 @@ class Notifier(private val context: Context) {
         }
     }
 
+    /** 临近解锁提醒（N1）：确定性时间条件距到达只剩提前量窗口内的整天数（Worker 周期触发，每档去重由调用方负责） */
+    fun notifyUpcoming(capsuleId: String, capsuleTitle: String?, daysLeft: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val s = stringsFor(RuntimeSettings.resolvedLang)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(s.notifUpcomingTitle)
+            .setContentText(
+                capsuleTitle?.let { s.notifUpcomingBodyFmt.format(daysLeft, it) }
+                    ?: s.notifUpcomingTitle,
+            )
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setVibrate(longArrayOf(0, 60, 80, 40))
+
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(("upcoming_$capsuleId").hashCode(), builder.build())
+        } catch (_: SecurityException) {
+        }
+    }
+
     companion object {
         const val CHANNEL_ID = "unlock_reminders"
     }

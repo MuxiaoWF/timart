@@ -119,6 +119,10 @@ fun LockedStateView(
     /** NFC 实体锚点入口（体验储备池 §4）：写 `timart.com:link` 卡贴，碰卡直达该胶囊 */
     onWriteNfcLink: () -> Unit = {},
 
+    /** 临近解锁提醒（N1）：当前提前量天数（null = 关闭）/ 点击唤出设置弹窗（外层承担） */
+    remindLeadDays: Int? = null,
+    onRemind: () -> Unit = {},
+
     /** 粒子画布（宿主 ParticleCanvas）在窗口根坐标中的原点：尘核锚点换算画布局部坐标用 */
     overlayOrigin: Offset = Offset.Zero,
 ) {
@@ -385,6 +389,14 @@ fun LockedStateView(
         DetailActionRow(
             label = L.nfcLinkTitle,
             onClick = onWriteNfcLink,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+
+        // 临近解锁提醒（N1）：确定性时间条件到点前的本地通知；标签尾缀回显当前档位
+        DetailActionRow(
+            label = L.remindLabel + " · " +
+                (remindLeadDays?.let { L.remindLeadFmt.format(it) } ?: L.remindOff),
+            onClick = onRemind,
             modifier = Modifier.padding(top = 10.dp),
         )
 

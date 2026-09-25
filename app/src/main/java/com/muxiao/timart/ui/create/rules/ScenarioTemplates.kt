@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.l10n.LocalStrings
@@ -149,9 +150,32 @@ internal fun ScenarioTemplateSheet(
     var userTemplates by remember { mutableStateOf(emptyList<CreateViewModel.UserTemplateDto>()) }
     var saving by remember { mutableStateOf(false) }
     var templateName by remember { mutableStateOf("") }
+    // N7 模板二维码分享：导出（显示码图）/ 导入（拍照解码）两个状态位
+    var qrRuleJson by remember { mutableStateOf<String?>(null) }
+    var qrImportHint by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         userTemplates = vm.userTemplates()
+    }
+    val qrScanner = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicturePreview(),
+    ) { bitmap ->
+        if (bitmap == null) return@rememberLauncherForActivityResult
+        val text = com.muxiao.timart.utils.format.QrCodec.decodeText(bitmap)
+        val ruleJson = text?.takeIf { it.startsWith(com.muxiao.timart.utils.format.QrCodec.TEMPLATE_PREFIX) }
+            ?.removePrefix(com.muxiao.timart.utils.format.QrCodec.TEMPLATE_PREFIX)
+        val rule = ruleJson?.let { json ->
+            runCatching {
+                com.muxiao.timart.data.local.db.mapper.UnlockRuleJson.fromJson(json)
+            }.getOrNull()
+        }
+        if (rule != null) {
+            vm.applyTemplate(rule)
+            qrImportHint = null
+            onDismiss()
+        } else {
+            qrImportHint = L.tplQrInvalid
+        }
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -278,6 +302,15 @@ internal fun ScenarioTemplateSheet(
                                 }
                             },
                     )
+                    // N7：模板二维码导出（只有规则结构，零密文零内容）
+                    Text(
+                        text = L.tplQrExport,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .clickable { qrRuleJson = template.ruleJson },
+                    )
                     Text(
                         text = "×",
                         style = TimartType.caption,
@@ -291,7 +324,76 @@ internal fun ScenarioTemplateSheet(
                     )
                 }
             }
+
+            // ---- N7 扫码导入：拍一张模板码 → 解码 → coerce 校验 → 应用为当前条件 ----
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .fillMaxWidth()
+                    .clickable { qrScanner.launch(null) },
+            ) {
+                Text(
+                    text = L.tplQrImport,
+                    style = TimartType.caption,
+                    color = TimeGold,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            qrImportHint?.let { hint ->
+                Text(
+                    text = hint,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             Spacer(modifier = Modifier.padding(vertical = 12.dp))
         }
+    }
+
+    // ---- 模板码展示弹层（N7 导出侧；码图按内容生成，即用即弃） ----
+    qrRuleJson?.let { ruleJson ->
+        val qrBitmap = remember(ruleJson) {
+            com.muxiao.timart.utils.format.QrCodec.encodeBitmap(
+                com.muxiao.timart.utils.format.QrCodec.TEMPLATE_PREFIX + ruleJson,
+            )
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { qrRuleJson = null },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.tplQrExportTitle, style = TimartType.titleSerif) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (qrBitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = L.tplQrExportTitle,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                        )
+                    } else {
+                        Text(
+                            text = L.tplQrEncodeFailed,
+                            style = TimartType.body,
+                            color = InkSecondary,
+                        )
+                    }
+                    Text(
+                        text = L.tplQrExportNote,
+                        style = TimartType.caption,
+                        color = InkDisabled,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { qrRuleJson = null }) {
+                    Text(text = L.cancel, color = TimeGold)
+                }
+            },
+        )
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.sp
 import com.muxiao.timart.domain.model.Lang
 import com.muxiao.timart.domain.model.WeatherType
@@ -87,6 +88,9 @@ fun UnlockedLetterView(
     /** 海报导出（T15 接线 FileProvider 分享；null = 隐藏） */
     onPoster: (() -> Unit)? = null,
 
+    /** 明文导出（N13：SAF 存 .txt；null = 隐藏。确认弹窗由外层承担） */
+    onExportText: (() -> Unit)? = null,
+
     /** 左上返回按钮（null = 不展示，如消散重放） */
     onBack: (() -> Unit)? = null,
 
@@ -116,6 +120,16 @@ fun UnlockedLetterView(
     /** 回信（体验储备池 §5）：已写文本 / 写回信入口（null = 不展示，如消散重放） */
     reply: String? = null,
     onWriteReply: (() -> Unit)? = null,
+
+    /** 火漆印章（N19）：非 0 时在信笺底部呈现落款印章 */
+    sealStyle: Int = 0,
+
+    /** 回信转新胶囊（N5）：已写回信后提供「封存进新胶囊」入口；预填与导航由外层承担 */
+    onReplyToCapsule: (() -> Unit)? = null,
+
+    /** 多章节信件（N10）：下一章提示（可揭示 = 引导句按钮 / 未到期 = 「N 天后可读」纯文本；null = 单章信或无后续章） */
+    chapterHint: String? = null,
+    onRevealNextChapter: (() -> Unit)? = null,
 
     /** 拼图分组（体验储备池 §3）：进度短句（如「拼图 2/3」）；就绪后可开合信视图（handler null = 不展示） */
     puzzleStatus: String? = null,
@@ -385,7 +399,44 @@ fun UnlockedLetterView(
                 }
             }
 
+            // 明文导出（N13）：仅已解锁内容可用；导出即脱离加密保护，确认弹窗在外层
+            if (onExportText != null) {
+                TextButton(
+                    onClick = onExportText,
+                    enabled = !loading && content != null,
+                    colors = ButtonDefaults.textButtonColors(contentColor = InkSecondary),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(text = L.letterExportText, style = TimartType.caption)
+                }
+            }
+
             // 回信（体验储备池 §5）：一句附言绑定档案，销毁后留存于尘迹
+            // 多章节信件（N10）：下一章提示（可揭示 → 引导按钮；未到期 → 纯文本预告）
+            chapterHint?.let { hint ->
+                if (onRevealNextChapter != null) {
+                    TextButton(
+                        onClick = onRevealNextChapter,
+                        enabled = !loading,
+                        colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp),
+                    ) {
+                        Text(text = hint, style = TimartType.caption)
+                    }
+                } else {
+                    Text(
+                        text = hint,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                    )
+                }
+            }
             if (onWriteReply != null) {
                 TextButton(
                     onClick = onWriteReply,
@@ -408,6 +459,28 @@ fun UnlockedLetterView(
                             .fillMaxWidth()
                             .padding(bottom = 6.dp),
                     )
+                }
+                // 火漆印章落款（N19）：封存时选印的信笺底部呈现（无印不占位）
+                if (com.muxiao.timart.ui.components.visual.WaxSealStyle.isValid(sealStyle)) {
+                    com.muxiao.timart.ui.components.visual.WaxSeal(
+                        style = sealStyle,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .padding(bottom = 6.dp),
+                    )
+                }
+                // 回信转新胶囊（N5）：仅在已有回信时出现，正文预填即这句回信
+                if (reply != null && onReplyToCapsule != null) {
+                    TextButton(
+                        onClick = onReplyToCapsule,
+                        enabled = !loading,
+                        colors = ButtonDefaults.textButtonColors(contentColor = GlowGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp),
+                    ) {
+                        Text(text = L.replyToNewCapsule, style = TimartType.caption)
+                    }
                 }
             }
         }

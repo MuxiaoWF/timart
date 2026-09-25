@@ -46,6 +46,19 @@ class CryptoRoundTripTest {
         override fun putSync(entity: MetaEntity) {
             store[entity.key] = entity.value
         }
+
+        override fun readCountSync(): Int =
+            store.keys.count { it.startsWith("capsule.read.") }
+
+        override fun observeLike(prefix: String): Flow<List<MetaEntity>> =
+            flow { emit(listLike(prefix)) }
+
+        override suspend fun listLike(prefix: String): List<MetaEntity> =
+            store.entries.filter { it.key.startsWith(prefix) }.map { MetaEntity(it.key, it.value) }
+
+        override suspend fun delete(key: String) {
+            store.remove(key)
+        }
     }
 
     private class FakeCapsuleRepository : CapsuleRepository {

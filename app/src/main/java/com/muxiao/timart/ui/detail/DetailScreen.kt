@@ -3,7 +3,10 @@ package com.muxiao.timart.ui.detail
 import android.content.ClipData
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -72,6 +75,9 @@ fun DetailScreen(
     capsuleId: String,
     firstUnlock: Boolean,
     onBack: () -> Unit,
+
+    /** 回信转新胶囊（N5）：交接预填草稿后导航创建页（null = 不展示入口） */
+    onCreateCapsule: (() -> Unit)? = null,
 ) {
     val L = LocalStrings.current
     val vm: DetailViewModel = viewModel { DetailViewModel(container, capsuleId, firstUnlock) }
@@ -91,6 +97,29 @@ fun DetailScreen(
     val posterComposer = remember { PosterComposer(context) }
     val posterScope = rememberCoroutineScope()
     var posterBusy by remember { mutableStateOf(false) }
+
+    /** 海报分享（信笺纪念页与尘迹纪念页同路：FileProvider + ACTION_SEND） */
+    fun sharePosterFile(poster: java.io.File?) {
+        if (poster == null) {
+            Toast.makeText(context, L.posterFail, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            poster,
+        )
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/jpeg"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            // 分享面板的预览缩略图由系统启动器在选择目标前读取 URI 生成；
+            // 仅 EXTRA_STREAM 上的 grant 标志在部分 ROM 不随 Chooser 传播，
+            // 启动器拿不到授权 → 预览空白。ClipData 让授权随 Chooser 传递，预览即可显示
+            clipData = ClipData.newRawUri("poster", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, L.posterShare)) }
+    }
 
     fun generateAndSharePoster() {
         val content = state.content ?: return
@@ -116,25 +145,86 @@ fun DetailScreen(
             )
             withContext(Dispatchers.Main) {
                 posterBusy = false
-                if (poster == null) {
-                    Toast.makeText(context, L.posterFail, Toast.LENGTH_SHORT).show()
-                } else {
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        poster,
-                    )
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "image/jpeg"
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        // 分享面板的预览缩略图由系统启动器在选择目标前读取 URI 生成；
-                        // 仅 EXTRA_STREAM 上的 grant 标志在部分 ROM 不随 Chooser 传播，
-                        // 启动器拿不到授权 → 预览空白。ClipData 让授权随 Chooser 传递，预览即可显示
-                        clipData = ClipData.newRawUri("poster", uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    runCatching { context.startActivity(Intent.createChooser(send, L.posterShare)) }
+                sharePosterFile(poster)
+            }
+        }
+    }
+
+    /**
+     * 尘迹纪念页（留存与输出）：销毁态无正文无图片（内容已物理删除），
+     * 海报 = 标题 + 归尘日期 + 纪念文案 + 封存备注/标签——销毁不被庆祝但可被纪念。
+     */
+    fun generateAndShareDustPoster() {
+        val capsule = state.capsule ?: return
+        if (posterBusy) return
+        posterBusy = true
+        posterScope.launch(Dispatchers.IO) {
+            val paragraphs = buildList {
+                state.destroyedAt?.let {
+                    add(L.dustPosterLineFmt.format(TimeFormatter.dateTime(it)))
                 }
+                add(L.destroyedBody)
+            }
+            val poster = posterComposer.compose(
+                PosterComposer.PosterContent(
+                    title = capsule.title,
+                    paragraphs = paragraphs,
+                    createdLine = TimeFormatter.dateTime(capsule.createTimestamp),
+                    tagsLine = capsule.tags.takeIf { it.isNotEmpty() }?.joinToString(" · "),
+                    note = capsule.createNote.takeIf { it.isNotBlank() },
+                ),
+            )
+            withContext(Dispatchers.Main) {
+                posterBusy = false
+                sharePosterFile(poster)
+            }
+        }
+    }
+
+    // ---- 明文导出（N13）：仅已解锁内容；SAF CreateDocument 写 .txt，导出即脱离加密保护 ----
+
+    /** 导出文本组装：标题 + 正文 + 标签 + 封存/开启时刻 + 回信（信笺当前呈现口径的纯文本投影） */
+    fun exportPlainText(content: com.muxiao.timart.domain.usecase.ReadCapsuleUseCase.CapsuleContent): String =
+        buildString {
+            appendLine(content.title)
+            appendLine()
+            content.paragraphs.forEach { paragraph ->
+                appendLine(paragraph)
+                appendLine()
+            }
+            content.tags.takeIf { it.isNotEmpty() }?.let {
+                appendLine(it.joinToString(" · "))
+                appendLine()
+            }
+            appendLine(L.letterExportMetaCreatedFmt.format(TimeFormatter.dateTime(content.createdAt)))
+            state.unlockedAt?.let {
+                appendLine(L.letterExportMetaUnlockedFmt.format(TimeFormatter.dateTime(it)))
+            }
+            state.reply?.takeIf { it.isNotBlank() }?.let {
+                appendLine()
+                appendLine("${L.replyLabel}: $it")
+            }
+        }
+
+    var showExportTextConfirm by remember { mutableStateOf(false) }
+    val exportTextLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        val content = state.content
+        if (uri == null || content == null) return@rememberLauncherForActivityResult
+        posterScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(exportPlainText(content).toByteArray(Charsets.UTF_8))
+                    true
+                } ?: false
+            }.getOrDefault(false)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    context,
+                    if (ok) L.letterExportDone else L.letterExportFail,
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
         }
     }
@@ -169,6 +259,8 @@ fun DetailScreen(
 
     // NFC 实体锚点写卡弹层（LOCKED 态入口在 LockedStateView；体验储备池 §4）
     var showNfcLinkWrite by remember { mutableStateOf(false) }
+    // 临近解锁提醒设置弹窗（N1）
+    var showRemindDialog by remember { mutableStateOf(false) }
 
     // 返回键编排：UNSEAL → 跳过；autoDestroy 未决策 → 「销毁/保留」；其余直接退出
     BackHandler {
@@ -246,6 +338,8 @@ fun DetailScreen(
                         onOrbLongPress = vm::onOrbLongPress,
                         onGift = { showGiftExport = true },
                         onWriteNfcLink = { showNfcLinkWrite = true },
+                        remindLeadDays = state.remindLeadDays,
+                        onRemind = { showRemindDialog = true },
                         overlayOrigin = overlayOrigin,
                         // 宽屏限宽居中（横屏适配）：时间线行宽过长伤可读性；
                         // 尘核锚点经 positionInRoot 实测换算，居中偏移不影响粒子定位
@@ -307,6 +401,7 @@ fun DetailScreen(
                         onKeep = { vm.setAutoDestroyAfterRead(false) },
                         onDestroy = vm::requestDestroy,
                         onPoster = { generateAndSharePoster() },
+                        onExportText = { showExportTextConfirm = true },
                         // 左上返回按钮与系统返回同路：autoDestroy 未决策先弹「销毁/保留」
                         onBack = { if (!vm.onBackPressed()) onBack() },
                         // 揭封路径：信笺上不显文字，交接后由随机文字显现效果接管
@@ -319,7 +414,23 @@ fun DetailScreen(
                         onToggleVoice = vm::toggleVoice,
                         paperStyle = state.paperStyle,
                         reply = state.reply,
+                        chapterHint = state.chapterHint,
+                        onRevealNextChapter = if (state.canRevealNextChapter) vm::revealNextChapter else null,
                         onWriteReply = vm::openReplyDialog,
+                        sealStyle = state.sealStyle,
+                        onReplyToCapsule = onCreateCapsule?.let { handler ->
+                            {
+                                // 交接预填草稿（一次性消费位）：标题沿用原胶囊，正文即回信
+                                container.pendingCapsulePrefill = AppContainer.CapsulePrefill(
+                                    title = state.capsule?.title.orEmpty().ifBlank {
+                                        state.reply.orEmpty().take(20)
+                                    },
+                                    body = state.reply.orEmpty(),
+                                    replySourceId = capsuleId,
+                                )
+                                handler()
+                            }
+                        },
                         puzzleStatus = vm.puzzleStatusText(L),
                         puzzleReady = state.puzzleReady,
                         onOpenPuzzle = vm::openPuzzleView,
@@ -368,6 +479,7 @@ fun DetailScreen(
                 DestroyedStateView(
                     title = state.capsule?.title,
                     destroyedAt = state.destroyedAt,
+                    onPoster = { generateAndShareDustPoster() },
                 )
             }
         }
@@ -445,7 +557,13 @@ fun DetailScreen(
                         decorationBox = { inner ->
                             Box {
                                 if (replyInput.isEmpty()) {
-                                    Text(text = L.replyPlaceholder, style = TimartType.body, color = InkSecondary)
+                                    // 待答之问（N20）：封存时写过问题则以其为引导占位
+                                    Text(
+                                        text = state.question?.let { L.replyQuestionFmt.format(it) }
+                                            ?: L.replyPlaceholder,
+                                        style = TimartType.body,
+                                        color = InkSecondary,
+                                    )
                                 }
                                 inner()
                             }
@@ -465,6 +583,83 @@ fun DetailScreen(
             dismissButton = {
                 TextButton(onClick = vm::dismissReplyDialog) {
                     Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+    }
+
+    // 明文导出确认（N13）：正文一旦导出即脱离加密保护，必须显式确认（与销毁同级的谨慎口径）
+    if (showExportTextConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExportTextConfirm = false },
+            containerColor = com.muxiao.timart.ui.theme.SurfaceRaise,
+            title = { Text(text = L.letterExportText, style = TimartType.titleSerif) },
+            text = {
+                Text(
+                    text = L.letterExportTextDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExportTextConfirm = false
+                        val rawTitle = state.capsule?.title ?: state.content?.title ?: "capsule"
+                        val safe = rawTitle
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                            .take(60)
+                            .ifBlank { "capsule" }
+                        runCatching { exportTextLauncher.launch("$safe.txt") }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                ) {
+                    Text(text = L.confirm)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportTextConfirm = false }) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+    }
+
+    // 临近解锁提醒设置（N1）：提前量档位单选；仅对固定日期/时刻/每年纪念日类条件生效
+    if (showRemindDialog) {
+        val options = listOf(null to L.remindOff, 1 to L.remindLeadFmt.format(1), 3 to L.remindLeadFmt.format(3), 7 to L.remindLeadFmt.format(7))
+        AlertDialog(
+            onDismissRequest = { showRemindDialog = false },
+            containerColor = com.muxiao.timart.ui.theme.SurfaceRaise,
+            title = { Text(text = L.remindLabel, style = TimartType.titleSerif) },
+            text = {
+                Column {
+                    Text(
+                        text = L.remindDesc,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    options.forEach { (days, label) ->
+                        val selected = state.remindLeadDays == days
+                        Text(
+                            text = (if (selected) "●  " else "○  ") + label,
+                            style = TimartType.body,
+                            color = if (selected) TimeGold else InkPrimary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.setRemindLeadDays(days)
+                                    if (days == null) showRemindDialog = false
+                                }
+                                .padding(vertical = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRemindDialog = false }) {
+                    Text(text = L.confirm)
                 }
             },
         )

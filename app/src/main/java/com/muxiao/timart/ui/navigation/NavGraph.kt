@@ -122,6 +122,8 @@ fun NavGraph(container: AppContainer) {
                     capsuleId = entry.arguments?.getString("capsuleId").orEmpty(),
                     firstUnlock = entry.arguments?.getBoolean("firstUnlock") ?: false,
                     onBack = { navController.popBackStack() },
+                    // 回信转新胶囊（N5）：交接预填草稿后进创建页
+                    onCreateCapsule = { navController.navigate(Routes.CREATE) },
                 )
             }
             composable(Routes.PASSWORD_SETUP) {

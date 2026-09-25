@@ -61,6 +61,9 @@ class ImageCipherStore(
         return if (target.exists()) target.readBytes() else null
     }
 
+    /** 密文文件是否在位（整库体检：imageFiles 清单与磁盘的一致性核对，不触碰密文） */
+    fun blobExists(capsuleId: String, index: Int): Boolean = file(capsuleId, index).exists()
+
     /** 原样写回密文（修改口令重加密用，不再经过会话密钥） */
     fun writeEncrypted(capsuleId: String, index: Int, blob: ByteArray) {
         dir(capsuleId).mkdirs()

@@ -107,6 +107,12 @@ class DetailViewModel(
         val reply: String? = null,
         val showReplyDialog: Boolean = false,
 
+        /** 待答之问（N20）：封存时写下的问题文本；null = 未写，回信占位用默认文案 */
+        val question: String? = null,
+
+        /** 火漆印章（N19）：样式序号（0 = 无印），信笺落款处呈现 */
+        val sealStyle: Int = 0,
+
         /** 拼图分组（体验储备池 §3）：本片序号（0 起）/ 总片数 / 已解锁片数；未分组 = null */
         val puzzleIndex: Int? = null,
         val puzzleTotal: Int? = null,
@@ -119,6 +125,22 @@ class DetailViewModel(
 
         /** 口令分片（体验储备池 §7.1）：外层已解、内层仍锁 → 显示集分片面板 */
         val shardGate: Boolean = false,
+
+        /** 临近解锁提醒（N1）：提前量天数（null = 关闭）；仅对确定性时间条件生效 */
+        val remindLeadDays: Int? = null,
+
+        /** 多章节信件（N10）：下一章提示（可揭示 = 引导句 / 未到期 = 「N 天后可读」；null = 单章信或无后续章） */
+        val chapterHint: String? = null,
+
+        /** 多章节信件（N10）：下一章当前可揭示（非空 [chapterHint] 时决定按钮 vs 纯文本） */
+        val canRevealNextChapter: Boolean = false,
+    )
+
+    /** 多章节信件 VM 内存态：段落边界 + 揭示进度（进度持久化在 meta，见 CapsuleMetaKeys.chapters 注） */
+    private class ChapterInfo(
+        val boundaries: List<Int>,
+        var revealed: Int,
+        var revealedAt: Long?,
     )
 
     /** 合信视图分片内容（全部 UNLOCKED 后按序解密聚合） */
@@ -174,6 +196,10 @@ class DetailViewModel(
     @Volatile
     private var pendingInnerCipher: ByteArray? = null
 
+    /** 多章节信件（N10）：章节边界与揭示进度（null = 单章信 / 边界读取失败） */
+    @Volatile
+    private var chapterInfo: ChapterInfo? = null
+
     init {
         viewModelScope.launch(Dispatchers.Default) {
             repo.observeById(capsuleId).collect { onCapsule(it) }
@@ -211,6 +237,63 @@ class DetailViewModel(
                     .get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.reply(capsuleId))
             }.getOrNull()
             if (saved != null) _state.update { it.copy(reply = saved) }
+        }
+        // 待答之问（N20）：meta `capsule.question.<id>`（写入点 CreateViewModel.performCreate）
+        viewModelScope.launch(Dispatchers.IO) {
+            val asked = runCatching {
+                container.database.metaDao()
+                    .get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.question(capsuleId))
+            }.getOrNull()
+            if (asked != null) _state.update { it.copy(question = asked) }
+        }
+        // 火漆印章（N19）：meta `capsule.seal.<id>`（写入点 CreateViewModel.performCreate）
+        viewModelScope.launch(Dispatchers.IO) {
+            val seal = runCatching {
+                container.database.metaDao()
+                    .get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.seal(capsuleId))
+            }.getOrNull()?.toIntOrNull() ?: 0
+            if (seal != 0) _state.update { it.copy(sealStyle = seal) }
+        }
+        // 临近提醒提前量（N1）：meta `settings.remind.<id>`（写入点本类 setRemindLeadDays）
+        viewModelScope.launch(Dispatchers.IO) {
+            val lead = runCatching {
+                container.database.metaDao()
+                    .get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.remind(capsuleId))
+                    ?.toIntOrNull()
+            }.getOrNull()
+            if (lead != null) _state.update { it.copy(remindLeadDays = lead.coerceIn(1, 30)) }
+        }
+        // 多章节信件（N10）：边界 + 揭示进度（首揭 = 第 1 章，此刻落库；读失败按单章信处理）
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val dao = container.database.metaDao()
+                val boundaries = com.muxiao.timart.domain.usecase.ChapterLetter.parseBoundaries(
+                    dao.get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapters(capsuleId)),
+                ) ?: return@runCatching
+                val now = container.timeProvider.nowMillis()
+                var revealed = dao.get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapterRevealed(capsuleId))
+                    ?.toIntOrNull() ?: 0
+                var revealedAt = dao.get(com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapterRevealedAt(capsuleId))
+                    ?.toLongOrNull()
+                if (revealed < 1) {
+                    revealed = 1
+                    revealedAt = now
+                    dao.put(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapterRevealed(capsuleId),
+                            "1",
+                        ),
+                    )
+                    dao.put(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapterRevealedAt(capsuleId),
+                            now.toString(),
+                        ),
+                    )
+                }
+                chapterInfo = ChapterInfo(boundaries, revealed, revealedAt)
+                applyChapterFilter()
+            }
         }
         // 拼图分组（体验储备池 §3）：本片归属 + 各片解锁进度（读失败按未分组处理）
         viewModelScope.launch(Dispatchers.IO) {
@@ -580,6 +663,8 @@ class DetailViewModel(
                     _state.update { it.copy(content = content, shardGate = true, errorText = null) }
                 } else {
                     _state.update { it.copy(content = content, errorText = null) }
+                    // 多章节信件（N10）：按已揭示章数过滤可见段落（单章信 chapterInfo = null 不动）
+                    applyChapterFilter()
                 }
             } catch (e: CryptoException) {
                 _state.update {
@@ -614,6 +699,98 @@ class DetailViewModel(
 
     fun dismissReplyDialog() {
         _state.update { it.copy(showReplyDialog = false) }
+    }
+
+    // ================= 多章节信件（N10，阅读侧行为；判定引擎不感知） =================
+
+    /** 按当前揭示进度重算可见段落与下一章提示（chapterInfo = null 或无正文时为 no-op） */
+    private fun applyChapterFilter() {
+        val info = chapterInfo ?: return
+        val now = container.timeProvider.nowMillis()
+        val revealed = info.revealed
+        val total = info.boundaries.size
+        _state.update { state ->
+            val content = state.content ?: return@update state
+            val visible = com.muxiao.timart.domain.usecase.ChapterLetter
+                .visibleParagraphs(content.paragraphs, info.boundaries, revealed)
+            val canReveal = com.muxiao.timart.domain.usecase.ChapterLetter
+                .canRevealNext(revealed, total, info.revealedAt, now)
+            val etaDays = com.muxiao.timart.domain.usecase.ChapterLetter
+                .nextChapterEtaMs(revealed, total, info.revealedAt, now)
+                ?.let { ms -> kotlin.math.ceil(ms.toDouble() / (24L * 60 * 60 * 1000)).toInt().coerceAtLeast(1) }
+            val L = currentStrings()
+            val hint = when {
+                canReveal -> L.chapterNextReady
+                etaDays != null -> L.chapterNextEtaFmt.format(etaDays)
+                else -> null
+            }
+            state.copy(
+                content = content.copy(paragraphs = visible),
+                chapterHint = hint,
+                canRevealNextChapter = canReveal,
+            )
+        }
+    }
+
+    /** 揭示下一章（间隔 ≥3 天校验通过后进度 +1 落库并展开；其余为 no-op） */
+    fun revealNextChapter() {
+        val info = chapterInfo ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val now = container.timeProvider.nowMillis()
+                if (!com.muxiao.timart.domain.usecase.ChapterLetter.canRevealNext(
+                        info.revealed,
+                        info.boundaries.size,
+                        info.revealedAt,
+                        now,
+                    )
+                ) {
+                    return@runCatching
+                }
+                val dao = container.database.metaDao()
+                info.revealed += 1
+                info.revealedAt = now
+                dao.put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapterRevealed(capsuleId),
+                        info.revealed.toString(),
+                    ),
+                )
+                dao.put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        com.muxiao.timart.data.local.db.CapsuleMetaKeys.chapterRevealedAt(capsuleId),
+                        now.toString(),
+                    ),
+                )
+                applyChapterFilter()
+            }
+        }
+    }
+
+    // ================= 临近解锁提醒（N1，确定性时间条件；Worker 周期扫描） =================
+
+    /** 设置/关闭提前量（null = 关闭：删键 + 清 sent 去重标记，下轮开启重新提醒） */
+    fun setRemindLeadDays(days: Int?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val dao = container.database.metaDao()
+                if (days == null) {
+                    dao.delete(com.muxiao.timart.data.local.db.CapsuleMetaKeys.remind(capsuleId))
+                    dao.delete(com.muxiao.timart.data.local.db.CapsuleMetaKeys.remindSent(capsuleId))
+                } else {
+                    val coerced = days.coerceIn(1, 30)
+                    dao.put(
+                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                            com.muxiao.timart.data.local.db.CapsuleMetaKeys.remind(capsuleId),
+                            coerced.toString(),
+                        ),
+                    )
+                }
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _state.update { it.copy(remindLeadDays = days?.coerceIn(1, 30)) }
+            }
+        }
     }
 
     /** 回信落 meta `capsule.reply.<id>`；销毁流程不清理该 key，回信随档案留存 */

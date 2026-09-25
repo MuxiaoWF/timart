@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -189,6 +190,18 @@ fun HomeScreen(
                     color = InkSecondary,
                     modifier = Modifier.padding(top = 14.dp),
                 )
+                // 那年今日（N8）：历年同日封存的轻提示，点击直达详情；纯本地日期匹配，无推送打扰
+                val memory by vm.todayMemory.collectAsStateWithLifecycle()
+                memory?.let { m ->
+                    Text(
+                        text = L.homeMemoryFmt.format(m.yearsAgo, m.title),
+                        style = TimartType.caption,
+                        color = TimeGold.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .clickable(onClick = { onOpenDetail(m.capsuleId, false) }),
+                    )
+                }
             }
 
             // 时轨画布（占满剩余空间；空库引导文案叠加居中）

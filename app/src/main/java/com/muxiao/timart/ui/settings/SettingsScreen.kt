@@ -92,7 +92,9 @@ import com.muxiao.timart.data.remote.update.UpdateChecker
 import com.muxiao.timart.utils.RuntimeSettings
 import com.muxiao.timart.utils.AppLanguage
 import com.muxiao.timart.utils.export.AnnualReport
+import com.muxiao.timart.utils.export.AutoBackupManager
 import com.muxiao.timart.utils.export.PosterComposer
+import com.muxiao.timart.utils.format.TimeFormatter
 import com.muxiao.timart.utils.permission.PERM_ACTIVITY_RECOGNITION
 import com.muxiao.timart.utils.permission.PERM_POST_NOTIFICATIONS
 import kotlinx.coroutines.Dispatchers
@@ -120,9 +122,12 @@ fun SettingsScreen(container: AppContainer) {
     val gyroEnabled by vm.gyroEnabled.collectAsStateWithLifecycle()
     val inputSparkEnabled by vm.inputSparkEnabled.collectAsStateWithLifecycle()
     val soundEnabled by vm.soundEnabled.collectAsStateWithLifecycle()
+    val dawnDuskTint by vm.dawnDuskTint.collectAsStateWithLifecycle()
+    val biometricLock by vm.biometricLock.collectAsStateWithLifecycle()
     val language by vm.language.collectAsStateWithLifecycle()
     val hasPassword by vm.hasPassword.collectAsStateWithLifecycle()
     val passwordChange by vm.passwordChange.collectAsStateWithLifecycle()
+    val autoBackup by vm.autoBackup.collectAsStateWithLifecycle()
 
     val engine = container.particleEngine
     val density = LocalDensity.current
@@ -137,6 +142,16 @@ fun SettingsScreen(container: AppContainer) {
     var showGiftImportDialog by remember { mutableStateOf(false) }
     var showAnnualReport by remember { mutableStateOf(false) }
     var showLanguageSheet by remember { mutableStateOf(false) }
+    var showHealthCheck by remember { mutableStateOf(false) }
+    var showStarLedger by remember { mutableStateOf(false) }
+    var showMigration by remember { mutableStateOf(false) }
+    var showAutoBackupPeriod by remember { mutableStateOf(false) }
+    var showAutoBackupHistory by remember { mutableStateOf(false) }
+
+    // 自动备份目录选择（ACTION_OPEN_TREE + 持久化授权）
+    val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        vm.setAutoBackupTree(uri)
+    }
 
     // 检查更新（GitHub Releases 占位）：请求在 IO 协程，结果落主线程弹窗
     val scope = rememberCoroutineScope()
@@ -258,6 +273,13 @@ fun SettingsScreen(container: AppContainer) {
                     checked = soundEnabled,
                     onChanged = vm::setSoundEnabled,
                 )
+                // 晨昏暖色（N17，默认关）：清晨/黄昏时段主题加一层暖色浸染，只读本地时钟
+                SwitchRow(
+                    label = L.setDawnDusk,
+                    description = L.setDawnDuskDesc,
+                    checked = dawnDuskTint,
+                    onChanged = vm::setDawnDuskTint,
+                )
             }
 
             // ---- 5. 语言（入口行 + 底部单选列表；快照状态热切换，无需重启） ----
@@ -285,7 +307,7 @@ fun SettingsScreen(container: AppContainer) {
                             modifier = Modifier.padding(top = 2.dp),
                         )
                     }
-                    Text(text = L.enter, style = TimartType.caption, color = TimeGold)
+                    Text(text = L.enter, style = TimartType.caption, color = TimeGold, modifier = Modifier.padding(start = 12.dp))
                 }
             }
 
@@ -319,12 +341,43 @@ fun SettingsScreen(container: AppContainer) {
                                 modifier = Modifier.padding(top = 2.dp),
                             )
                         }
-                        Text(text = L.go, style = TimartType.caption, color = TimeGold)
+                        Text(text = L.go, style = TimartType.caption, color = TimeGold, modifier = Modifier.padding(start = 12.dp))
+                    }
+                    // 启动隐私锁（N18，默认关）：生物识别只挡入口，内容仍由口令加密
+                    var privacyCenter by remember { mutableStateOf(IntOffset.Zero) }
+                    Box(
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            privacyCenter = IntOffset(
+                                coords.localToRoot(Offset.Zero).x.toInt() + coords.size.width / 2,
+                                coords.localToRoot(Offset.Zero).y.toInt() + coords.size.height / 2,
+                            )
+                        },
+                    ) {
+                        SwitchRow(
+                            label = L.setPrivacyLock,
+                            description = L.setPrivacyLockDesc,
+                            checked = biometricLock,
+                            onChanged = { value ->
+                                vm.setBiometricLock(value)
+                                // N15 新预设启用位：开 → 星环余晖 / 关 → 尘埃落定
+                                engine.fire(
+                                    preset = if (value) {
+                                        ParticlePreset.HALO
+                                    } else {
+                                        ParticlePreset.SETTLE
+                                    },
+                                    anchorX = privacyCenter.x.toFloat(),
+                                    anchorY = privacyCenter.y.toFloat(),
+                                    anchorRadius = with(density) { 36.dp.toPx() },
+                                    colorArgb = ParticleEngine.TIME_GOLD,
+                                )
+                            },
+                        )
                     }
                 }
             }
 
-            // ---- 7. 备份（导出/导入弹窗见 BackupDialogs，T15） ----
+            // ---- 7. 备份（导出/导入弹窗见 BackupDialogs，T15；自动备份复用同一导出链路） ----
             SettingsCard(title = L.setBackupCard, modifier = Modifier.padding(top = 12.dp)) {
                 SimpleRow(
                     label = L.setExport,
@@ -341,13 +394,92 @@ fun SettingsScreen(container: AppContainer) {
                     description = L.setGiftImportDesc,
                     onClick = { showGiftImportDialog = true },
                 )
+
+                // 自动定期本地备份：打开应用达到周期即写入所选目录（密文包，零网络）
+                SwitchRow(
+                    label = L.setAutoBackup,
+                    description = L.setAutoBackupDesc,
+                    checked = autoBackup.enabled,
+                    onChanged = vm::setAutoBackupEnabled,
+                )
+                if (autoBackup.enabled) {
+                    SimpleRow(
+                        label = L.setAutoBackupPeriod,
+                        description = L.setAutoBackupPeriodFmt.format(autoBackup.periodDays),
+                        onClick = { showAutoBackupPeriod = true },
+                    )
+                    SimpleRow(
+                        label = L.setAutoBackupDir,
+                        description = autoBackupDirName(autoBackup.treeUri),
+                        onClick = { treePicker.launch(null) },
+                    )
+                    Text(
+                        text = autoBackup.lastAt?.let {
+                            L.setAutoBackupLastFmt.format(TimeFormatter.dateTime(it))
+                        } ?: L.setAutoBackupNever,
+                        style = TimartType.caption,
+                        color = InkDisabled,
+                        modifier = Modifier.padding(start = 10.dp, top = 2.dp),
+                    )
+                    // 随备份体检摘要（N22）：仅在体检已执行过时显示，不打扰、不可点
+                    autoBackup.healthLastAt?.let { healthAt ->
+                        Text(
+                            text = (autoBackup.healthFindings ?: 0).let { findings ->
+                                if (findings == 0) {
+                                    L.setAutoBackupHealthClean
+                                        .format(TimeFormatter.dateTime(healthAt))
+                                } else {
+                                    L.setAutoBackupHealthFmt
+                                        .format(TimeFormatter.dateTime(healthAt), findings)
+                                }
+                            },
+                            style = TimartType.caption,
+                            color = InkDisabled,
+                            modifier = Modifier.padding(start = 10.dp, top = 2.dp),
+                        )
+                    }
+                    SimpleRow(
+                        label = L.setAutoBackupNow,
+                        description = when (autoBackup.lastStatus) {
+                            AutoBackupManager.Status.RAN -> L.setAutoBackupDone
+                            AutoBackupManager.Status.FAILED -> L.setAutoBackupFailed
+                            AutoBackupManager.Status.SKIPPED_LOCKED -> L.setAutoBackupNeedSession
+                            else -> L.setAutoBackupDesc
+                        },
+                        onClick = vm::runAutoBackupNow,
+                    )
+                    // 历史备份（N4）：轮转目录现存份数，可从指定份恢复
+                    if (autoBackup.treeUri != null) {
+                        SimpleRow(
+                            label = L.setAutoBackupHistory,
+                            description = L.setAutoBackupHistoryDesc,
+                            onClick = { showAutoBackupHistory = true },
+                        )
+                    }
+                }
             }
 
             // ---- 权限管理（状态实时展示；就近申请或跳转系统设置） ----
             PermissionManageCard(modifier = Modifier.padding(top = 12.dp))
 
-            // ---- 信息类：权限说明 / 天气数据 / 关于 ----
+            // ---- 信息类：体检 / 迁移 / 权限说明 / 天气数据 / 关于 ----
             SettingsCard(title = L.setInfoCard, modifier = Modifier.padding(top = 12.dp)) {
+                SimpleRow(
+                    label = L.setHealthCheck,
+                    description = L.setHealthCheckDesc,
+                    onClick = { showHealthCheck = true },
+                )
+                // 星库志（N6）：全库统计常驻入口（纯本地聚合，密文不参与）
+                SimpleRow(
+                    label = L.ledgerTitle,
+                    description = L.ledgerEntryDesc,
+                    onClick = { showStarLedger = true },
+                )
+                SimpleRow(
+                    label = L.setMigration,
+                    description = L.setMigrationDesc,
+                    onClick = { showMigration = true },
+                )
                 SimpleRow(
                     label = L.setAnnualReport,
                     description = L.setAnnualReportDesc,
@@ -520,6 +652,134 @@ fun SettingsScreen(container: AppContainer) {
     }
     if (showAnnualReport) {
         AnnualReportDialog(container = container, onDismiss = { showAnnualReport = false })
+    }
+    if (showHealthCheck) {
+        HealthCheckDialog(container = container, onDismiss = { showHealthCheck = false })
+    }
+    if (showStarLedger) {
+        StarLedgerDialog(container = container, onDismiss = { showStarLedger = false })
+    }
+    if (showMigration) {
+        MigrationWizardDialog(container = container, onDismiss = { showMigration = false })
+    }
+
+    // ---- 自动备份周期选择（7 / 14 / 30 天） ----
+    if (showAutoBackupPeriod) {
+        AlertDialog(
+            onDismissRequest = { showAutoBackupPeriod = false },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.setAutoBackupPeriod, style = TimartType.titleSerif) },
+            text = {
+                Column {
+                    listOf(7, 14, 30).forEach { days ->
+                        val selected = days == autoBackup.periodDays
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.setAutoBackupPeriod(days)
+                                    showAutoBackupPeriod = false
+                                }
+                                .padding(vertical = 6.dp),
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = TimeGold,
+                                    unselectedColor = InkSecondary,
+                                ),
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = L.setAutoBackupPeriodFmt.format(days),
+                                style = TimartType.body,
+                                color = InkPrimary,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAutoBackupPeriod = false }) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+
+    // ---- 历史备份浏览（N4）：轮转目录现存份数 + 指定份恢复（复用 BackupImportDialog 预选件） ----
+    if (showAutoBackupHistory) {
+        LaunchedEffect(Unit) { vm.loadAutoBackupHistory() }
+        val history by vm.autoBackupHistory.collectAsStateWithLifecycle()
+        var restoreUri by remember { mutableStateOf<Uri?>(null) }
+        AlertDialog(
+            onDismissRequest = { showAutoBackupHistory = false },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.setAutoBackupHistory, style = TimartType.titleSerif) },
+            text = {
+                Column {
+                    if (history.isEmpty()) {
+                        Text(
+                            text = L.setAutoBackupHistoryEmpty,
+                            style = TimartType.body,
+                            color = InkSecondary,
+                        )
+                    } else {
+                        history.forEach { copy ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = copy.timestamp?.let { TimeFormatter.dateTime(it) }
+                                            ?: copy.name,
+                                        style = TimartType.body,
+                                        color = InkPrimary,
+                                    )
+                                    copy.sizeBytes?.let { bytes ->
+                                        Text(
+                                            text = android.text.format.Formatter
+                                                .formatShortFileSize(context, bytes),
+                                            style = TimartType.caption,
+                                            color = InkDisabled,
+                                        )
+                                    }
+                                }
+                                TextButton(onClick = { restoreUri = copy.uri }) {
+                                    Text(text = L.setAutoBackupHistoryRestore, color = TimeGold)
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        text = L.setAutoBackupHistoryWarn,
+                        style = TimartType.caption,
+                        color = InkDisabled,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAutoBackupHistory = false }) {
+                    Text(text = L.cancel, color = InkSecondary)
+                }
+            },
+        )
+        // 指定份恢复：历史列表之上再弹口令校验（v2 导入链路含 Verifier + 二次确认文案）
+        restoreUri?.let { uri ->
+            BackupImportDialog(
+                manager = container.backupManager,
+                onDismiss = { restoreUri = null },
+                presetUri = uri,
+            )
+        }
+    }
     }
 
     // ---- 语言选择底部弹层（单选列表，选中即时生效并收起） ----
@@ -787,6 +1047,7 @@ private fun SettingsCard(
             .clip(RoundedCornerShape(16.dp))
             .background(SurfaceRaise)
             .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(text = title, style = TimartType.sectionNote, color = InkSecondary)
         Spacer(modifier = Modifier.height(10.dp))
@@ -823,9 +1084,11 @@ private fun SwitchRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
+        // 尾部开关与描述列固定 12dp 间距（长描述换行时不贴字）
         Switch(
             checked = checked,
             onCheckedChange = null,
+            modifier = Modifier.padding(start = 12.dp),
             colors = SwitchDefaults.colors(
                 checkedThumbColor = DeepCharcoal,
                 checkedTrackColor = TimeGold,
@@ -863,7 +1126,7 @@ private fun SimpleRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
-        Text(text = L.enter, style = TimartType.caption, color = TimeGold)
+        Text(text = L.enter, style = TimartType.caption, color = TimeGold, modifier = Modifier.padding(start = 12.dp))
     }
 }
 
@@ -909,6 +1172,18 @@ private fun languageName(option: AppLanguage, strings: Strings): String = when (
     AppLanguage.ZH_HANS -> strings.langZhHans
     AppLanguage.ZH_HANT -> strings.langZhHant
     AppLanguage.EN -> strings.langEn
+}
+
+/** 自动备份目录的简短显示名（SAF tree id 的 `:` 后段；解析失败回退「已选择」） */
+@Composable
+private fun autoBackupDirName(treeUri: String?): String {
+    val L = LocalStrings.current
+    if (treeUri == null) return L.setAutoBackupDirNone
+    return runCatching {
+        android.provider.DocumentsContract.getTreeDocumentId(treeUri.toUri())
+            .substringAfter(':')
+            .ifBlank { null }
+    }.getOrNull() ?: L.setAutoBackupDirChosen
 }
 
 /**

@@ -44,6 +44,10 @@ class TimartApplication : Application() {
                 metaDao.get(RuntimeSettings.KEY_INPUT_SPARK)?.toBooleanStrictOrNull() ?: true
             RuntimeSettings.soundEnabled =
                 metaDao.get(RuntimeSettings.KEY_SOUND)?.toBooleanStrictOrNull() ?: false
+            RuntimeSettings.biometricLock =
+                metaDao.get(RuntimeSettings.KEY_BIOMETRIC_LOCK)?.toBooleanStrictOrNull() ?: false
+            RuntimeSettings.dawnDuskTint =
+                metaDao.get(RuntimeSettings.KEY_DAWN_DUSK)?.toBooleanStrictOrNull() ?: false
             container.audioManager.setEnabled(RuntimeSettings.soundEnabled)
             // 动效档位镜像：冷启动即按持久化档位重建引擎（此前只在设置页 VM 加载，
             // 导致开机后引擎一直是自动检测档位，需进设置页手动切换才生效）

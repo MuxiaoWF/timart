@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.muxiao.timart.l10n.LocalStrings
+import com.muxiao.timart.l10n.Strings
 import com.muxiao.timart.AppContainer
 import com.muxiao.timart.domain.model.DestroyRecord
 import com.muxiao.timart.ui.components.particle.ParticleCanvas
@@ -68,6 +69,7 @@ import com.muxiao.timart.ui.theme.TrackHairline
 import com.muxiao.timart.ui.theme.wideContentWidth
 import com.muxiao.timart.utils.format.TimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -415,6 +417,38 @@ private fun BiographyDialog(
     onDismiss: () -> Unit,
 ) {
     val L = LocalStrings.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var exporting by remember { mutableStateOf(false) }
+
+    /** 时间线长图导出（N12）：仅元数据与时间戳，FileProvider 分享（与海报同路） */
+    fun exportTimeline() {
+        if (exporting) return
+        exporting = true
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val content = buildTimelineContent(biography, L)
+            val file = com.muxiao.timart.utils.export.TimelineComposer(context).compose(content)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                exporting = false
+                if (file == null) {
+                    android.widget.Toast.makeText(context, L.posterFail, android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file,
+                    )
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "image/jpeg"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(send, L.posterShare))
+                }
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SurfaceRaise,
@@ -555,10 +589,72 @@ private fun BiographyDialog(
             }
         },
         confirmButton = {
+            TextButton(onClick = ::exportTimeline, enabled = !exporting) {
+                Text(text = L.bioExport, color = if (exporting) InkDisabled else TimeGold)
+            }
             TextButton(onClick = onDismiss) {
                 Text(text = L.ok, color = TimeGold)
             }
         },
+    )
+}
+
+/** 生平 → 时间线长图输入（N12）：刻度序列与元信息块映射（仅元数据与时间戳） */
+private fun buildTimelineContent(
+    biography: DustRecordsViewModel.Biography,
+    L: Strings,
+): com.muxiao.timart.utils.export.TimelineComposer.TimelineContent {
+    val moments = buildList {
+        add(
+            com.muxiao.timart.utils.export.TimelineComposer.Moment(
+                label = L.bioSealLabel,
+                value = TimeFormatter.dateTime(biography.record.createdAt),
+            ),
+        )
+        if (biography.capsuleExists) {
+            biography.conditions.forEach { moment ->
+                add(
+                    com.muxiao.timart.utils.export.TimelineComposer.Moment(
+                        label = moment.sentence ?: L.bioConditionsLabel,
+                        value = moment.metAt?.let { L.bioMomentFmt.format(TimeFormatter.dateTime(it)) }
+                            ?: L.bioMomentUnrecorded,
+                    ),
+                )
+            }
+            add(
+                com.muxiao.timart.utils.export.TimelineComposer.Moment(
+                    label = L.bioOpenLabel,
+                    value = biography.unlockedAt?.let { TimeFormatter.dateTime(it) } ?: L.bioNeverOpened,
+                ),
+            )
+        }
+        add(
+            com.muxiao.timart.utils.export.TimelineComposer.Moment(
+                label = L.bioDustLabel,
+                value = TimeFormatter.dateTime(biography.record.destroyedAt),
+            ),
+        )
+    }
+    val noteBlocks = buildList {
+        biography.viewCount?.let { views ->
+            val watchLine = biography.watchSeconds?.let { seconds ->
+                if (seconds >= 60) L.bioWatchMinFmt.format(seconds / 60) else L.bioWatchSecFmt.format(seconds)
+            }
+            val text = listOfNotNull(L.bioViewsFmt.format(views), watchLine).joinToString(" · ")
+            add(L.bioViewsFmt.format(views) to text)
+        }
+        biography.note?.let { add(L.bioNoteLabel to it) }
+        biography.reply?.let { add(L.replyLabel to it) }
+    }
+    return com.muxiao.timart.utils.export.TimelineComposer.TimelineContent(
+        title = biography.record.title,
+        spanLine = L.dustRecordSpanFmt.format(
+            TimeFormatter.date(biography.record.createdAt),
+            TimeFormatter.date(biography.record.destroyedAt),
+        ),
+        moments = moments,
+        noteBlocks = noteBlocks,
+        tagsLine = biography.tags.takeIf { it.isNotEmpty() }?.joinToString(" · "),
     )
 }
 

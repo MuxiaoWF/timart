@@ -202,16 +202,19 @@ fun BackupExportDialog(
  * 备份导入弹窗：选文件 → 输入**备份的口令** → 校验导入。
  * 连续 5 次口令错误锁定 30s（计数与倒计时都在对话框内存态，架构 §2.12）。
  * 导入为追加语义：id 冲突的胶囊跳过。
+ *
+ * @param presetUri 预选的备份包（N4 历史备份指定份恢复；非空时跳过选文件步直接输口令）
  */
 @Composable
 fun BackupImportDialog(
     manager: BackupManager,
     onDismiss: () -> Unit,
+    presetUri: Uri? = null,
 ) {
     val L = LocalStrings.current
     // 0 提示选文件 / 1 已选文件输口令 / 2 进行中 / 3 成功 / 4 失败
-    var step by remember { mutableIntStateOf(0) }
-    var pickedUri by remember { mutableStateOf<Uri?>(null) }
+    var step by remember { mutableIntStateOf(if (presetUri != null) 1 else 0) }
+    var pickedUri by remember { mutableStateOf(presetUri) }
     var password by remember { mutableStateOf("") }
     var resultText by remember { mutableStateOf("") }
     var unsupportedLabels by remember { mutableStateOf(emptyList<String>()) }
@@ -366,16 +369,16 @@ fun BackupImportDialog(
 
 // ---- 弹窗内文案与按钮（文件内私有） ----
 
-/** 5 次口令错误的锁定时长（30s） */
-private const val LOCK_MILLIS = 30_000L
+/** 5 次口令错误的锁定时长（30s；迁移向导同规则复用） */
+internal const val LOCK_MILLIS = 30_000L
 
 @Composable
-private fun InfoLine(text: String) {
+internal fun InfoLine(text: String) {
     Text(text = text, style = TimartType.caption, color = InkSecondary)
 }
 
 @Composable
-private fun WarnLine(text: String) {
+internal fun WarnLine(text: String) {
     Text(
         text = text,
         style = TimartType.caption,
@@ -385,7 +388,7 @@ private fun WarnLine(text: String) {
 }
 
 @Composable
-private fun MonoLine(text: String) {
+internal fun MonoLine(text: String) {
     Text(
         text = text,
         style = TimartType.caption,
@@ -395,7 +398,7 @@ private fun MonoLine(text: String) {
 }
 
 @Composable
-private fun GoldTextButton(
+internal fun GoldTextButton(
     label: String,
     enabled: Boolean = true,
     onClick: () -> Unit,

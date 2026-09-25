@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 时粒桌面小组件布局：极简静态卡，点击进主页面 -->
+<!-- 时粒桌面小组件布局：品牌行 + 临近待解锁列表（N21 列表化；仅标题与确定性时间元数据） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -26,4 +26,12 @@
         android:textColor="#B3A79B"
         android:textSize="11sp"
         android:text="@string/widget_subtitle" />
+
+    <!-- 临近待解锁行容器（N21：至多 3 行，代码动态填充；无可预估胶囊时保持空） -->
+    <LinearLayout
+        android:id="@+id/widget_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="vertical" />
 </LinearLayout>

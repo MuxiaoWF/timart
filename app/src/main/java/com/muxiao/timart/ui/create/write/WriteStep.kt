@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,6 +31,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -270,6 +273,49 @@ fun WriteStep(
                 color = InkDisabled,
                 modifier = Modifier.align(Alignment.End),
             )
+
+            // 多章节信件（N10）：分章开关 + 第 2/3 章输入（创建时一次加密入库）
+            TextButton(
+                onClick = { vm.updateChaptersEnabled(!vm.chaptersEnabled) },
+                colors = ButtonDefaults.textButtonColors(contentColor = if (vm.chaptersEnabled) TimeGold else InkSecondary),
+                contentPadding = PaddingValues(horizontal = 0.dp),
+                modifier = Modifier.padding(top = 2.dp),
+            ) {
+                Text(
+                    text = if (vm.chaptersEnabled) L.chapterToggleOn else L.chapterToggleOff,
+                    style = TimartType.caption,
+                )
+            }
+            if (vm.chaptersEnabled) {
+                vm.chapterTexts.forEachIndexed { index, text ->
+                    Text(
+                        text = L.chapterLabelFmt.format(index + 2),
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { v -> vm.updateChapterText(index, v) },
+                        textStyle = TimartType.body.copy(color = InkPrimary, lineHeight = 24.sp),
+                        cursorBrush = SolidColor(TimeGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .height(150.dp),
+                    )
+                }
+                if (vm.chapterTexts.size < com.muxiao.timart.domain.usecase.ChapterLetter.MAX_CHAPTERS - 1) {
+                    TextButton(
+                        onClick = vm::addChapter,
+                        colors = ButtonDefaults.textButtonColors(contentColor = InkSecondary),
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                        modifier = Modifier.padding(top = 6.dp),
+                    ) {
+                        Text(text = L.chapterAdd, style = TimartType.caption)
+                    }
+                }
+            }
         }
 
         // 灵感卡（封存问答卡）：随机一叶引导句，轻触翻牌换下一张（Crossfade 淡换，克制不抢主焦点）
@@ -543,6 +589,83 @@ fun WriteStep(
             },
             modifier = Modifier.fillMaxWidth(),
         )
+
+        // 待答之问（N20，可选）：留空则不写键，回信占位回退默认文案
+        Text(
+            text = L.questionLabel,
+            style = TimartType.body,
+            color = InkPrimary,
+            modifier = Modifier.padding(top = 18.dp),
+        )
+        Text(
+            text = L.questionHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        BasicTextField(
+            value = vm.question,
+            onValueChange = vm::updateQuestion,
+            singleLine = true,
+            textStyle = TimartType.body.copy(color = InkPrimary),
+            cursorBrush = SolidColor(TimeGold),
+            decorationBox = { inner ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .background(SurfaceRaise, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                ) {
+                    if (vm.question.isEmpty()) {
+                        Text(text = L.questionPlaceholder, style = TimartType.body, color = InkDisabled)
+                    }
+                    inner()
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // 火漆印章（N19，可选）：参数化矢量印章，落款呈现在信笺底部
+        Text(
+            text = L.sealLabel,
+            style = TimartType.body,
+            color = InkPrimary,
+            modifier = Modifier.padding(top = 18.dp),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+        ) {
+            // 无印
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(SurfaceRaise)
+                    .clickable { vm.updateSealStyle(0) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = L.sealNone, style = TimartType.caption, color = InkSecondary)
+            }
+            for (style in 1..com.muxiao.timart.ui.components.visual.WaxSealStyle.COUNT) {
+                val selected = vm.sealStyle == style
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (selected) TimeGold.copy(alpha = 0.14f) else SurfaceRaise)
+                        .clickable { vm.updateSealStyle(style) },
+                ) {
+                    com.muxiao.timart.ui.components.visual.WaxSeal(
+                        style = style,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(28.dp))
 

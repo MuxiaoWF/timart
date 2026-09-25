@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.ui.create.CreateViewModel
+import com.muxiao.timart.utils.RuntimeSettings
 import com.muxiao.timart.utils.location.GeocodeResolver
 import com.muxiao.timart.ui.create.rules.condition.BatteryLevelForm
 import com.muxiao.timart.ui.create.rules.condition.BiometricForm
@@ -163,6 +165,7 @@ fun RulesStep(
     var activeForm by remember { mutableStateOf<ConditionType?>(null) }
     var showDependencySheet by remember { mutableStateOf(false) }
     var showScenarioSheet by remember { mutableStateOf(false) }
+    var showDryRun by remember { mutableStateOf(false) }
     val ruleEmpty = vm.conditions.isEmpty() && vm.dependCapsuleId == null
 
     Column(
@@ -250,6 +253,17 @@ fun RulesStep(
             modifier = Modifier.padding(top = 18.dp),
         )
 
+        // 沙盘试算（N2）：以当前上下文试算草稿规则，逐条展示满足/原因（纯只读零副作用）
+        if (!ruleEmpty) {
+            TextButton(
+                onClick = { showDryRun = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = InkSecondary),
+                modifier = Modifier.padding(top = 4.dp),
+            ) {
+                Text(text = L.dryRunEntry, style = TimartType.caption)
+            }
+        }
+
         if (ruleEmpty) {
             Text(
                 text = L.rulesNoCondition,
@@ -318,6 +332,91 @@ fun RulesStep(
             onDismiss = { showDependencySheet = false },
         )
     }
+
+    // ---- 沙盘试算弹窗（N2）----
+    if (showDryRun) {
+        DryRunDialog(vm = vm, onDismiss = { showDryRun = false })
+    }
+}
+
+/**
+ * 沙盘试算弹窗（N2）：打开即以当前上下文跑一遍草稿规则（复用 UnlockJudgeUseCase，
+ * foregroundOnly=true 与详情页当场判定同口径），逐条列出满足状态与原因。
+ * 试算不落库、不解锁任何东西；时间类条件未到点即「未满足」，到点即可满足的环境类条件即刻反映。
+ */
+@Composable
+private fun DryRunDialog(
+    vm: CreateViewModel,
+    onDismiss: () -> Unit,
+) {
+    val L = LocalStrings.current
+    var running by remember { mutableStateOf(true) }
+    var result by remember { mutableStateOf<com.muxiao.timart.domain.model.JudgeResult?>(null) }
+    LaunchedEffect(Unit) {
+        result = vm.dryRun()
+        running = false
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceRaise,
+        title = { Text(text = L.dryRunTitle, style = TimartType.titleSerif) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                when {
+                    running || result == null -> Text(
+                        text = L.dryRunRunning,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                    )
+
+                    else -> {
+                        val judgeResult = result!!
+                        judgeResult.items.forEachIndexed { index, item ->
+                            Text(
+                                text = "${index + 1}. " + com.muxiao.timart.domain.model.unlock.ConditionText
+                                    .conditionSentence(item.condition, RuntimeSettings.resolvedLang),
+                                style = TimartType.caption,
+                                color = InkPrimary,
+                                modifier = Modifier.padding(top = if (index == 0) 0.dp else 8.dp),
+                            )
+                            Text(
+                                text = if (item.satisfied) {
+                                    L.condSatisfiedTag
+                                } else {
+                                    item.reason ?: L.dryRunNotYet
+                                },
+                                style = TimartType.caption,
+                                color = if (item.satisfied) TimeGold else InkSecondary,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        if (!judgeResult.dependencyOk) {
+                            Text(
+                                text = vm.dependTitle?.let { L.dryRunDepFmt.format(it) }
+                                    ?: L.dryRunNotYet,
+                                style = TimartType.caption,
+                                color = InkSecondary,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                        Text(
+                            text = if (judgeResult.overallOk) L.dryRunAllMet else L.dryRunNotYet,
+                            style = TimartType.body,
+                            color = if (judgeResult.overallOk) TimeGold else InkSecondary,
+                            modifier = Modifier.padding(top = 14.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = L.confirm)
+            }
+        },
+    )
 }
 
 // ================= 入口小件 =================

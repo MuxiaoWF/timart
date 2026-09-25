@@ -269,6 +269,27 @@ class AppContainer(context: Context) {
         )
     }
 
+    /** 自动定期本地备份（MainActivity ON_RESUME 周期检查 + 设置页配置；复用 BackupManager 导出链路） */
+    val autoBackupManager: com.muxiao.timart.utils.export.AutoBackupManager by lazy {
+        com.muxiao.timart.utils.export.AutoBackupManager(
+            context = appContext,
+            backupManager = backupManager,
+            crypto = contentCryptoManager,
+            metaDao = metaDao,
+            // 随备份体检（N22）：复用 LibraryHealthCheck 纯逻辑 + 既有数据采集口径（同 MaintenanceDialogs）
+            healthScan = {
+                val capsules = capsuleRepository.allSync()
+                val metaRows = database.metaDao().listLike("capsule.")
+                com.muxiao.timart.domain.usecase.LibraryHealthCheck.scan(
+                    capsules = capsules,
+                    metaKeys = metaRows.map { it.key },
+                    condMetPrefix = com.muxiao.timart.data.local.db.CapsuleMetaKeys.COND_MET_KEY_PREFIX,
+                    prefixes = com.muxiao.timart.data.local.db.CapsuleMetaKeys.ORPHAN_SCAN_PREFIXES,
+                )
+            },
+        )
+    }
+
     // ---- NFC 锚点 / 嵌套种子 / 触觉（体验储备池 §3–§6） ----
 
     /** 口令分片（体验储备池 §7.1）：GF(256) Shamir 拆分/重构 + 分片串编解码（纯 Kotlin） */
@@ -301,7 +322,17 @@ class AppContainer(context: Context) {
      */
     var pendingNfcCapsuleId: String? by mutableStateOf(null)
 
-    /** 嵌套种子是否休眠（体验储备池 §3）：有 seedOf 标记且无 sprout 标记。
+    /**
+     * 回信转新胶囊的待预填草稿（N5）：Detail 写入 (预填标题, 预填正文, 回信来源胶囊 id)，
+     * CreateViewModel 构造时消费并清空；来源 id 非空时封存成功落 meta `capsule.replyTo.<newId>`。
+     * 与 [pendingNfcCapsuleId] 同为一次性进程内交接位。
+     */
+    data class CapsulePrefill(val title: String, val body: String, val replySourceId: String?)
+
+    var pendingCapsulePrefill: CapsulePrefill? = null
+
+    /**
+     * 嵌套种子是否休眠（体验储备池 §3）：有 seedOf 标记且无 sprout 标记。
      *  同步读（MainActivity 全量判定 / Worker 的 shouldJudge 用），失败按未休眠 fail-open——
      *  宁可让种子照常判定，也不让读取故障把已萌芽/普通胶囊藏起来。 */
     fun isSeedDormant(capsuleId: String): Boolean = runCatching {

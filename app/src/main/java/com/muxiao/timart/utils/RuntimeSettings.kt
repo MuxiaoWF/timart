@@ -33,6 +33,8 @@ object RuntimeSettings {
     const val KEY_INPUT_SPARK = "settings.inputSpark"
     const val KEY_SOUND = "settings.sound"
     const val KEY_LANGUAGE = "settings.language"
+    const val KEY_BIOMETRIC_LOCK = "settings.biometricLock"
+    const val KEY_DAWN_DUSK = "settings.dawnDusk"
 
     /** 陀螺仪视差（首页星图轻微偏移；ARCHITECTURE §2.14 默认关） */
     @Volatile
@@ -45,6 +47,20 @@ object RuntimeSettings {
     /** 音效（PENDING / UNSEAL / DISSOLVE 提示音；默认关闭，设置页显式开启） */
     @Volatile
     var soundEnabled: Boolean = false
+
+    /**
+     * 启动隐私锁（N18，默认关）：ON_RESUME 加一道 BiometricPrompt 门，防口令会话已解锁时被随手翻看。
+     * 只挡入口不动数据——验证失败不销毁、不锁定，与 [KEY_SOUND] 等偏好同走 meta 镜像。
+     */
+    @Volatile
+    var biometricLock: Boolean = false
+
+    /**
+     * 昼夜暖色变体（N17，默认关）：开启后清晨/黄昏时段给主题一层极低 alpha 暖色叠加，
+     * 只读本地时钟零网络；叠加实现见 [com.muxiao.timart.ui.theme.DawnDuskTint]。
+     */
+    @Volatile
+    var dawnDuskTint: Boolean = false
 
     /** 界面语言（快照状态；默认跟随系统） */
     var appLanguage: AppLanguage by mutableStateOf(AppLanguage.SYSTEM)
