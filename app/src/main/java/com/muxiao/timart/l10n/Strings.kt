@@ -723,6 +723,68 @@ interface Strings {
     val condScanQr: String
     val condPow: String
 
+    // ---- 储备池 v5 条件名 ----
+    val condSnowfall: String
+    val condCumSteps: String
+
+    /** 累计步行：采样口径说明 */
+    val cumStepsNote: String
+
+    // ---- 储备池 v6 条件名 ----
+    val condRainStreak: String
+    val condTempVsSeal: String
+
+    // ---- 储备池 v7 条件名 / 功能词条 ----
+    val condLunarDaySet: String
+    val condThunder: String
+    val condBrightLight: String
+    val condAppUsage: String
+    val condPressureDrop: String
+    val condVoiceKeepsake: String
+    val condShout: String
+
+    /** 明亮环境：照度参考说明 */
+    val brightLightNote: String
+
+    /** 应用用量：使用统计特殊权限说明与设置入口 */
+    val appUsagePermNote: String
+    val appUsageOpenSettings: String
+
+    /** 声音纪念挑战：提示 / 录音控制 */
+    val challengeVoiceKeepsakeHint: String
+    val voiceKeepsakeRecord: String
+    val voiceKeepsakeStop: String
+    val voiceKeepsakeReplay: String
+    val voiceKeepsakeDone: String
+
+    /** 呐喊挑战提示 */
+    val challengeShoutHint: String
+
+    /** 回信信箱：标题 / 空态 / 已转存标记 */
+    val mailboxTitle: String
+    val mailboxEmpty: String
+    val mailboxConverted: String
+
+    /** 口令会话免输时长：标签 / 说明 / 档位文案 */
+    val setSessionTtl: String
+    val setSessionTtlDesc: String
+    val sessionTtlHoursFmt: String
+    val sessionTtlDaysFmt: String
+
+    /** 解锁进度预估：最早可解日期（参数 = 格式化日期） */
+    val earliestUnlockFmt: String
+
+    /** 依赖链视图标题 */
+    val chainTitle: String
+
+    /** 口令提示语：设置页输入标签 / 解锁弹窗显示（参数 = 提示文本） */
+    val pwHintLabel: String
+    val pwUnlockHintFmt: String
+
+    /** 天气预告通知：标题 / 正文（参数 1 = 天气名，参数 2 = 胶囊标题） */
+    val notifForecastTitle: String
+    val notifForecastBodyFmt: String
+
     // ---- 储备池 v4 表单 / 挑战提示 ----
 
     /** 依赖定位通道的条件表单说明（白昼长度 / 日出钟点 / 半球 / 速度区间共用） */
@@ -803,7 +865,7 @@ interface Strings {
     val tplCafeName: String
     val tplCafeNote: String
 
-    // ---- 体验储备池增量（docs/backlog-experience.md ★五件套）----
+    // ---- 体验储备池增量（prd/delta-prd-vs-code.md D-13 ★五件套）----
 
     /** 灵感卡（封存问答卡）：写下页小节标题 / 提示 / 抽卡动作 */
     val promptSectionLabel: String
@@ -1082,6 +1144,9 @@ interface Strings {
     val healthDestroyedDepFmt: String
     val healthCycleFmt: String
     val healthShardFmt: String
+
+    /** 规则异常（整库体检）：参数 = 胶囊标题列表 */
+    val healthRuleFmt: String
     val healthMissingImageFmt: String
     val healthBackupAgeFmt: String
     val healthCleanup: String
@@ -1124,4 +1189,62 @@ interface Strings {
     /** 尘迹纪念页导出（销毁态海报：无正文无图片，可被纪念不被庆祝） */
     val dustPoster: String
     val dustPosterLineFmt: String
+
+    // ================= 子群组（储备池暂缓项落地：规则内条件分组，组内独立 AND/OR/任选M） =================
+
+    val groupEntry: String
+    val groupEntryWithCountFmt: String
+    val groupEditorTitle: String
+    val groupEditorDesc: String
+    val groupPickHint: String
+    val groupCreateFmt: String
+    val groupDefaultFmt: String
+    val groupNameHintFmt: String
+    val groupDissolve: String
+    val groupEdit: String
+    val groupLogicAnd: String
+    val groupLogicOr: String
+    val groupLogicAtLeastFmt: String
+
+    // ================= 连环信向导（储备池暂缓项落地：读一封出下一封的链式系列信） =================
+
+    val chainEntry: String
+    val chainEntryDesc: String
+    val chainWizTitle: String
+    val chainDesc: String
+    val chainCountFmt: String
+    val chainAddLetter: String
+    val chainLetterNFmt: String
+    val chainTitleHintFmt: String
+    val chainContentHint: String
+    val chainIncomplete: String
+    val chainRhythmNext: String
+    val chainFirstDaysFmt: String
+    val chainFirstDaysDesc: String
+    val chainIntervalDaysFmt: String
+    val chainIntervalDesc: String
+    val chainSummaryCountFmt: String
+    val chainSummaryFirstFmt: String
+    val chainSummaryFirstNow: String
+    val chainSummaryIntervalFmt: String
+    val chainSummarySeedNote: String
+    val chainSealAllFmt: String
+    val chainDefaultTitleFmt: String
+    val chainMinLettersFmt: String
+
+    // ================= 备份口令分离（v3：备份口令独立于主口令） =================
+
+    val save: String
+    val bkExportUseStored: String
+    val bkExportSetBkPw: String
+    val bkPwTitle: String
+    val bkPwDesc: String
+    val bkPwMismatch: String
+    val bkPwSaveFailed: String
+    val bkErrNoBkPw: String
+    val bkImportNeedUnlock: String
+    val setBackupPw: String
+    val setBackupPwDesc: String
+    val setBackupPwSetDesc: String
+    val setAutoBackupNeedPw: String
 }

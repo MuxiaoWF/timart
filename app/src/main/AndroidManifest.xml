@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 网络行为仅两类：Open-Meteo 天气调用 + GPS 条件地址解析兜底（Nominatim/Photon，仅发送输入的地点文字） -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -27,6 +28,12 @@
 
     <!-- 声音留言（体验储备池 §1）：封存时录制语音，仅本地加密存储，无任何上传 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- 应用用量条件（储备池 v7）：读取本机应用前台使用时长做数字戒断判定。
+         AppOps 特殊权限（用户在系统设置中授予，非运行时弹窗），纯本地不联网 -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
@@ -92,6 +99,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/timart_widget_info" />
+        </receiver>
+
+        <!-- 单球小组件（储备池 v7）：1×1 重点倒计时 -->
+        <receiver
+            android:name=".widget.TimartWidgetBallProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/timart_widget_ball_info" />
         </receiver>
     </application>
 

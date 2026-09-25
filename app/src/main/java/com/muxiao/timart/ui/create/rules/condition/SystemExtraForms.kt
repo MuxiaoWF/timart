@@ -423,3 +423,65 @@ fun InstalledAppForm(onConfirm: (UnlockCondition.InstalledApp) -> Unit) {
         )
     }
 }
+
+// ================= 今日应用用量上限（储备池 v7）=================
+
+/**
+ * 应用用量上限表单：今日使用指定应用 ≤ N 分钟（数字戒断；0 = 今日完全不用）。
+ * 使用统计是 AppOps 特殊权限：未授予时给出说明与「前往开启」按钮（fail-closed 语义不变）。
+ */
+@Composable
+fun AppUsageCeilingForm(onConfirm: (UnlockCondition.AppUsageCeiling) -> Unit) {
+    val L = LocalStrings.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var packageName by remember { mutableStateOf("") }
+    var minutes by remember { mutableIntStateOf(30) }
+    val condition = UnlockCondition.AppUsageCeiling(packageName.trim(), minutes)
+
+    ExtendFormScaffold(
+        title = L.condAppUsage,
+        valueCondition = if (packageName.isBlank()) null else condition,
+        enabled = packageName.isNotBlank(),
+        onConfirm = { onConfirm(condition) },
+    ) {
+        Text(
+            text = L.installedPkgLabel,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        BasicTextField(
+            value = packageName,
+            onValueChange = { packageName = it },
+            singleLine = true,
+            textStyle = TimartType.body.copy(color = InkPrimary),
+            cursorBrush = SolidColor(TimeGold),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+                .background(SurfaceRaise)
+                .padding(12.dp),
+        )
+        IntSlider(value = minutes, range = 0f..480f, steps = 95) { minutes = it }
+        val granted = remember { com.muxiao.timart.utils.app.hasUsageStatsPermission(context) }
+        if (!granted) {
+            Text(
+                text = L.appUsagePermNote,
+                style = TimartType.caption,
+                color = InkSecondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS),
+                        )
+                    }
+                },
+            ) {
+                Text(text = L.appUsageOpenSettings, color = TimeGold)
+            }
+        }
+    }
+}

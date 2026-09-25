@@ -53,4 +53,27 @@ data class WeatherSnapshot(
     val precipProbPercent: Int? = null,
     /** 昨日日均温（°C，past_days=1；降温条件通道） */
     val yesterdayMeanTempC: Double? = null,
+    /**
+     * 今日之前的降雪日计数（Open-Meteo daily weathercode 历史窗口，储备池 v5 首雪条件通道）；
+     * null = 接口缺字段 / 解析失败（首雪判定 fail-closed 按指标不可用）
+     */
+    val snowDaysPast: Int? = null,
+    /**
+     * 截至昨日的连续降雨天数（雨 = 毛雨/雨/雷，储备池 v6 连续降雨条件通道；
+     * 历史窗口同 snowDaysPast 的 daily weathercode）；
+     * null = 接口缺字段 / 解析失败（判定 fail-closed 按指标不可用）
+     */
+    val rainStreakPast: Int? = null,
+    /** 当前体感温度（°C，Open-Meteo apparent_temperature；储备池 v7 WeatherMetric.APPARENT 通道） */
+    val feelsLikeC: Double? = null,
+    /**
+     * 今日之前的雷暴日计数（储备池 v7 今季首雷条件通道，历史窗口同 snowDaysPast）；
+     * null = 接口缺字段 / 解析失败（判定 fail-closed 按指标不可用）
+     */
+    val thunderDaysPast: Int? = null,
+    /**
+     * 昨日日均气压（hPa，Open-Meteo daily pressure_msl_mean，储备池 v7 气压骤降条件通道）；
+     * null = 接口缺字段 / 解析失败（判定 fail-closed 按指标不可用）
+     */
+    val yesterdayMeanPressureHpa: Double? = null,
 )

@@ -115,8 +115,11 @@ class AppContainer(context: Context) {
 
     val cityRepository: CityRepositoryImpl by lazy { CityRepositoryImpl(appContext, metaDao) }
 
+    /** Open-Meteo API 客户端（当前天气 + 逐日预报共用同一实例） */
+    val openMeteoApi: OpenMeteoApi by lazy { OpenMeteoApi() }
+
     val weatherRepositoryImpl: WeatherRepositoryImpl by lazy {
-        WeatherRepositoryImpl(OpenMeteoApi(), cityRepository)
+        WeatherRepositoryImpl(openMeteoApi, cityRepository)
     }
 
     /** 地址解析链（GPS 条件表单：原生 Geocoder → Nominatim → Photon → 天地图） */

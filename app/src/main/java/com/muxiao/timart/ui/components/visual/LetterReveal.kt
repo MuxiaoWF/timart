@@ -10,17 +10,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,53 +71,82 @@ private const val TITLE_WINDOW_MS = REVEAL_TOTAL_MS * 0.32f
  */
 private const val WAVE_CHAR_CYCLE_MS = 300f
 
-class LetterRevealState internal constructor(
+/**
+ * 信笺显现时钟（稳定标识，跨重组持有进度状态；由 [rememberLetterReveal] / [rememberRevealClock] 创建）：
+ * - 快照 getter（titleP/bodyP）在组合期读取 = 选择性重组（打字机/扰乱逐帧改文本，必须重组）；
+ * - raw 状态字段供 WAVE/BLUR/正文淡入在 graphicsLayer / drawBehind **层相位**内读取——
+ *   波形/对焦/段淡入不再逐帧重组（显现期的逐帧重组是信笺开卡时刻最大的掉帧源）；
+ * - [startNanos] 支持揭封 hold 期起笔 + CONTENT 卡片接管同一时钟：交接零跳变，
+ *   hold 前跳过则时钟未起跑，由 CONTENT 在交接时起跑，两条路径语义自动一致。
+ * 每次打开信笺新建（效果重抽 + 进度归零）。
+ */
+@Stable
+class LetterRevealClock internal constructor(
     val effect: LetterRevealEffect,
-    val titleP: Float,
-    val bodyP: Float,
+) {
+    internal val titlePState = mutableFloatStateOf(0f)
+    internal val bodyPState = mutableFloatStateOf(0f)
+    internal val titleMsState = mutableFloatStateOf(0f)
 
-    /** 标题窗口内已流逝的毫秒（0..TITLE_WINDOW_MS）：WAVE 固定时长制的时钟 */
-    val titleMs: Float,
-)
+    /** 起跑帧时间戳（0 = 未起跑）：由首个 mode=true 的驱动方写入 */
+    internal var startNanos: Long = 0L
+
+    /** 标题进度 0..1（组合期读取会订阅重组；层相位请直读 [titlePState]） */
+    val titleP: Float get() = titlePState.floatValue
+
+    /** 正文进度 0..1 */
+    val bodyP: Float get() = bodyPState.floatValue
+
+}
 
 /**
- * 每次进入组合（= 每次打开信笺）重抽显现效果，且不与上一次打开重复（四种至少轮换可感知）。
- *
- * @param mode true = 播放显现动画；false = 停在初始（内容未就绪）；null = 直接完成态
+ * 新建独立显现时钟（每次进入组合 = 每次打开信笺重抽效果，且不与上一次打开重复、四种至少轮换可感知）。
+ * 揭封 hold 期与 CONTENT 卡片共享同一时钟时，由 DetailScreen 持有并分别传入两侧。
  */
 @Composable
-fun rememberLetterReveal(mode: Boolean?): LetterRevealState {
-    val effect = remember { rollRevealEffect() }
-    val titleRaw = remember { mutableFloatStateOf(0f) }
-    val bodyRaw = remember { mutableFloatStateOf(0f) }
-    var titleMs by remember { mutableFloatStateOf(0f) }
+fun rememberRevealClock(): LetterRevealClock = remember { LetterRevealClock(rollRevealEffect()) }
 
-    LaunchedEffect(mode) {
+/**
+ * 驱动显现时钟（进入组合启动，播完静止，无循环）。
+ *
+ * @param mode true = 播放显现动画；false = 停在初始（内容未就绪）；null = 直接完成态（消散重放等静态场景）
+ * @param clock 外部共享时钟（揭封 hold 交接重叠用）：提供时不重抽效果，mode=true 时起跑/续走同一时间轴
+ */
+@Composable
+fun rememberLetterReveal(
+    mode: Boolean?,
+    clock: LetterRevealClock? = null,
+): LetterRevealClock {
+    val resolved = clock ?: remember { LetterRevealClock(rollRevealEffect()) }
+    LaunchedEffect(resolved, mode) {
         if (mode == null) {
-            titleRaw.floatValue = 1f
-            bodyRaw.floatValue = 1f
-            titleMs = TITLE_WINDOW_MS
+            resolved.titlePState.floatValue = 1f
+            resolved.bodyPState.floatValue = 1f
+            resolved.titleMsState.floatValue = TITLE_WINDOW_MS
             return@LaunchedEffect
         }
         if (!mode) {
-            titleRaw.floatValue = 0f
-            bodyRaw.floatValue = 0f
-            titleMs = 0f
+            resolved.titlePState.floatValue = 0f
+            resolved.bodyPState.floatValue = 0f
+            resolved.titleMsState.floatValue = 0f
             return@LaunchedEffect
         }
-        val startNanos = withFrameNanos { it }
+        // 揭封 hold 已起跑则续走（不重置进度）；hold 前跳过则时钟未起跑，在此起跑
+        if (resolved.startNanos == 0L) {
+            resolved.startNanos = withFrameNanos { it }
+        }
         while (isActive) {
             var ms = 0L
-            withFrameNanos { frame -> ms = (frame - startNanos) / 1_000_000L }
+            withFrameNanos { frame -> ms = (frame - resolved.startNanos) / 1_000_000L }
             val overall = (ms / REVEAL_TOTAL_MS.toFloat()).coerceIn(0f, 1f)
-            titleRaw.floatValue = (overall / 0.32f).coerceIn(0f, 1f)
-            bodyRaw.floatValue = ((overall - 0.32f) / 0.68f).coerceIn(0f, 1f)
-            titleMs = ms.toFloat().coerceAtMost(TITLE_WINDOW_MS)
+            resolved.titlePState.floatValue = (overall / 0.32f).coerceIn(0f, 1f)
+            resolved.bodyPState.floatValue = ((overall - 0.32f) / 0.68f).coerceIn(0f, 1f)
+            resolved.titleMsState.floatValue = ms.toFloat().coerceAtMost(TITLE_WINDOW_MS)
             if (ms >= REVEAL_TOTAL_MS) break
         }
     }
 
-    return LetterRevealState(effect, titleRaw.floatValue, bodyRaw.floatValue, titleMs)
+    return resolved
 }
 
 /** 标题显现（四种效果完整版） */
@@ -125,7 +154,7 @@ fun rememberLetterReveal(mode: Boolean?): LetterRevealState {
 @Composable
 fun RevealTitle(
     text: String,
-    state: LetterRevealState,
+    state: LetterRevealClock,
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
@@ -163,15 +192,19 @@ fun RevealTitle(
 
         LetterRevealEffect.BLUR -> {
             val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            // 模糊半径量化到整 dp：减少 RenderEffect 每帧重建（性能）
-            val blurMod = if (canBlur) Modifier.blur(((1f - state.titleP) * 9f).toInt().dp) else Modifier
+            // A10：模糊半径量化 + derivedStateOf——仅整数 dp 档位变化时重组（全程 ≤10 次）；
+            // 对焦 alpha 改走 graphicsLayer 层相位读取，titleP 不再逐帧进入组合。
+            // API < 31 无 RenderEffect：blurDp 恒 0 不模糊，降级为纯透明度对焦
+            val blurDp by remember { derivedStateOf { ((1f - state.titlePState.floatValue) * 9f).toInt() } }
             Text(
                 text = text,
                 style = style,
-                color = lerp(color.copy(alpha = 0.15f), color, state.titleP),
+                color = color,
                 maxLines = TITLE_MAX_LINES,
                 overflow = TITLE_OVERFLOW,
-                modifier = modifier.then(blurMod),
+                modifier = modifier
+                    .then(if (canBlur) Modifier.blur(blurDp.dp) else Modifier)
+                    .graphicsLayer { alpha = 0.15f + 0.85f * state.titlePState.floatValue },
             )
         }
 
@@ -187,15 +220,18 @@ fun RevealTitle(
                     ((TITLE_WINDOW_MS - WAVE_CHAR_CYCLE_MS) / (len - 1)).coerceAtLeast(0f)
                 }
                 text.forEachIndexed { i, ch ->
-                    val charP = ((state.titleMs - i * stagger) / WAVE_CHAR_CYCLE_MS).coerceIn(0f, 1f)
                     if (ch == ' ') {
                         Text(" ", style = style, color = color)
                     } else {
                         Text(
                             text = ch.toString(),
                             style = style,
-                            color = color.copy(alpha = charP),
+                            color = color,
                             modifier = Modifier.graphicsLayer {
+                                // A10：单字进度在层相位内读快照状态——波形起落只更新 layer，不逐帧重组
+                                val charP = ((state.titleMsState.floatValue - i * stagger) / WAVE_CHAR_CYCLE_MS)
+                                    .coerceIn(0f, 1f)
+                                alpha = charP
                                 translationY = -sin(charP * Math.PI).toFloat() * 6.dp.toPx()
                             },
                         )
@@ -211,7 +247,7 @@ fun RevealTitle(
 fun RevealBody(
     paragraphs: List<String>,
     contentReady: Boolean,
-    state: LetterRevealState,
+    state: LetterRevealClock,
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
@@ -230,8 +266,10 @@ fun RevealBody(
         return
     }
 
-    val paras = paragraphs.map { it.trim() }.filter { it.isNotEmpty() }
-        .ifEmpty { listOf(emptyText ?: LocalStrings.current.letterNoText) }
+    val fallbackText = emptyText ?: LocalStrings.current.letterNoText
+    val paras = remember(paragraphs, fallbackText) {
+        paragraphs.map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(fallbackText) }
+    }
     when (state.effect) {
         LetterRevealEffect.TYPEWRITER -> {
             val total = paras.sumOf { it.length }.coerceAtLeast(1)
@@ -253,14 +291,18 @@ fun RevealBody(
         else -> {
             paras.forEachIndexed { i, para ->
                 val n = paras.size
-                val paraP = (state.bodyP * (n + 1.5f) - i).coerceIn(0f, 1f)
                 Text(
                     text = para,
                     style = style,
-                    color = color.copy(alpha = paraP),
+                    color = color,
                     modifier = modifier
                         .let { if (i > 0) it.padding(top = 18.dp) else it }
-                        .graphicsLayer { translationY = (1f - paraP) * 8.dp.toPx() },
+                        .graphicsLayer {
+                            // A10：段进度层相位读取（段淡入 + 上浮），显现期免逐帧重组
+                            val paraP = (state.bodyPState.floatValue * (n + 1.5f) - i).coerceIn(0f, 1f)
+                            alpha = paraP
+                            translationY = (1f - paraP) * 8.dp.toPx()
+                        },
                 )
             }
         }

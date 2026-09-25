@@ -20,9 +20,11 @@ import com.muxiao.timart.domain.model.CapsuleState
 import com.muxiao.timart.domain.model.City
 import com.muxiao.timart.domain.model.WeatherSnapshot
 import com.muxiao.timart.domain.model.nearestTo
+import com.muxiao.timart.domain.model.unlock.ConditionGroup
 import com.muxiao.timart.domain.model.unlock.LogicType
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.domain.model.unlock.UnlockRule
+import com.muxiao.timart.domain.model.unlock.units
 import com.muxiao.timart.domain.usecase.CapsuleCrudUseCase
 import com.muxiao.timart.domain.usecase.DependencyError
 import kotlinx.coroutines.Dispatchers
@@ -275,16 +277,29 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     var logicThreshold by mutableIntStateOf(2)
         private set
 
+    /**
+     * 规则子群组草稿（储备池暂缓项落地）：引用 [conditions] 下标的部分划分，
+     * 判定按「组 + 未分组单例」单元合并（语义见 domain `units()`）。
+     * 空表 = 无分组（与旧扁平语义逐字节一致）。
+     */
+    val groups = mutableStateListOf<ConditionGroup>()
+
     fun updateLogic(v: LogicType) {
         logic = v
         if (v == LogicType.AT_LEAST) {
-            // 切到任选模式：M 默认取条件数的一半（至少 1，且不超过当前条数）
-            logicThreshold = (conditions.size / 2).coerceAtLeast(1)
+            // 切到任选模式：M 默认取单元数（组各算一单元）的一半（至少 1）
+            logicThreshold = (ruleUnitCount() / 2).coerceAtLeast(1)
         }
     }
 
     fun updateThreshold(v: Int) {
-        logicThreshold = v.coerceIn(1, conditions.size.coerceAtLeast(1))
+        logicThreshold = v.coerceIn(1, ruleUnitCount())
+    }
+
+    /** 顶层 AT_LEAST 阈值的作用域：无组 = 条件数；有组 = 单元数（组各算一单元） */
+    private fun ruleUnitCount(): Int {
+        if (groups.isEmpty()) return conditions.size.coerceAtLeast(1)
+        return units(UnlockRule(LogicType.AND, conditions.toList(), null, groups.toList())).size
     }
 
     fun addCondition(condition: UnlockCondition) {
@@ -292,7 +307,39 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun removeCondition(condition: UnlockCondition) {
-        conditions.remove(condition)
+        val index = conditions.indexOf(condition)
+        if (index < 0) return
+        conditions.removeAt(index)
+        // 组下标重映射：剔除被删下标、其余前移；组员不足 2 自动解散（单例组无语义）
+        val remapped = groups.mapNotNull { group ->
+            val kept = group.indexes.filter { it != index }.map { if (it > index) it - 1 else it }
+            if (kept.size < 2) null else group.copy(indexes = kept)
+        }
+        groups.clear()
+        groups.addAll(remapped)
+    }
+
+    /** 由未分组条件新建子组（≥2 条；已在组内的条件不可重复归组） */
+    fun createGroup(indexes: List<Int>) {
+        val valid = indexes.filter { it in conditions.indices }.distinct()
+        if (valid.size < 2) return
+        if (groups.any { group -> group.indexes.any { it in valid } }) return
+        groups.add(ConditionGroup(name = null, logicType = LogicType.OR, threshold = null, indexes = valid.sorted()))
+    }
+
+    fun dissolveGroup(groupIndex: Int) {
+        if (groupIndex in groups.indices) groups.removeAt(groupIndex)
+    }
+
+    /** 更新组名 / 组内逻辑 / M 值（名称空串归一为 null；AT_LEAST 阈值 coerce 到 [1, 组员数]） */
+    fun updateGroup(groupIndex: Int, name: String?, groupLogic: LogicType, threshold: Int) {
+        if (groupIndex !in groups.indices) return
+        val old = groups[groupIndex]
+        groups[groupIndex] = old.copy(
+            name = name?.trim()?.takeIf { it.isNotEmpty() },
+            logicType = groupLogic,
+            threshold = threshold.takeIf { groupLogic == LogicType.AT_LEAST }?.coerceIn(1, old.indexes.size),
+        )
     }
 
     // ---- 沙盘推演（N2）----
@@ -457,6 +504,167 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         }.getOrDefault(emptyList())
     }
 
+    // ---- 连环信向导（链式系列信：读一封出下一封；种子链 seedOf 既有语义） ----
+
+    /** 连环信模式（true 时创建页整页切换为向导，三步流程让位） */
+    var chainMode by mutableStateOf(false)
+        private set
+
+    fun enterChainMode() {
+        chainMode = true
+    }
+
+    fun exitChainMode() {
+        chainMode = false
+        chainLetters.clear()
+        chainLetters.addAll(
+            listOf(
+                ChainLetterDraft(),
+                ChainLetterDraft(),
+            ),
+        )
+        chainFirstDays = 1
+        chainIntervalDays = 7
+        chainSubStep = 0
+    }
+
+    /** 单封信草稿（连环信 = 纯文本信，无图片/语音/盲盒；链式节奏由向导统一编排） */
+    data class ChainLetterDraft(
+        var title: String = "",
+        var content: String = "",
+    )
+
+    val chainLetters = mutableStateListOf(ChainLetterDraft(), ChainLetterDraft())
+
+    /** 首封解锁：封存后满 N 天（0 = 封存即可解） */
+    var chainFirstDays by mutableIntStateOf(1)
+        private set
+
+    /** 后续每封：上一封被开启阅读满 N 天后解锁 */
+    var chainIntervalDays by mutableIntStateOf(7)
+        private set
+
+    /** 向导内子步：0 信件列表 / 1 节奏与确认 */
+    var chainSubStep by mutableIntStateOf(0)
+        private set
+
+    fun updateChainFirstDays(v: Int) {
+        chainFirstDays = v.coerceIn(0, CHAIN_FIRST_DAYS_MAX)
+    }
+
+    fun updateChainIntervalDays(v: Int) {
+        chainIntervalDays = v.coerceIn(1, CHAIN_INTERVAL_DAYS_MAX)
+    }
+
+    fun gotoChainSubStep(v: Int) {
+        chainSubStep = v.coerceIn(0, 1)
+    }
+
+    fun addChainLetter() {
+        if (chainLetters.size < CHAIN_MAX_LETTERS) chainLetters.add(ChainLetterDraft())
+    }
+
+    fun removeChainLetter(index: Int) {
+        if (chainLetters.size > CHAIN_MIN_LETTERS && index in chainLetters.indices) {
+            chainLetters.removeAt(index)
+        }
+    }
+
+    fun updateChainLetterTitle(index: Int, v: String) {
+        if (index in chainLetters.indices) chainLetters[index] = chainLetters[index].copy(title = v.take(TITLE_MAX))
+    }
+
+    fun updateChainLetterContent(index: Int, v: String) {
+        if (index in chainLetters.indices) chainLetters[index] = chainLetters[index].copy(content = v.take(CONTENT_MAX))
+    }
+
+    /** 信件是否完整（全部有正文；标题可空 → 封存时给默认名） */
+    fun chainLettersComplete(): Boolean =
+        chainLetters.size in CHAIN_MIN_LETTERS..CHAIN_MAX_LETTERS &&
+            chainLetters.all { it.content.isNotBlank() }
+
+    /**
+     * 连环信批量封存：口令未设置 → 导航 PASSWORD_SETUP（回来后 onPasswordReady 续跑）。
+     * 成功进入 ASSEMBLE；失败回调 onFailed（草稿保留）。
+     */
+    fun submitChain(onNeedPasswordSetup: () -> Unit, onFailed: (String) -> Unit) {
+        lastOnFailed = onFailed
+        viewModelScope.launch(Dispatchers.IO) {
+            val hasPassword = runCatching { container.contentCryptoManager.hasPasswordSetup() }.getOrDefault(false)
+            if (!hasPassword) {
+                pendingAfterPassword = true
+                pendingIsChain = true
+                withContext(Dispatchers.Main) { onNeedPasswordSetup() }
+                return@launch
+            }
+            performChainCreate()
+        }
+    }
+
+    private suspend fun performChainCreate() {
+        try {
+            if (!container.contentCryptoManager.ensureUnlocked()) {
+                throw IllegalStateException(currentStrings().errPwNotUnlockedSeal)
+            }
+            val letters = chainLetters.toList()
+            if (letters.size < CHAIN_MIN_LETTERS) {
+                throw IllegalStateException(currentStrings().chainMinLettersFmt.format(CHAIN_MIN_LETTERS))
+            }
+            val dao = container.database.metaDao()
+            var prevId: String? = null
+            for ((index, letter) in letters.withIndex()) {
+                // 首封 = 满N天；后续 = 上一封开启阅读满 N 天（未读恒不满足，fail-closed）
+                val rule = if (index == 0) {
+                    UnlockRule(LogicType.AND, listOf(UnlockCondition.MinElapsedDay(chainFirstDays)))
+                } else {
+                    UnlockRule(
+                        LogicType.AND,
+                        listOf(UnlockCondition.DaysSinceCapsuleRead(chainIntervalDays, requireNotNull(prevId))),
+                    )
+                }
+                val title = letter.title.trim().ifBlank {
+                    currentStrings().chainDefaultTitleFmt.format(index + 1)
+                }
+                val created = container.capsuleCrudUseCase.create(
+                    CapsuleCrudUseCase.CapsuleDraft(
+                        title = title,
+                        contentText = letter.content,
+                        rule = rule,
+                    ),
+                    RuntimeSettings.resolvedLang,
+                )
+                // 链式种子：第 2 封起藏进上一封（父读后萌芽出现；meta 写失败不阻断封存）
+                prevId?.let { parent ->
+                    runCatching {
+                        dao.putSync(
+                            com.muxiao.timart.data.local.db.entity.MetaEntity(
+                                com.muxiao.timart.data.local.db.CapsuleMetaKeys.seedOf(created.id),
+                                parent,
+                            ),
+                        )
+                    }
+                }
+                prevId = created.id
+            }
+            // 累计创建计数（TotalCreatedCount 条件输入；一批 N 封计 N）
+            runCatching {
+                val total = dao.getSync(FLAG_TOTAL_CREATED)?.toIntOrNull() ?: 0
+                dao.putSync(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        FLAG_TOTAL_CREATED,
+                        (total + letters.size).toString(),
+                    ),
+                )
+            }
+            withContext(Dispatchers.Main) { _assembling.value = true }
+        } catch (e: Exception) {
+            val message = e.message ?: currentStrings().errSealFailed
+            withContext(Dispatchers.Main) {
+                lastOnFailed?.invoke(message)
+            }
+        }
+    }
+
     // ---- 触觉签名 / 环境音（体验储备池 §6；封存时绑定，meta 落 key） ----
 
     /** 振动纹样序号（0=无 1=双击 2=长振 3=涟漪，语义见 Haptics） */
@@ -540,7 +748,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     private val userTemplateJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
-    /** 应用一份规则组合（内置模板与用户模板同路）：清空后按序加入 + 逻辑/阈值 */
+    /** 应用一份规则组合（内置模板与用户模板同路）：清空后按序加入 + 逻辑/阈值 + 子群组沿用 */
     fun applyTemplate(rule: UnlockRule) {
         conditions.clear()
         conditions.addAll(rule.conditionList)
@@ -550,6 +758,9 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             2
         }
+        // 子群组按下标沿用（模板条件以相同顺序加入扁平列表，划分有效即成立；无效划分由 units() 兜底退化）
+        groups.clear()
+        groups.addAll(rule.groups)
     }
 
     suspend fun userTemplates(): List<UserTemplateDto> = withContext(Dispatchers.IO) {
@@ -622,6 +833,9 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     val assembling: StateFlow<Boolean> = _assembling.asStateFlow()
 
     private var pendingAfterPassword = false
+
+    /** 挂起待续跑的是连环信批量封存还是单颗封存 */
+    private var pendingIsChain = false
     private var lastOnFailed: ((String) -> Unit)? = null
 
     /**
@@ -634,6 +848,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
             val hasPassword = runCatching { container.contentCryptoManager.hasPasswordSetup() }.getOrDefault(false)
             if (!hasPassword) {
                 pendingAfterPassword = true
+                pendingIsChain = false
                 withContext(Dispatchers.Main) { onNeedPasswordSetup() }
                 return@launch
             }
@@ -641,11 +856,15 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** PASSWORD_SETUP 成功返回后由 UI 调用，续跑被挂起的封存 */
+    /** PASSWORD_SETUP 成功返回后由 UI 调用，续跑被挂起的封存（单颗 / 连环信） */
     fun onPasswordReady() {
         if (!pendingAfterPassword) return
         pendingAfterPassword = false
-        viewModelScope.launch(Dispatchers.IO) { performCreate() }
+        val chain = pendingIsChain
+        pendingIsChain = false
+        viewModelScope.launch(Dispatchers.IO) {
+            if (chain) performChainCreate() else performCreate()
+        }
     }
 
     private suspend fun performCreate() {
@@ -838,6 +1057,13 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         showShardShares = false
         logic = LogicType.AND
         logicThreshold = 2
+        groups.clear()
+        chainMode = false
+        chainLetters.clear()
+        chainLetters.addAll(listOf(ChainLetterDraft(), ChainLetterDraft()))
+        chainFirstDays = 1
+        chainIntervalDays = 7
+        chainSubStep = 0
         step.value = 0
     }
 
@@ -851,6 +1077,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             null
         },
+        groups = groups.toList(),
     )
 
     /** 规则 JSON 预览（验收日志） */
@@ -874,5 +1101,11 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         const val IMAGE_MAX = 9
         const val TAG_MAX = 5
         const val CONDITION_MAX = 10
+
+        /** 连环信向导边界：信件数 / 首封天数 / 间隔天数 */
+        const val CHAIN_MIN_LETTERS = 2
+        const val CHAIN_MAX_LETTERS = 12
+        const val CHAIN_FIRST_DAYS_MAX = 365
+        const val CHAIN_INTERVAL_DAYS_MAX = 90
     }
 }

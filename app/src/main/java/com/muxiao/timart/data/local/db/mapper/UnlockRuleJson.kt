@@ -1,6 +1,7 @@
 package com.muxiao.timart.data.local.db.mapper
 
 import android.util.Log
+import com.muxiao.timart.domain.model.unlock.ConditionGroup
 import com.muxiao.timart.domain.model.unlock.GestureKind
 import com.muxiao.timart.domain.model.unlock.LogicType
 import com.muxiao.timart.domain.model.unlock.LiftDirection
@@ -30,6 +31,20 @@ data class UnlockRuleDto(
     val logicType: String,
     val conditions: List<ConditionDto> = emptyList(),
     val threshold: Int? = null,
+    /**
+     * 子群组划分（v2，可选）：下标指向顶层 [conditions]（扁平列表双写保留——旧版本 App 读新包
+     * 仍按扁平语义判定，缺组不致命）；非法划分在解码侧整体丢弃回退扁平。
+     */
+    val groups: List<ConditionGroupDto> = emptyList(),
+)
+
+/** 子群组 DTO（下标划分 + 组内逻辑；name 可空为纯展示层） */
+@Serializable
+data class ConditionGroupDto(
+    val name: String? = null,
+    val logicType: String,
+    val threshold: Int? = null,
+    val indexes: List<Int> = emptyList(),
 )
 
 /** 条件 DTO：字段全可空、按 type 取用，跨版本恢复稳定 */
@@ -103,6 +118,8 @@ data class ConditionDto(
     val minProb: Int? = null,
     val difficulty: Int? = null,
     val poses: List<String>? = null,
+    // ---- 储备池 v7 扩展字段（按 type 取用，全可空）----
+    val minLux: Int? = null,
 )
 
 /**
@@ -233,14 +250,35 @@ object UnlockRuleJson {
     private const val TYPE_CLIMB = "CLIMB_FLOORS"
     private const val TYPE_SCAN_QR = "SCAN_QR"
     private const val TYPE_POW = "PROOF_OF_WORK"
+    // ---- 储备池 v5 扩展（delta-prd-vs-code.md D-1.5，2 种）----
+    private const val TYPE_SNOWFALL = "SNOWFALL"
+    private const val TYPE_CUM_STEPS = "CUMULATIVE_STEPS"
+    private const val TYPE_RAIN_STREAK = "RAIN_STREAK"
+    private const val TYPE_TEMP_VS_SEAL = "TEMP_VS_SEAL"
+    // ---- 储备池 v7 扩展（delta-prd-vs-code.md D-1.7，7 种）----
+    private const val TYPE_LUNAR_DAY_SET = "LUNAR_DAY_SET"
+    private const val TYPE_THUNDER = "THUNDER"
+    private const val TYPE_BRIGHT_LIGHT = "BRIGHT_LIGHT"
+    private const val TYPE_APP_USAGE = "APP_USAGE"
+    private const val TYPE_PRESSURE_DELTA = "PRESSURE_DELTA"
+    private const val TYPE_VOICE_KEEPSAKE = "VOICE_KEEPSAKE"
+    private const val TYPE_SHOUT = "SHOUT"
 
-    /** 领域规则 → §5.1 JSON */
+    /** 领域规则 → §5.1 JSON（扁平 conditions 恒双写；groups 非空才写入并升 v=2，旧版读取按扁平语义） */
     fun toJson(rule: UnlockRule): String {
         val dto = UnlockRuleDto(
-            v = 1,
+            v = if (rule.groups.isEmpty()) 1 else 2,
             logicType = rule.logicType.name,
             conditions = rule.conditionList.mapNotNull { toDto(it) },
             threshold = rule.threshold?.takeIf { rule.logicType == LogicType.AT_LEAST },
+            groups = rule.groups.map { group ->
+                ConditionGroupDto(
+                    name = group.name,
+                    logicType = group.logicType.name,
+                    threshold = group.threshold?.takeIf { group.logicType == LogicType.AT_LEAST },
+                    indexes = group.indexes,
+                )
+            },
         )
         return json.encodeToString(UnlockRuleDto.serializer(), dto)
     }
@@ -260,7 +298,28 @@ object UnlockRuleJson {
         val threshold = dto.threshold
             ?.takeIf { logic == LogicType.AT_LEAST && conditions.isNotEmpty() }
             ?.coerceIn(1, conditions.size)
-        return UnlockRule(logic, conditions, threshold)
+        return UnlockRule(logic, conditions, threshold, parseGroups(dto.groups, conditions.size))
+    }
+
+    /**
+     * 子群组解析：逻辑非法 / 下标越界 / 组间重叠任一出现 → 整体丢弃回退扁平（fail-safe）；
+     * 组内 AT_LEAST 阈值 coerce 到 [1, 组员数]。
+     */
+    private fun parseGroups(dtos: List<ConditionGroupDto>, conditionCount: Int): List<ConditionGroup> {
+        if (dtos.isEmpty() || conditionCount == 0) return emptyList()
+        val parsed = ArrayList<ConditionGroup>(dtos.size)
+        for (dto in dtos) {
+            val logic = runCatching { LogicType.valueOf(dto.logicType) }.getOrNull() ?: return emptyList()
+            val indexes = dto.indexes.distinct()
+            if (indexes.isEmpty() || indexes.any { it !in 0 until conditionCount }) return emptyList()
+            val threshold = dto.threshold
+                ?.takeIf { logic == LogicType.AT_LEAST }
+                ?.coerceIn(1, indexes.size)
+            parsed += ConditionGroup(name = dto.name?.trim()?.takeIf { it.isNotEmpty() }, logicType = logic, threshold = threshold, indexes = indexes)
+        }
+        val claimed = parsed.flatMap { it.indexes }
+        if (claimed.size != claimed.toSet().size) return emptyList()
+        return parsed
     }
 
     // ---- 领域 → DTO ----
@@ -540,6 +599,50 @@ object UnlockRuleJson {
             ConditionDto(type = TYPE_SCAN_QR, challengeId = condition.challengeId, answer = condition.expectedPayload)
         is UnlockCondition.ProofOfWork ->
             ConditionDto(type = TYPE_POW, challengeId = condition.challengeId, difficulty = condition.difficulty)
+
+        // ---- 储备池 v5 ----
+        is UnlockCondition.SnowObservation ->
+            ConditionDto(type = TYPE_SNOWFALL, flag = condition.firstOfSeason)
+        is UnlockCondition.CumulativeSteps ->
+            ConditionDto(type = TYPE_CUM_STEPS, min = condition.minSteps)
+
+        // ---- 储备池 v6 ----
+        is UnlockCondition.RainStreak ->
+            ConditionDto(
+                type = TYPE_RAIN_STREAK,
+                days = condition.days,
+                direction = if (condition.afterRain) "AFTER_RAIN" else "RAINING",
+            )
+        is UnlockCondition.TempVsSealDay ->
+            ConditionDto(
+                type = TYPE_TEMP_VS_SEAL,
+                minVal = condition.deltaC,
+                direction = if (condition.hotter) "HOTTER" else "COLDER",
+            )
+
+        // ---- 储备池 v7 ----
+        is UnlockCondition.LunarDayOfMonth ->
+            ConditionDto(type = TYPE_LUNAR_DAY_SET, dayList = condition.days.sorted())
+        is UnlockCondition.ThunderObservation ->
+            ConditionDto(type = TYPE_THUNDER, flag = condition.firstOfSeason)
+        is UnlockCondition.BrightLight ->
+            ConditionDto(type = TYPE_BRIGHT_LIGHT, minLux = condition.minLux)
+        is UnlockCondition.AppUsageCeiling ->
+            ConditionDto(
+                type = TYPE_APP_USAGE,
+                packageName = condition.packageName,
+                minutes = condition.maxMinutes.toLong(),
+            )
+        is UnlockCondition.PressureDelta ->
+            ConditionDto(type = TYPE_PRESSURE_DELTA, minVal = condition.minDropHpa)
+        is UnlockCondition.VoiceKeepsake ->
+            ConditionDto(type = TYPE_VOICE_KEEPSAKE, challengeId = condition.challengeId)
+        is UnlockCondition.ShoutOut ->
+            ConditionDto(
+                type = TYPE_SHOUT,
+                challengeId = condition.challengeId,
+                holdSeconds = condition.seconds,
+            )
     }
 
     // ---- DTO → 领域（必填字段校验，缺失/非法返回 null 丢弃）----
@@ -955,6 +1058,53 @@ object UnlockRuleJson {
                 challengeId = requireNotNull(challengeId) { "缺 challengeId" },
                 difficulty = requireNotNull(difficulty) { "缺 difficulty" }
                     .also { require(it in 2..6) { "difficulty 非法" } },
+            )
+
+            // ---- 储备池 v5 ----
+            TYPE_SNOWFALL -> UnlockCondition.SnowObservation(
+                firstOfSeason = requireNotNull(flag) { "缺 flag" },
+            )
+            TYPE_CUM_STEPS -> UnlockCondition.CumulativeSteps(
+                minSteps = requireNotNull(min) { "缺 min" }.also { require(it >= 1) { "min 非法" } },
+            )
+
+            // ---- 储备池 v6 ----
+            TYPE_RAIN_STREAK -> UnlockCondition.RainStreak(
+                days = requireNotNull(days) { "缺 days" }.also { require(it in 1..90) { "days 非法" } },
+                afterRain = direction == "AFTER_RAIN",
+            )
+            TYPE_TEMP_VS_SEAL -> UnlockCondition.TempVsSealDay(
+                deltaC = requireNotNull(minVal) { "缺 minVal" }.also { require(it in 0.5..50.0) { "minVal 非法" } },
+                hotter = direction == "HOTTER",
+            )
+
+            // ---- 储备池 v7 ----
+            TYPE_LUNAR_DAY_SET -> UnlockCondition.LunarDayOfMonth(
+                days = requireNotNull(dayList) { "缺 dayList" }
+                    .also { list -> require(list.isNotEmpty() && list.all { it in 1..30 }) { "dayList 非法" } }
+                    .toSet(),
+            )
+            TYPE_THUNDER -> UnlockCondition.ThunderObservation(firstOfSeason = flag == true)
+            TYPE_BRIGHT_LIGHT -> UnlockCondition.BrightLight(
+                minLux = requireNotNull(minLux) { "缺 minLux" }.also { require(it in 1..100_000) { "minLux 非法" } },
+            )
+            TYPE_APP_USAGE -> UnlockCondition.AppUsageCeiling(
+                packageName = requireNotNull(packageName) { "缺 packageName" }.trim(),
+                maxMinutes = requireNotNull(minutes) { "缺 minutes" }
+                    .also { require(it in 0..1440) { "minutes 非法" } }
+                    .toInt(),
+            )
+            TYPE_PRESSURE_DELTA -> UnlockCondition.PressureDelta(
+                minDropHpa = requireNotNull(minVal) { "缺 minVal" }
+                    .also { require(it in 0.5..30.0) { "minVal 非法" } },
+            )
+            TYPE_VOICE_KEEPSAKE -> UnlockCondition.VoiceKeepsake(
+                challengeId = requireNotNull(challengeId) { "缺 challengeId" },
+            )
+            TYPE_SHOUT -> UnlockCondition.ShoutOut(
+                challengeId = requireNotNull(challengeId) { "缺 challengeId" },
+                seconds = requireNotNull(holdSeconds) { "缺 holdSeconds" }
+                    .also { require(it in 1..60) { "holdSeconds 非法" } },
             )
             else -> {
                 Log.w(TAG, "未知条件 type=$type，已丢弃（向前兼容）")

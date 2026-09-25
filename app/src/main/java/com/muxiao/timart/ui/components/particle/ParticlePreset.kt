@@ -17,7 +17,7 @@ enum class ParticlePreset {
     /** 重读过渡：尘粒向信笺中心聚合单发（450ms，与 RereadVeilOverlay 叠加） */
     REREAD,
 
-    /** 揭封序列：3.2s 五阶段，可 [ParticleEngine.skipToEnd] 直落终态 */
+    /** 揭封序列：1.7s 五阶段（与揭封覆盖层 1400ms 舞台 + 300ms 平整停留对齐），可 [ParticleEngine.skipToEnd] 直落终态 */
     UNSEAL,
 
     /** 消散：0–1000ms 沿轨道向外散逸 */

@@ -43,7 +43,6 @@ import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.components.particle.MotionState
 import com.muxiao.timart.ui.components.particle.ParticleCanvas
 import com.muxiao.timart.ui.components.particle.ParticleEngine
-import com.muxiao.timart.ui.components.particle.ParticlePreset
 import com.muxiao.timart.ui.components.visual.SectionHeader
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkSecondary
@@ -62,8 +61,6 @@ import com.muxiao.timart.ui.theme.rememberWindowAdaptive
 fun HomeScreen(
     container: AppContainer,
     pageActive: Boolean,
-    /** 导航级激活态：离开本目的地（进创建/详情等）的瞬间为 false，背景粒子立即销毁（不等退场动画后的 onDispose） */
-    navActive: Boolean = true,
     onOpenDetail: (capsuleId: String, firstUnlock: Boolean) -> Unit,
     onCreate: () -> Unit,
 ) {
@@ -94,15 +91,9 @@ fun HomeScreen(
         }
     }
 
-    // 导航离开本页（进创建/详情/口令页）的瞬间即清背景与循环粒子：
-    // NavHost 退场动画期间本页仍组合 ~180ms，onDispose 要等动画结束才触发，
-    // 不在这里先清的话，新页面出现的头一两百毫秒会看到 Home 的背景尘残影
-    LaunchedEffect(navActive) {
-        if (!navActive) {
-            engine.setBackground(false, backgroundOwner)
-            engine.setState(MotionState.IDLE)
-        }
-    }
+    // 导航离场不做预清场：循环尘带 OWNER_HOME 归属标记，引擎 draw 只绘给宿主画布，
+    // 转场重叠期不会在新页面留残影（ParticleCanvas owner 过滤）——尘随本页淡出自然收场，
+    // 离场后由 onDispose 统一清场。若在此提前 setState(IDLE)，退场动画开头尘会瞬间消失。
 
     var zoom by remember { mutableFloatStateOf(1f) }
 
@@ -117,7 +108,6 @@ fun HomeScreen(
 
     // 陀螺仪视差（设置页开关；页面重入组合时按最新开关值决定是否监听）
     val context = androidx.compose.ui.platform.LocalContext.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
     val parallax = remember { com.muxiao.timart.utils.sensor.ParallaxSensor(context) }
 
     // 生命周期：进页 300ms 尘粒复位 + 背景开启；ON_PAUSE 背景暂停；离页清空 BREATHE 归属
@@ -226,17 +216,11 @@ fun HomeScreen(
                         zoom = TimeTrackLayout.clampZoom(zoom * zoomDelta)
                         pan += panDelta
                     },
-                    onCapsuleTap = { id, firstUnlock, ax, ay ->
+                    onCapsuleTap = { id, firstUnlock ->
                         focusId = id
                         if (firstUnlock) vm.consumeUnsealed(id)
-                        // 拾起粒子：胶囊被点开瞬间向心聚合一次（PENDING 预算复用）
-                        engine.fire(
-                            ParticlePreset.PENDING,
-                            ax,
-                            ay,
-                            with(density) { 40.dp.toPx() },
-                            ParticleEngine.TIME_GOLD,
-                        )
+                        // 拾起收束已迁至详情页侧（LockedStateView 入口脉冲）：在真实尘核位置
+                        // 完整播放，不再被 home 画布 detach 的 releaseAll 在转场半途处决
                         onOpenDetail(id, firstUnlock)
                     },
                     // 长按拖拽球体：松手持久化自定义星图坐标（updateLayout）

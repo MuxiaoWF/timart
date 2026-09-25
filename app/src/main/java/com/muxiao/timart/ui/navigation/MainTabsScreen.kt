@@ -1,8 +1,6 @@
 package com.muxiao.timart.ui.navigation
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,14 +25,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import com.muxiao.timart.AppContainer
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.cosmic.HomeScreen
@@ -50,6 +49,7 @@ import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TrackHairline
 import com.muxiao.timart.ui.theme.rememberWindowAdaptive
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 
 /**
@@ -59,17 +59,20 @@ import kotlinx.coroutines.launch
  * 竖屏 = 底部导航条；高度紧凑（手机横屏，见 `ui/theme/Adaptive.kt`）= 左侧栏，
  * 两种形态页签视觉同规格，Pager 始终横向滑动。
  */
+@SuppressLint("FrequentlyChangingValue")
 @Composable
 fun MainTabsScreen(
     container: AppContainer,
-    /** 导航级激活态：本容器是否是当前 NavHost 目的地（false = 正在进转场离开），透传给 Home 即时收粒子 */
-    navActive: Boolean = true,
     onOpenDetail: (capsuleId: String, firstUnlock: Boolean) -> Unit,
     onCreate: () -> Unit,
 ) {
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { MAIN_TAB_COUNT })
     val scope = rememberCoroutineScope()
     val adaptive = rememberWindowAdaptive()
+
+    // 连续页位置（currentPage + offsetFraction）：底栏/侧栏光晕随手指与翻页动画连续跟随，
+    // 取代「翻页过半瞬间整体跳档」的离散联动
+    val pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction
 
     val onSelect: (Int) -> Unit = { page ->
         scope.launch {
@@ -83,7 +86,7 @@ fun MainTabsScreen(
     if (adaptive.isCompactHeight) {
         Row(modifier = Modifier.fillMaxSize().background(DeepCharcoal)) {
             TimartSideRail(
-                selectedPage = pagerState.currentPage,
+                pagePosition = pagePosition,
                 onSelect = onSelect,
             )
             HorizontalPager(
@@ -92,7 +95,7 @@ fun MainTabsScreen(
                     .weight(1f)
                     .fillMaxHeight(),
             ) { page ->
-                MainTabPage(page, container, pagerState, navActive, onOpenDetail, onCreate)
+                MainTabPage(page, container, pagerState, onOpenDetail, onCreate)
             }
         }
     } else {
@@ -103,10 +106,10 @@ fun MainTabsScreen(
                     .weight(1f)
                     .fillMaxWidth(),
             ) { page ->
-                MainTabPage(page, container, pagerState, navActive, onOpenDetail, onCreate)
+                MainTabPage(page, container, pagerState, onOpenDetail, onCreate)
             }
             TimartBottomBar(
-                selectedPage = pagerState.currentPage,
+                pagePosition = pagePosition,
                 onSelect = onSelect,
             )
         }
@@ -119,15 +122,17 @@ private fun MainTabPage(
     page: Int,
     container: AppContainer,
     pagerState: PagerState,
-    navActive: Boolean,
     onOpenDetail: (capsuleId: String, firstUnlock: Boolean) -> Unit,
     onCreate: () -> Unit,
 ) {
     when (page) {
         0 -> HomeScreen(
             container = container,
-            pageActive = pagerState.currentPage == 0,
-            navActive = navActive,
+            // settledPage（落定页）而非 currentPage：翻页过半即清会让页面半可见时尘瞬灭——
+            // 循环尘带 OWNER_HOME 归属标记，迟清不会跨页残影；落定后再清场/认领。
+            // 无需导航级激活位：循环尘只渲染在宿主页画布（引擎 owner 过滤，跨页无残影），
+            // 进详情时 BREATHE 认领（releaseLoopsExcept）本就会立即释放 home 尘
+            pageActive = pagerState.settledPage == 0,
             onOpenDetail = onOpenDetail,
             onCreate = onCreate,
         )
@@ -142,9 +147,10 @@ private fun MainTabPage(
     }
 }
 
-/** 底部导航条：四页签各用专属图标（TabIcons），选中项为「金色图标 + 加宽光晕胶囊」 */
+/** 底部导航条：四页签各用专属图标（TabIcons），选中项为「金色图标 + 加宽光晕胶囊」；
+ *  光晕/墨色按与 [pagePosition]（连续页位置）的距离插值，随手指与翻页动画连续跟随 */
 @Composable
-private fun TimartBottomBar(selectedPage: Int, onSelect: (Int) -> Unit) {
+private fun TimartBottomBar(pagePosition: Float, onSelect: (Int) -> Unit) {
     val L = LocalStrings.current
     val labels = listOf(
         L.tabTimeTrack,
@@ -167,23 +173,14 @@ private fun TimartBottomBar(selectedPage: Int, onSelect: (Int) -> Unit) {
         )
         Row(modifier = Modifier.fillMaxWidth().height(BOTTOM_BAR_HEIGHT)) {
             labels.forEachIndexed { index, label ->
-                val selected = index == selectedPage
-                val glowWidth by animateDpAsState(
-                    targetValue = if (selected) 64.dp else 34.dp,
-                    animationSpec = tween(TimartMotion.CONTENT_MILLIS),
-                    label = "tabGlow",
-                )
-                // A10：光晕胶囊底色随宽度同规格淡入淡出（原为二值瞬变，观感是"宽度滑动、颜色跳变"）
-                val glowColor by animateColorAsState(
-                    targetValue = if (selected) TimeGold.copy(alpha = 0.16f) else Color.Transparent,
-                    animationSpec = tween(TimartMotion.CONTENT_MILLIS),
-                    label = "tabGlowColor",
-                )
-                val labelAlpha by animateFloatAsState(
-                    targetValue = if (selected) 1f else 0.62f,
-                    animationSpec = tween(TimartMotion.CONTENT_MILLIS),
-                    label = "tabLabel",
-                )
+                // A10 续（连续联动）：按「本页与当前连续页位置的距离」插值，落定时邻近度
+                // 恰为 1/0，静态观感与原选中态一致；翻页全程连续无跳档。
+                // 原三重 animate*AsState 的过渡职责由 pager 自身的连续位置接管
+                val proximity = (1f - (pagePosition - index).absoluteValue).coerceIn(0f, 1f)
+                val glowWidth = lerp(34.dp, 64.dp, proximity)
+                // 光晕胶囊底色随宽度同规格淡入淡出
+                val glowColor = lerp(Color.Transparent, TimeGold.copy(alpha = 0.16f), proximity)
+                val labelAlpha = 0.62f + 0.38f * proximity
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
@@ -203,7 +200,7 @@ private fun TimartBottomBar(selectedPage: Int, onSelect: (Int) -> Unit) {
                         Icon(
                             imageVector = icons[index],
                             contentDescription = label,
-                            tint = if (selected) TimeGold else InkSecondary.copy(alpha = 0.55f),
+                            tint = lerp(InkSecondary.copy(alpha = 0.55f), TimeGold, proximity),
                             modifier = Modifier.size(22.dp),
                         )
                     }
@@ -211,7 +208,7 @@ private fun TimartBottomBar(selectedPage: Int, onSelect: (Int) -> Unit) {
                     Text(
                         text = label,
                         style = TimartType.caption,
-                        color = if (selected) InkPrimary else InkSecondary,
+                        color = lerp(InkSecondary, InkPrimary, proximity),
                         modifier = Modifier.alpha(labelAlpha),
                     )
                 }
@@ -234,7 +231,7 @@ private val SIDE_RAIL_WIDTH = 80.dp
  * 背景延伸到系统条之下，内容经 systemBarsPadding 内缩（横屏状态栏在顶、导航条在侧，各自兜住）。
  */
 @Composable
-private fun TimartSideRail(selectedPage: Int, onSelect: (Int) -> Unit) {
+private fun TimartSideRail(pagePosition: Float, onSelect: (Int) -> Unit) {
     val L = LocalStrings.current
     val labels = listOf(
         L.tabTimeTrack,
@@ -252,23 +249,12 @@ private fun TimartSideRail(selectedPage: Int, onSelect: (Int) -> Unit) {
                 .systemBarsPadding(),
         ) {
             labels.forEachIndexed { index, label ->
-                val selected = index == selectedPage
+                // 连续联动（与底栏同规格）：光晕高度/颜色按连续页位置的距离插值，翻页全程无跳档
+                val proximity = (1f - (pagePosition - index).absoluteValue).coerceIn(0f, 1f)
                 // 光晕胶囊竖放：宽度与底栏胶囊窄轴同值（26dp），高度滑动同规格
-                val glowHeight by animateDpAsState(
-                    targetValue = if (selected) 64.dp else 34.dp,
-                    animationSpec = tween(TimartMotion.CONTENT_MILLIS),
-                    label = "railGlow",
-                )
-                val glowColor by animateColorAsState(
-                    targetValue = if (selected) TimeGold.copy(alpha = 0.16f) else Color.Transparent,
-                    animationSpec = tween(TimartMotion.CONTENT_MILLIS),
-                    label = "railGlowColor",
-                )
-                val labelAlpha by animateFloatAsState(
-                    targetValue = if (selected) 1f else 0.62f,
-                    animationSpec = tween(TimartMotion.CONTENT_MILLIS),
-                    label = "railLabel",
-                )
+                val glowHeight = lerp(34.dp, 64.dp, proximity)
+                val glowColor = lerp(Color.Transparent, TimeGold.copy(alpha = 0.16f), proximity)
+                val labelAlpha = 0.62f + 0.38f * proximity
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
@@ -288,7 +274,7 @@ private fun TimartSideRail(selectedPage: Int, onSelect: (Int) -> Unit) {
                         Icon(
                             imageVector = icons[index],
                             contentDescription = label,
-                            tint = if (selected) TimeGold else InkSecondary.copy(alpha = 0.55f),
+                            tint = lerp(InkSecondary.copy(alpha = 0.55f), TimeGold, proximity),
                             modifier = Modifier.size(22.dp),
                         )
                     }
@@ -296,7 +282,7 @@ private fun TimartSideRail(selectedPage: Int, onSelect: (Int) -> Unit) {
                     Text(
                         text = label,
                         style = TimartType.caption,
-                        color = if (selected) InkPrimary else InkSecondary,
+                        color = lerp(InkSecondary, InkPrimary, proximity),
                         modifier = Modifier.alpha(labelAlpha),
                     )
                 }

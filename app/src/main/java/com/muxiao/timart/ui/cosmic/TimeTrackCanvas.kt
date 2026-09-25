@@ -85,7 +85,7 @@ fun TimeTrackCanvas(
      */
     satisfactionRatios: Map<String, Float> = emptyMap(),
     onTransform: (panDelta: Offset, zoomDelta: Float) -> Unit,
-    onCapsuleTap: (id: String, firstUnlock: Boolean, anchorX: Float, anchorY: Float) -> Unit,
+    onCapsuleTap: (id: String, firstUnlock: Boolean) -> Unit,
     onLayoutChange: (id: String, nx: Float, ny: Float, finished: Boolean) -> Unit,
     parallax: ParallaxSensor? = null,
     tier: com.muxiao.timart.domain.model.AnimationTier = com.muxiao.timart.domain.model.AnimationTier.HIGH,
@@ -310,10 +310,8 @@ fun TimeTrackCanvas(
             .pointerInput(layout, pan, zoom) {
                 detectTapGestures { position ->
                     hitTest(position)?.let { hit ->
-                        // 锚点回调换算到粒子画布局部坐标（上层 engine.fire 打在粒子画布上）
-                        val dx = rootOrigin.x - overlayOrigin.x
-                        val dy = rootOrigin.y - overlayOrigin.y
-                        onCapsuleTap(hit.id, hit.id in unsealedIds, hit.cx + dx, hit.cy + dy)
+                        // 拾起收束由详情页侧承担（LockedStateView 入口脉冲），此处只上报命中
+                        onCapsuleTap(hit.id, hit.id in unsealedIds)
                     }
                 }
             }

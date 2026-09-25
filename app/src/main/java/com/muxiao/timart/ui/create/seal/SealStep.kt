@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.model.unlock.LogicType
+import com.muxiao.timart.domain.model.unlock.UnlockRule
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.l10n.currentStrings
 import com.muxiao.timart.ui.components.visual.SectionHeader
@@ -766,7 +767,7 @@ private fun SummaryDivider() {
     )
 }
 
-/** 规则摘要句：空 → 立即可开启；否则按 AND/OR/任选M 前缀 + 条件句列表 */
+/** 规则摘要句：空 → 立即可开启；否则按 AND/OR/任选M 前缀 + 条件句列表（分组规则下组内打括号按组内逻辑连接） */
 private fun ruleSummary(vm: CreateViewModel): String {
     val L = currentStrings()
     val lang = RuntimeSettings.resolvedLang
@@ -780,7 +781,22 @@ private fun ruleSummary(vm: CreateViewModel): String {
                 vm.conditions.size,
             )
         }
-        parts.add(prefix + vm.conditions.joinToString(L.summarySep) { ConditionText.conditionSentence(it, lang) })
+        val body = if (vm.groups.isEmpty()) {
+            vm.conditions.joinToString(L.summarySep) { ConditionText.conditionSentence(it, lang) }
+        } else {
+            // 子群组：按单元顺序展开，组内以组内逻辑连接词括起（域层 units() 同源划分）
+            val unitList = com.muxiao.timart.domain.model.unlock.units(
+                UnlockRule(LogicType.AND, vm.conditions.toList(), null, vm.groups.toList()),
+            )
+            unitList.joinToString(L.summarySep) { unit ->
+                val sentences = unit.indexes.mapNotNull { index ->
+                    vm.conditions.getOrNull(index)?.let { ConditionText.conditionSentence(it, lang) }
+                }
+                val joined = sentences.joinToString(if (unit.logicType == LogicType.AND) L.summarySep else L.orWord)
+                if (unit.indexes.size > 1) "（$joined）" else joined
+            }
+        }
+        parts.add(prefix + body)
     }
     vm.dependTitle?.let { parts.add(L.summaryDependFmt.format(it)) }
     if (vm.autoDestroy) parts.add(L.summaryReadDestroy)

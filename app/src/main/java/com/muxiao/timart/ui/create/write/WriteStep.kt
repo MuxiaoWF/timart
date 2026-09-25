@@ -219,6 +219,28 @@ fun WriteStep(
             modifier = Modifier.padding(top = 14.dp),
         )
 
+        // 连环信入口（储备池暂缓项落地）：一次封存一系列信，读一封出下一封；进入后整页切换为向导
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(top = 14.dp)
+                .fillMaxWidth()
+                .background(SurfaceRaise, RoundedCornerShape(12.dp))
+                .clickable { vm.enterChainMode() }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = L.chainEntry, style = TimartType.body, color = InkPrimary)
+                Text(
+                    text = L.chainEntryDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Text(text = "›", style = TimartType.titleSerif, color = InkDisabled)
+        }
+
         // 信笺草稿大卡
         Column(
             modifier = Modifier

@@ -1,7 +1,11 @@
 package com.muxiao.timart.utils.app
 
+import android.app.AppOpsManager
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
+import android.os.Process
 import com.muxiao.timart.domain.context.UsageStatsProvider
 import androidx.core.content.edit
 
@@ -13,7 +17,7 @@ import androidx.core.content.edit
  * 「距上次打开超过 N 天」判定，否则该条件恒不满足。
  * 调用时机：MainActivity ON_RESUME 判定前执行 [recordOpen]。
  */
-class UsageStatsTracker(context: Context) : UsageStatsProvider {
+class UsageStatsTracker(private val context: Context) : UsageStatsProvider {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
@@ -87,6 +91,28 @@ class UsageStatsTracker(context: Context) : UsageStatsProvider {
 
     private fun dateKeyOf(date: java.time.LocalDate): String = date.toString()
 
+    /**
+     * 今日指定应用前台使用时长（分钟；储备池 v7 应用用量条件通道，数字戒断）。
+     * 使用统计是 AppOps 特殊权限（须用户在系统设置中授予），未授予返回 null → 判定 fail-closed。
+     */
+    override fun foregroundMinutesToday(packageName: String): Long? {
+        if (!hasUsageStatsPermission()) return null
+        return runCatching {
+            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+                ?: return null
+            val zone = java.time.ZoneId.systemDefault()
+            val begin = java.time.LocalDate.now().atStartOfDay(zone).toInstant().toEpochMilli()
+            val now = System.currentTimeMillis()
+            var total = 0L
+            for (stat in usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, now)) {
+                if (stat.packageName == packageName) total += stat.totalTimeInForeground
+            }
+            total / 60_000L
+        }.getOrNull()
+    }
+
+    private fun hasUsageStatsPermission(): Boolean = hasUsageStatsPermission(context)
+
     private companion object {
         const val KEY_OPEN_COUNT = "openCount"
         const val KEY_LAST_OPEN = "lastOpen"
@@ -98,3 +124,18 @@ class UsageStatsTracker(context: Context) : UsageStatsProvider {
         const val SESSION_GAP_MILLIS = 10 * 60 * 1000L
     }
 }
+
+/** 使用统计（AppOps 特殊权限）是否已授予：应用用量条件判定与创建侧引导共用 */
+fun hasUsageStatsPermission(context: Context): Boolean = runCatching {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+        ?: return false
+    // AppOps 的 String 系检查 API 在新 SDK 上全线标记 deprecated，且没有覆盖 29+ 全区间的非弃用替代，
+    // 两个分支同为受控的遗留口径（使用统计授予态检查的事实标准做法）。
+    @Suppress("DEPRECATION")
+    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+    } else {
+        appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+    }
+    mode == AppOpsManager.MODE_ALLOWED
+}.getOrDefault(false)

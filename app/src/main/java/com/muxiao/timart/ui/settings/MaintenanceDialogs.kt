@@ -125,6 +125,8 @@ fun HealthCheckDialog(
                             add(HealthRow(L.healthCycleFmt.format(finding.detail)))
                         LibraryHealthCheck.Kind.SHARD_MATERIAL ->
                             add(HealthRow(L.healthShardFmt.format(finding.detail)))
+                        LibraryHealthCheck.Kind.RULE_ANOMALY ->
+                            add(HealthRow(L.healthRuleFmt.format(finding.detail)))
                     }
                 }
                 if (orphanKeys.isNotEmpty()) {
@@ -254,11 +256,13 @@ fun HealthCheckDialog(
 }
 
 /**
- * 跨设备迁移向导（本地优先内：迁移包 = v2 备份 zip，密文自包含、全程不经网络）：
+ * 跨设备迁移向导（本地优先内：迁移包 = v3 备份 zip，密文自包含、全程不经网络）：
  *
- * - 旧设备：生成迁移包（会话已解锁用会话密钥，否则输口令）→ 分享面板发送；
- * - 新设备：选迁移包 → 输**原口令**（Verifier 随包校验）→ 追加导入 → 报告核对清单。
- * 导入与导出复用 BackupManager 主链路；Keystore 会话副本不随迁（新设备需重输口令）在说明中明示。
+ * - 旧设备：生成迁移包（会话已解锁免输主口令，否则输主口令仅用于取得内容解密密钥；
+ *   备份口令未设置时内联设置）→ 分享面板发送；
+ * - 新设备：解锁本机口令 → 选迁移包 → 输**迁移包口令**（旧设备导出时设置的备份口令，
+ *   Verifier 随包校验）→ 重加密追加导入 → 报告核对清单。导入后无需旧设备的主口令。
+ * 导入与导出复用 BackupManager 主链路；Keystore 会话副本不随迁（新设备用自己的口令）在说明中明示。
  */
 @Composable
 fun MigrationWizardDialog(
@@ -273,9 +277,19 @@ fun MigrationWizardDialog(
     // 模式：null 选角色 / EXPORT 旧设备 / IMPORT 新设备
     var mode by remember { mutableStateOf<String?>(null) }
 
+    // 备份口令状态（弹窗开启时 IO 读一次快照；meta 为主线程禁查的 Room 库，composition 内不直读）
+    var backupPwSet by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            backupPwSet = manager.isBackupPasswordSet()
+        }
+    }
+
     // ---- 导出分支状态 ----
     var exportStep by remember { mutableIntStateOf(0) } // 0 口令/确认 1 进行中 2 完成
     var exportPassword by remember { mutableStateOf("") }
+    var backupPassword by remember { mutableStateOf("") }
+    var backupPasswordConfirm by remember { mutableStateOf("") }
     var exportError by remember { mutableStateOf<String?>(null) }
     var exportedFile by remember { mutableStateOf<java.io.File?>(null) }
     var exportFailedAttempts by remember { mutableIntStateOf(0) }
@@ -359,10 +373,48 @@ fun MigrationWizardDialog(
                                         .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                                         .padding(horizontal = 14.dp, vertical = 13.dp),
                                 )
-                                exportError?.let { WarnLine(text = it) }
-                                if (exportFailedAttempts > 0) {
-                                    WarnLine(text = L.bkAttemptsLeftFmt.format(5 - exportFailedAttempts))
+                            }
+                            if (backupPwSet == null) {
+                                InfoLine(text = L.inProgress)
+                            } else if (backupPwSet == true) {
+                                InfoLine(text = L.bkExportUseStored)
+                            } else {
+                                InfoLine(text = L.bkExportSetBkPw)
+                                BasicTextField(
+                                    value = backupPassword,
+                                    onValueChange = { backupPassword = it },
+                                    singleLine = true,
+                                    textStyle = TimartType.body.copy(color = InkPrimary),
+                                    cursorBrush = SolidColor(TimeGold),
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    modifier = Modifier
+                                        .padding(top = 10.dp)
+                                        .fillMaxWidth()
+                                        .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                                )
+                                BasicTextField(
+                                    value = backupPasswordConfirm,
+                                    onValueChange = { backupPasswordConfirm = it },
+                                    singleLine = true,
+                                    textStyle = TimartType.body.copy(color = InkPrimary),
+                                    cursorBrush = SolidColor(TimeGold),
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .fillMaxWidth()
+                                        .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                                )
+                                if (backupPasswordConfirm.isNotEmpty() && backupPassword != backupPasswordConfirm) {
+                                    WarnLine(text = L.bkPwMismatch)
                                 }
+                            }
+                            exportError?.let { WarnLine(text = it) }
+                            if (exportFailedAttempts > 0) {
+                                WarnLine(text = L.bkAttemptsLeftFmt.format(5 - exportFailedAttempts))
                             }
                         }
 
@@ -397,6 +449,9 @@ fun MigrationWizardDialog(
                                     .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                                     .padding(horizontal = 14.dp, vertical = 13.dp),
                             )
+                            if (!manager.isSessionUnlocked()) {
+                                WarnLine(text = L.bkImportNeedUnlock)
+                            }
                             if (importLocked) {
                                 val remain = (importLockUntil - importNowTick) / 1000 + 1
                                 WarnLine(text = L.bkCooldownFmt.format(remain))
@@ -431,7 +486,11 @@ fun MigrationWizardDialog(
                 "EXPORT" -> when (exportStep) {
                     0 -> GoldTextButton(
                         label = L.continueWord,
-                        enabled = manager.isSessionUnlocked() || exportPassword.isNotBlank(),
+                        enabled = backupPwSet != null &&
+                            (!manager.isSessionUnlocked() || exportPassword.isNotBlank()) &&
+                            (backupPwSet == true ||
+                                (backupPassword.length >= ContentCryptoManager.MIN_PASSWORD_LENGTH &&
+                                    (backupPasswordConfirm.isEmpty() || backupPassword == backupPasswordConfirm))),
                         onClick = {
                             val usePassword = !manager.isSessionUnlocked()
                             if (usePassword &&
@@ -443,9 +502,25 @@ fun MigrationWizardDialog(
                             exportError = null
                             exportStep = 1
                             scope.launch(Dispatchers.IO) {
+                                // 备份口令未设置：先存档（meta putSync 须 IO）再导出（自动备份与后续导出共用）
+                                var bkPw: CharArray? = null
+                                var saved = true
+                                if (backupPwSet != true) {
+                                    bkPw = backupPassword.toCharArray()
+                                    saved = manager.setBackupPassword(bkPw)
+                                }
+                                if (!saved) {
+                                    withContext(Dispatchers.Main) {
+                                        exportError = L.bkPwSaveFailed
+                                        exportStep = 0
+                                    }
+                                    return@launch
+                                }
+                                withContext(Dispatchers.Main) { backupPwSet = true }
                                 val result = runCatching {
                                     manager.exportBackup(
-                                        if (usePassword) exportPassword.toCharArray() else null,
+                                        backupPassword = bkPw,
+                                        mainPassword = if (usePassword) exportPassword.toCharArray() else null,
                                     )
                                 }
                                 withContext(Dispatchers.Main) {
@@ -515,7 +590,7 @@ fun MigrationWizardDialog(
 
                     1 -> GoldTextButton(
                         label = L.migrateRoleImport,
-                        enabled = importPassword.isNotBlank() && !importLocked,
+                        enabled = importPassword.isNotBlank() && !importLocked && manager.isSessionUnlocked(),
                         onClick = {
                             val uri = importedUri ?: return@GoldTextButton
                             importStep = 2

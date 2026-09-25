@@ -30,6 +30,7 @@ import com.muxiao.timart.domain.model.unlock.NetType
 import com.muxiao.timart.domain.model.unlock.SunCalc
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.domain.model.unlock.UnlockRule
+import com.muxiao.timart.domain.model.unlock.WeatherMetricKind
 import com.muxiao.timart.domain.repository.CapsuleRepository
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -104,8 +105,12 @@ class UnlockJudgeUseCaseTest {
         override fun current(): WifiSsidInfo = info
     }
 
-    private class FakeHistory(private val byDaysAgo: Map<Int, Int>) : StepHistoryProvider {
+    private class FakeHistory(
+        private val byDaysAgo: Map<Int, Int>,
+        private val sinceTotal: Long? = null,
+    ) : StepHistoryProvider {
         override fun daySteps(daysAgo: Int): Int? = byDaysAgo[daysAgo]
+        override fun stepsSince(sinceDate: LocalDate): Long? = sinceTotal
     }
 
     private class FakeAlarm(private val next: Long?) : com.muxiao.timart.domain.context.AlarmProvider {
@@ -143,10 +148,12 @@ class UnlockJudgeUseCaseTest {
         private val count: Int = 0,
         private val streak: Int = 0,
         private val lastOpen: Long? = null,
+        private val minutesToday: Long? = null,
     ) : com.muxiao.timart.domain.context.UsageStatsProvider {
         override fun openCount(): Int = count
         override fun openStreakDays(): Int = streak
         override fun lastOpenMillis(): Long? = lastOpen
+        override fun foregroundMinutesToday(packageName: String): Long? = minutesToday
     }
 
     private class FakeMeta(
@@ -534,9 +541,14 @@ class UnlockJudgeUseCaseTest {
 
     // ================= 扩展条件 =================
 
-    private fun judgeOne(condition: UnlockCondition, ctx: ConditionContext, answers: Map<String, String> = emptyMap()) =
+    private fun judgeOne(
+        condition: UnlockCondition,
+        ctx: ConditionContext,
+        answers: Map<String, String> = emptyMap(),
+        capsuleOverride: Capsule? = null,
+    ) =
         judge.judge(
-            capsule(UnlockRule(LogicType.AND, listOf(condition))),
+            capsuleOverride ?: capsule(UnlockRule(LogicType.AND, listOf(condition))),
             ctx,
             challengeAnswers = answers,
         ).items.single()
@@ -827,5 +839,323 @@ class UnlockJudgeUseCaseTest {
         assertTrue(judgeOne(bio, ctx, answers = mapOf("c6" to "DONE")).satisfied)
         val photo = UnlockCondition.PhotoKeepsake("c7")
         assertTrue(judgeOne(photo, ctx, answers = mapOf("c7" to "DONE")).satisfied)
+    }
+
+    // ================= 储备池 v5（delta-prd-vs-code.md D-1.5） =================
+
+    private fun snowCtx(snowDaysPast: Int?, weatherType: WeatherType = WeatherType.SNOW) = context(
+        weather = FakeWeather(
+            WeatherSnapshot(
+                cityId = "city-1",
+                cityName = "东京",
+                weatherType = weatherType,
+                tempC = -2.0,
+                capturedAt = 0L,
+                snowDaysPast = snowDaysPast,
+            ),
+        ),
+    )
+
+    @Test
+    fun `扩展v5 - 降雪观测今日下雪即满足`() {
+        assertTrue(judgeOne(UnlockCondition.SnowObservation(firstOfSeason = false), snowCtx(snowDaysPast = 5)).satisfied)
+        // 今日没下雪 → 不满足（普通语义无需历史窗口）
+        assertFalse(
+            judgeOne(
+                UnlockCondition.SnowObservation(firstOfSeason = false),
+                snowCtx(snowDaysPast = 5, weatherType = WeatherType.RAIN),
+            ).satisfied,
+        )
+    }
+
+    @Test
+    fun `扩展v5 - 今冬首雪要求此前无雪记录`() {
+        // 此前 92 天窗口无雪 → 满足
+        assertTrue(judgeOne(UnlockCondition.SnowObservation(firstOfSeason = true), snowCtx(snowDaysPast = 0)).satisfied)
+        // 此前已有雪日 → 不满足
+        assertFalse(judgeOne(UnlockCondition.SnowObservation(firstOfSeason = true), snowCtx(snowDaysPast = 3)).satisfied)
+        // 历史窗口缺失（接口缺字段/解析失败）→ fail-closed 给「指标不可用」
+        val missing = judgeOne(UnlockCondition.SnowObservation(firstOfSeason = true), snowCtx(snowDaysPast = null))
+        assertFalse(missing.satisfied)
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).metricUnavailable,
+            missing.reason,
+        )
+    }
+
+    @Test
+    fun `扩展v5 - 降雪观测天气链路失败原因`() {
+        // 有快照城市但天气获取失败 → weatherFailed
+        assertEquals(
+            JudgeReasons.WEATHER_FAILED,
+            judgeOne(UnlockCondition.SnowObservation(firstOfSeason = false), context(weather = FakeWeather(null))).reason,
+        )
+        // 无快照城市 → weatherNoSnapshot
+        val noCity = judge.judge(
+            capsule(UnlockRule(LogicType.AND, listOf(UnlockCondition.SnowObservation(false))), snapshotCityId = null),
+            context(),
+        )
+        assertEquals(JudgeReasons.WEATHER_NO_SNAPSHOT, noCity.items.single().reason)
+    }
+
+    @Test
+    fun `扩展v5 - 累计步行按自封存累计量判定`() {
+        val cond = UnlockCondition.CumulativeSteps(minSteps = 100_000)
+        assertTrue(judgeOne(cond, context(stepHistory = FakeHistory(emptyMap(), sinceTotal = 100_000L))).satisfied)
+        assertFalse(judgeOne(cond, context(stepHistory = FakeHistory(emptyMap(), sinceTotal = 99_999L))).satisfied)
+        // 通道未接入 / 无硬件 / 无权限 → null → 专用原因
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).stepUnavailable,
+            judgeOne(cond, context(stepHistory = FakeHistory(emptyMap()))).reason,
+        )
+    }
+
+    // ================= 储备池 v6（delta-prd-vs-code.md D-1.6） =================
+
+    private fun rainCtx(
+        rainStreakPast: Int?,
+        weatherType: WeatherType = WeatherType.RAIN,
+        currentTempC: Double = 8.0,
+    ) = context(
+        weather = FakeWeather(
+            WeatherSnapshot(
+                cityId = "city-1",
+                cityName = "东京",
+                weatherType = weatherType,
+                tempC = currentTempC,
+                capturedAt = 0L,
+                rainStreakPast = rainStreakPast,
+            ),
+        ),
+    )
+
+    /** 封存日天气（Capsule.weather，明文字段）：封存那日 [sealTempC]°C 晴 */
+    private fun sealedCapsule(sealTempC: Double = 20.0): Capsule =
+        capsule(UnlockRule(LogicType.AND, emptyList()))
+            .copy(weather = WeatherSnapshot("city-1", "东京", WeatherType.CLEAR, sealTempC, 0L))
+
+    @Test
+    fun `扩展v6 - 连续降雨按今日与历史窗口判定`() {
+        // 今日有雨 + 此前 4 天雨 → 连续 5 天满足
+        assertTrue(judgeOne(UnlockCondition.RainStreak(days = 5, afterRain = false), rainCtx(rainStreakPast = 4)).satisfied)
+        // 今日有雨但历史仅 2 天 → 不满足
+        assertFalse(judgeOne(UnlockCondition.RainStreak(days = 5, afterRain = false), rainCtx(rainStreakPast = 2)).satisfied)
+        // 今日无雨 → 连续降雨不满足
+        assertFalse(
+            judgeOne(
+                UnlockCondition.RainStreak(days = 3, afterRain = false),
+                rainCtx(rainStreakPast = 9, weatherType = WeatherType.CLEAR),
+            ).satisfied,
+        )
+        // 毛雨/雷也算雨（与 WmoCodeMapper 映射同口径）
+        assertTrue(
+            judgeOne(
+                UnlockCondition.RainStreak(days = 2, afterRain = false),
+                rainCtx(rainStreakPast = 5, weatherType = WeatherType.THUNDER),
+            ).satisfied,
+        )
+    }
+
+    @Test
+    fun `扩展v6 - 雨后初晴要求此前连续降雨且今日转晴`() {
+        // 此前 3 天雨 + 今日晴 → 满足
+        assertTrue(
+            judgeOne(
+                UnlockCondition.RainStreak(days = 3, afterRain = true),
+                rainCtx(rainStreakPast = 3, weatherType = WeatherType.CLEAR),
+            ).satisfied,
+        )
+        // 此前仅 2 天雨 → 不满足
+        assertFalse(
+            judgeOne(
+                UnlockCondition.RainStreak(days = 3, afterRain = true),
+                rainCtx(rainStreakPast = 2, weatherType = WeatherType.CLEAR),
+            ).satisfied,
+        )
+        // 今日仍下雨 → 不满足
+        assertFalse(judgeOne(UnlockCondition.RainStreak(days = 3, afterRain = true), rainCtx(rainStreakPast = 3)).satisfied)
+    }
+
+    @Test
+    fun `扩展v6 - 连续降雨历史窗口缺失fail-closed`() {
+        val missing = judgeOne(UnlockCondition.RainStreak(days = 3, afterRain = false), rainCtx(rainStreakPast = null))
+        assertFalse(missing.satisfied)
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).metricUnavailable,
+            missing.reason,
+        )
+        // 天气获取失败 → weatherFailed
+        assertEquals(
+            JudgeReasons.WEATHER_FAILED,
+            judgeOne(UnlockCondition.RainStreak(days = 3, afterRain = false), context(weather = FakeWeather(null))).reason,
+        )
+    }
+
+    @Test
+    fun `扩展v6 - 封存日温差按更冷更热判定`() {
+        // 封存日 20°C：当前 12°C → 更冷 5°C 满足；27°C → 更热 5°C 满足；18°C → 均不满足
+        fun judgeSeal(condition: UnlockCondition.TempVsSealDay, currentTempC: Double) =
+            judge.judge(
+                sealedCapsule().copy(
+                    unlockRule = UnlockRule(LogicType.AND, listOf(condition)),
+                ),
+                rainCtx(rainStreakPast = 0, weatherType = WeatherType.CLEAR, currentTempC = currentTempC),
+            ).items.single()
+
+        assertTrue(judgeSeal(UnlockCondition.TempVsSealDay(5.0, hotter = false), currentTempC = 12.0).satisfied)
+        assertTrue(judgeSeal(UnlockCondition.TempVsSealDay(5.0, hotter = true), currentTempC = 27.0).satisfied)
+        assertFalse(judgeSeal(UnlockCondition.TempVsSealDay(10.0, hotter = true), currentTempC = 18.0).satisfied)
+        assertFalse(judgeSeal(UnlockCondition.TempVsSealDay(10.0, hotter = false), currentTempC = 18.0).satisfied)
+    }
+
+    @Test
+    fun `扩展v6 - 封存日未记录天气显式报原因`() {
+        // 封存时未选天气城市（Capsule.weather == null）→ 专用原因，不静默
+        val noSeal = judge.judge(
+            capsule(
+                UnlockRule(LogicType.AND, listOf(UnlockCondition.TempVsSealDay(5.0, hotter = false))),
+                snapshotCityId = null,
+            ),
+            rainCtx(rainStreakPast = 0),
+        )
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).sealWeatherMissing,
+            noSeal.items.single().reason,
+        )
+    }
+
+    // ================= 储备池 v7（delta-prd-vs-code.md D-1.7） =================
+
+    @Test
+    fun `扩展v7 - 每月农历日按农历日判定`() {
+        // 2026-02-17 = 农历正月初一（春节）
+        val lunarCtx = context(time = FakeTime(LocalDate.of(2026, 2, 17)))
+        assertTrue(judgeOne(UnlockCondition.LunarDayOfMonth(setOf(1)), lunarCtx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.LunarDayOfMonth(setOf(15)), lunarCtx).satisfied)
+        assertTrue(judgeOne(UnlockCondition.LunarDayOfMonth(setOf(1, 15)), lunarCtx).satisfied)
+    }
+
+    private fun thunderCtx(thunderDaysPast: Int?, weatherType: WeatherType = WeatherType.THUNDER) = context(
+        weather = FakeWeather(
+            WeatherSnapshot(
+                cityId = "city-1",
+                cityName = "东京",
+                weatherType = weatherType,
+                tempC = 24.0,
+                capturedAt = 0L,
+                thunderDaysPast = thunderDaysPast,
+            ),
+        ),
+    )
+
+    @Test
+    fun `扩展v7 - 今季首雷按历史窗口判定`() {
+        // 今日有雷且此前无雷记录 → 满足
+        assertTrue(judgeOne(UnlockCondition.ThunderObservation(firstOfSeason = true), thunderCtx(thunderDaysPast = 0)).satisfied)
+        // 此前已有雷日 → 不满足
+        assertFalse(judgeOne(UnlockCondition.ThunderObservation(firstOfSeason = true), thunderCtx(thunderDaysPast = 2)).satisfied)
+        // 普通语义：今日有雷即满足
+        assertTrue(judgeOne(UnlockCondition.ThunderObservation(firstOfSeason = false), thunderCtx(thunderDaysPast = 2)).satisfied)
+        // 今日无雷：两种语义都不满足
+        assertFalse(judgeOne(UnlockCondition.ThunderObservation(true), thunderCtx(thunderDaysPast = 0, weatherType = WeatherType.RAIN)).satisfied)
+        // 历史窗口缺失 → fail-closed「指标不可用」
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).metricUnavailable,
+            judgeOne(UnlockCondition.ThunderObservation(firstOfSeason = true), thunderCtx(thunderDaysPast = null)).reason,
+        )
+    }
+
+    @Test
+    fun `扩展v7 - 明亮环境按照度下限判定`() {
+        assertTrue(judgeOne(UnlockCondition.BrightLight(5000), context(ambientLight = FakeAmbientLight(8000f))).satisfied)
+        assertFalse(judgeOne(UnlockCondition.BrightLight(10000), context(ambientLight = FakeAmbientLight(8000f))).satisfied)
+        assertEquals(
+            JudgeReasons.AMBIENT_LIGHT_UNAVAILABLE,
+            judgeOne(UnlockCondition.BrightLight(5000), context(ambientLight = FakeAmbientLight(null))).reason,
+        )
+    }
+
+    @Test
+    fun `扩展v7 - 应用用量按今日前台时长判定`() {
+        val cond = UnlockCondition.AppUsageCeiling("com.example.app", 30)
+        assertTrue(judgeOne(cond, context(usage = FakeUsage(minutesToday = 25))).satisfied)
+        // 0 分钟（未使用）也满足
+        assertTrue(judgeOne(cond, context(usage = FakeUsage(minutesToday = 0))).satisfied)
+        assertFalse(judgeOne(cond, context(usage = FakeUsage(minutesToday = 45))).satisfied)
+        // 使用统计权限未授予 → null → 专用原因
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).usageStatsUnavailable,
+            judgeOne(cond, context(usage = FakeUsage())).reason,
+        )
+    }
+
+    @Test
+    fun `扩展v7 - 气压骤降按昨日基线判定`() {
+        val dropCtx = context(
+            weather = FakeWeather(
+                WeatherSnapshot(
+                    cityId = "city-1",
+                    cityName = "东京",
+                    weatherType = WeatherType.RAIN,
+                    tempC = 18.0,
+                    capturedAt = 0L,
+                    pressureHpa = 990.0,
+                    yesterdayMeanPressureHpa = 1000.0,
+                ),
+            ),
+        )
+        assertTrue(judgeOne(UnlockCondition.PressureDelta(5.0), dropCtx).satisfied)
+        assertFalse(judgeOne(UnlockCondition.PressureDelta(15.0), dropCtx).satisfied)
+        // 昨日基线缺失 → fail-closed「指标不可用」
+        val noBaseline = context(
+            weather = FakeWeather(
+                WeatherSnapshot("city-1", "东京", WeatherType.RAIN, 18.0, 0L, pressureHpa = 990.0),
+            ),
+        )
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).metricUnavailable,
+            judgeOne(UnlockCondition.PressureDelta(5.0), noBaseline).reason,
+        )
+    }
+
+    @Test
+    fun `扩展v7 - 体感温度走指标通道`() {
+        val feelsCtx = context(
+            weather = FakeWeather(
+                WeatherSnapshot(
+                    cityId = "city-1",
+                    cityName = "东京",
+                    weatherType = WeatherType.CLOUDY,
+                    tempC = 33.0,
+                    capturedAt = 0L,
+                    feelsLikeC = 40.0,
+                ),
+            ),
+        )
+        assertTrue(
+            judgeOne(
+                UnlockCondition.WeatherMetric(WeatherMetricKind.APPARENT, min = 35.0, max = null),
+                feelsCtx,
+            ).satisfied,
+        )
+        assertFalse(
+            judgeOne(
+                UnlockCondition.WeatherMetric(WeatherMetricKind.APPARENT, min = null, max = 30.0),
+                feelsCtx,
+            ).satisfied,
+        )
+        // 旧快照无体感字段 → 指标不可用
+        val staleCtx = context(
+            weather = FakeWeather(
+                WeatherSnapshot("city-1", "东京", WeatherType.CLOUDY, 33.0, 0L),
+            ),
+        )
+        assertEquals(
+            JudgeReasons.forLang(com.muxiao.timart.domain.model.Lang.ZH_HANS).metricUnavailable,
+            judgeOne(
+                UnlockCondition.WeatherMetric(WeatherMetricKind.APPARENT, min = 35.0, max = null),
+                staleCtx,
+            ).reason,
+        )
     }
 }

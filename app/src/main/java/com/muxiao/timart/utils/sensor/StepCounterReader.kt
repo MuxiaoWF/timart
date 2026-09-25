@@ -12,7 +12,9 @@ import androidx.core.content.ContextCompat
 import com.muxiao.timart.domain.context.StepHistoryProvider
 import com.muxiao.timart.domain.context.StepProvider
 import java.time.LocalDate
+import java.time.YearMonth
 import androidx.core.content.edit
+import org.json.JSONObject
 
 /**
  * 今日步数读取：TYPE_STEP_COUNTER（开机累计值）+ 每日步数历史落盘。
@@ -30,6 +32,11 @@ import androidx.core.content.edit
  * 昨日完整总量 = 昨日最后采样步数 + (当前累计值 − 昨日最后采样累计值)。
  * 累计值跨零点不归零，因此即使 App 昨晚 23 点后被杀、今晨才打开，昨日步数也能补准
  * （仅设备重启期间的数据硬件层面丢失，属全行业共性）。
+ *
+ * **月度归档（储备池 v5 累计步行条件）**：日级记录滑出 [KEEP_DAYS] 窗口前，把当日终值并入
+ * 月度归档 `cum.<yyyy-MM>`（JSON：日号 → 步数），供 `stepsSince` 做自封存日起的累计求和——
+ * 归档覆盖窗口外的历史日，日级记录覆盖最近 [KEEP_DAYS] 天，两者互补不重叠；
+ * 归档只记已采样日（缺采样日贡献 0），仅设备重启期间的数据硬件层面无法回补。
  *
  * 无计步硬件 / API 29+ 无 ACTIVITY_RECOGNITION 权限时返回 null；
  * 注册监听后传感器尚未上报首帧前也返回 null（不显示误导性的 0）。
@@ -180,7 +187,54 @@ class StepCounterReader(private val context: Context) : StepProvider, StepHistor
         return stored.takeIf { it >= 0 }
     }
 
-    /** 滚动清理超出保留窗口的历史记录 */
+    /**
+     * 自 [sinceDate]（含）至今天的累计步行（储备池 v5 累计步行条件通道）。
+     * 口径 = 已采样每日步数合计：日级记录（最近 [KEEP_DAYS] 天）+ 月度归档（更早的已采样日），
+     * 缺采样日按 0 计（App 未运行期间的步数无法回补，与计步器硬件能力一致）。
+     * 返回 null = 无计步硬件 / 无权限（判定侧按「设备不支持」fail-closed）。
+     */
+    @Synchronized
+    override fun stepsSince(sinceDate: LocalDate): Long? {
+        if (stepSensor == null) return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return null
+        }
+        // 先触发一次采样：保证今日步数已落盘（顺带完成权限与硬件校验）
+        todaySteps() ?: return null
+
+        val today = LocalDate.now()
+        if (sinceDate.isAfter(today)) return 0L
+        var total = 0L
+        val windowStart = today.minusDays(KEEP_DAYS.toLong())
+
+        // 1. 日级记录窗口：[max(sinceDate, windowStart) .. today]
+        var day = if (sinceDate.isAfter(windowStart)) sinceDate else windowStart
+        while (!day.isAfter(today)) {
+            prefs.getInt(dayKey(day), -1).takeIf { it >= 0 }?.let { total += it }
+            day = day.plusDays(1)
+        }
+
+        // 2. 月度归档：滑出日级窗口的历史日（全部 < windowStart，且仅计 sinceDate 之后的部分）
+        for (key in prefs.all.keys) {
+            if (!key.startsWith(ARCHIVE_PREFIX)) continue
+            val month = runCatching { YearMonth.parse(key.removePrefix(ARCHIVE_PREFIX)) }.getOrNull() ?: continue
+            val obj = prefs.getString(key, null)
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+                ?: continue
+            for (dayOfMonth in 1..month.lengthOfMonth()) {
+                val value = obj.optInt(dayOfMonth.toString(), -1)
+                if (value < 0) continue
+                val date = runCatching { month.atDay(dayOfMonth) }.getOrNull() ?: continue
+                if (!date.isBefore(sinceDate) && date.isBefore(windowStart)) total += value
+            }
+        }
+        return total
+    }
+
+    /** 滚动清理超出保留窗口的历史记录（滑出前先并入月度归档，供累计步行条件查询） */
     private fun pruneHistory(today: LocalDate) {
         val all = prefs.all.keys.filter { it.startsWith(KEY_DAY_PREFIX) }
         val stale = all.filter { key ->
@@ -189,7 +243,21 @@ class StepCounterReader(private val context: Context) : StepProvider, StepHistor
         }
         if (stale.isNotEmpty()) {
             prefs.edit {
-                stale.forEach { remove(it) }
+                stale.forEach { key ->
+                    val date = runCatching { LocalDate.parse(key.removePrefix(KEY_DAY_PREFIX)) }.getOrNull()
+                    if (date != null) {
+                        val value = prefs.getInt(key, -1)
+                        if (value >= 0) {
+                            val archiveKey = ARCHIVE_PREFIX + YearMonth.from(date)
+                            val obj = prefs.getString(archiveKey, null)
+                                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+                                ?: JSONObject()
+                            obj.put(date.dayOfMonth.toString(), value)
+                            putString(archiveKey, obj.toString())
+                        }
+                    }
+                    remove(key)
+                }
             }
         }
     }
@@ -201,6 +269,9 @@ class StepCounterReader(private val context: Context) : StepProvider, StepHistor
         const val KEY_BASELINE_DATE = "baseline_date"
         const val KEY_BASELINE_COUNTER = "baseline_counter"
         const val KEY_DAY_PREFIX = "day."
+
+        /** 月度归档前缀（值 = JSON：日号 → 当日终值步数；储备池 v5 累计步行条件通道） */
+        const val ARCHIVE_PREFIX = "cum."
 
         /** 最近采样三元组（跨零点回补用） */
         const val KEY_LAST_DATE = "last_sample_date"

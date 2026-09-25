@@ -688,3 +688,70 @@ fun AltitudeRangeForm(onConfirm: (UnlockCondition.AltitudeRange) -> Unit) {
         }
     }
 }
+
+// ================= 每月农历日（储备池 v7）=================
+
+/** 每月农历固定多天表单：预设三选（初一 / 十五 / 初一或十五），闰月按同月同日 */
+@Composable
+fun LunarDayOfMonthForm(onConfirm: (UnlockCondition.LunarDayOfMonth) -> Unit) {
+    val L = LocalStrings.current
+    var days by remember { mutableStateOf(setOf(15)) }
+
+    ExtendFormScaffold(
+        title = L.condLunarDaySet,
+        valueCondition = UnlockCondition.LunarDayOfMonth(days),
+        onConfirm = { onConfirm(UnlockCondition.LunarDayOfMonth(days)) },
+    ) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            listOf(setOf(1), setOf(15), setOf(1, 15)).forEachIndexed { index, preset ->
+                SelectPill(
+                    label = ConditionText.conditionSentence(
+                        UnlockCondition.LunarDayOfMonth(preset),
+                        RuntimeSettings.resolvedLang,
+                    ),
+                    selected = days == preset,
+                    onClick = { days = preset },
+                    modifier = if (index == 0) Modifier.weight(1f) else Modifier.weight(1f).padding(start = 8.dp),
+                )
+            }
+        }
+        val todayLunar = remember { LunarCalendar.solarToLunar(LocalDate.now()) }
+        if (todayLunar != null) {
+            Text(
+                text = L.lunarTodayFmt.format(todayLunar.month, todayLunar.day),
+                style = TimartType.caption,
+                color = InkSecondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        Text(
+            text = L.lunarLeapNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+// ================= 明亮环境（储备池 v7）=================
+
+/** 明亮环境表单：照度下限滑条（500–30000 lux，500 步进；阳光下 ≈ 10000+） */
+@Composable
+fun BrightLightForm(onConfirm: (UnlockCondition.BrightLight) -> Unit) {
+    val L = LocalStrings.current
+    var luxStep by remember { mutableIntStateOf(10) }
+    val minLux = luxStep * 500
+    val condition = UnlockCondition.BrightLight(minLux)
+
+    ExtendFormScaffold(title = L.condBrightLight, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        IntSlider(value = luxStep, range = 1f..60f, steps = 59) { luxStep = it }
+        Text(
+            text = L.brightLightNote,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}

@@ -54,6 +54,14 @@ interface StepProvider {
 /** 每日步数历史提供者（连续步数条件用）；`daysAgo` = 0 即今日，1 为昨天；null = 该日无记录（fail-closed） */
 interface StepHistoryProvider {
     fun daySteps(daysAgo: Int): Int?
+
+    /**
+     * 自 [sinceDate]（含）至今天的累计步行（按已采样每日步数合计，缺采样日按 0 计；
+     * 储备池 v5 累计步行条件通道）。
+     * null = 无计步硬件 / 无权限 / 实现未接入（判定按「设备不支持」fail-closed）。
+     * 默认 null = 旧实现未接入，既有实现与单测假件无需改动。
+     */
+    fun stepsSince(sinceDate: LocalDate): Long? = null
 }
 
 /** 当前 Wi-Fi 连接状态（SSID 条件判定通道） */
@@ -227,6 +235,13 @@ interface UsageStatsProvider {
 
     /** 今日打开会话数（去重口径同 [openCount]；默认 0 = 旧实现未接入，按不满足处理） */
     fun todayOpenCount(): Int = 0
+
+    /**
+     * 今日指定应用的前台使用时长（分钟；储备池 v7 应用用量条件通道）。
+     * null = 使用统计权限未授予 / 实现未接入（判定按「使用统计不可用」fail-closed）。
+     * 默认 null = 旧实现未接入，既有实现与单测假件无需改动。
+     */
+    fun foregroundMinutesToday(packageName: String): Long? = null
 }
 
 /** 胶囊库元信息提供者 */

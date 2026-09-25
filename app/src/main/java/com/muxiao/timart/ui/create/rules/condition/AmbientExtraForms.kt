@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.muxiao.timart.domain.model.City
@@ -396,5 +397,226 @@ fun PrecipitationProbabilityForm(onConfirm: (UnlockCondition.PrecipitationProbab
         onConfirm(condition)
     }) {
         IntSlider(value = prob, range = 10f..100f, steps = 89) { prob = it }
+    }
+}
+
+// ================= 今冬首雪（储备池 v5）=================
+
+/**
+ * 降雪观测表单：二选一语义（普通降雪 / 今冬首雪）。
+ * 首雪 = 今日降雪且此前历史窗口（92 天）无雪记录，判定走天气链路与 30min 缓存。
+ */
+@Composable
+fun SnowObservationForm(onConfirm: (UnlockCondition.SnowObservation) -> Unit) {
+    val L = LocalStrings.current
+    var firstOfSeason by remember { mutableStateOf(false) }
+
+    ExtendFormScaffold(
+        title = L.condSnowfall,
+        valueCondition = UnlockCondition.SnowObservation(firstOfSeason),
+        onConfirm = { onConfirm(UnlockCondition.SnowObservation(firstOfSeason)) },
+    ) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.SnowObservation(false),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = !firstOfSeason,
+                onClick = { firstOfSeason = false },
+                modifier = Modifier.weight(1f),
+            )
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.SnowObservation(true),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = firstOfSeason,
+                onClick = { firstOfSeason = true },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+        }
+    }
+}
+
+// ================= 连续降雨 / 雨后初晴（储备池 v6）=================
+
+/**
+ * 连续降雨观测表单：天数滑条（2–30 天，1 天等价普通天气条件）+ 二选一语义
+ * （连续降雨 / 雨后初晴）。判定走天气链路 daily 历史窗口与 30min 缓存。
+ */
+@Composable
+fun RainStreakForm(onConfirm: (UnlockCondition.RainStreak) -> Unit) {
+    val L = LocalStrings.current
+    var days by remember { mutableIntStateOf(3) }
+    var afterRain by remember { mutableStateOf(false) }
+
+    ExtendFormScaffold(
+        title = L.condRainStreak,
+        valueCondition = UnlockCondition.RainStreak(days, afterRain),
+        onConfirm = { onConfirm(UnlockCondition.RainStreak(days, afterRain)) },
+    ) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.RainStreak(days, false),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = !afterRain,
+                onClick = { afterRain = false },
+                modifier = Modifier.weight(1f),
+            )
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.RainStreak(days, true),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = afterRain,
+                onClick = { afterRain = true },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+        }
+        Text(
+            text = ConditionText.conditionSentence(
+                UnlockCondition.RainStreak(days, afterRain),
+                com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+            ),
+            style = TimartType.body.copy(color = com.muxiao.timart.ui.theme.TimeGold),
+            modifier = Modifier
+                .padding(top = 14.dp)
+                .align(Alignment.CenterHorizontally),
+        )
+        IntSlider(value = days, range = 2f..30f, steps = 28) { days = it }
+    }
+}
+
+// ================= 封存日温差（储备池 v6）=================
+
+/**
+ * 封存日温差表单：更冷/更热二选一 + 温差滑条（1–20 °C，步进 0.5）。
+ * 封存温度取创建时的天气快照（Capsule.weather），未选天气城市的胶囊判定时显式报「封存时未记录天气」。
+ */
+@Composable
+fun TempVsSealForm(onConfirm: (UnlockCondition.TempVsSealDay) -> Unit) {
+    val L = LocalStrings.current
+    var deltaInt by remember { mutableIntStateOf(10) } // 0.5°C 步进，10 = 5°C
+    var hotter by remember { mutableStateOf(false) }
+    val deltaC = deltaInt / 2.0
+
+    ExtendFormScaffold(
+        title = L.condTempVsSeal,
+        valueCondition = UnlockCondition.TempVsSealDay(deltaC, hotter),
+        onConfirm = { onConfirm(UnlockCondition.TempVsSealDay(deltaC, hotter)) },
+    ) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.TempVsSealDay(deltaC, false),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = !hotter,
+                onClick = { hotter = false },
+                modifier = Modifier.weight(1f),
+            )
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.TempVsSealDay(deltaC, true),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = hotter,
+                onClick = { hotter = true },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+        }
+        Text(
+            text = ConditionText.conditionSentence(
+                UnlockCondition.TempVsSealDay(deltaC, hotter),
+                com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+            ),
+            style = TimartType.body.copy(color = com.muxiao.timart.ui.theme.TimeGold),
+            modifier = Modifier
+                .padding(top = 14.dp)
+                .align(Alignment.CenterHorizontally),
+        )
+        IntSlider(value = deltaInt, range = 2f..40f, steps = 38) { deltaInt = it }
+    }
+}
+
+// ================= 今季首雷（储备池 v7）=================
+
+/**
+ * 雷暴观测表单：二选一语义（普通雷暴 / 今季首雷）。
+ * 首雷 = 今日雷暴且此前历史窗口（92 天）无雷记录，判定走天气链路与 30min 缓存。
+ */
+@Composable
+fun ThunderObservationForm(onConfirm: (UnlockCondition.ThunderObservation) -> Unit) {
+    val L = LocalStrings.current
+    var firstOfSeason by remember { mutableStateOf(false) }
+
+    ExtendFormScaffold(
+        title = L.condThunder,
+        valueCondition = UnlockCondition.ThunderObservation(firstOfSeason),
+        onConfirm = { onConfirm(UnlockCondition.ThunderObservation(firstOfSeason)) },
+    ) {
+        Row(modifier = Modifier.padding(top = 12.dp)) {
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.ThunderObservation(false),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = !firstOfSeason,
+                onClick = { firstOfSeason = false },
+                modifier = Modifier.weight(1f),
+            )
+            SelectPill(
+                label = ConditionText.conditionSentence(
+                    UnlockCondition.ThunderObservation(true),
+                    com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+                ),
+                selected = firstOfSeason,
+                onClick = { firstOfSeason = true },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+        }
+    }
+}
+
+// ================= 气压骤降（储备池 v7）=================
+
+/**
+ * 气压骤降表单：较昨日均压下降 ≥ N hPa（0.5 步进）。当前气压与昨日基线
+ * 均走天气链路（daily pressure_msl_mean），基线缺失按「指标不可用」fail-closed。
+ */
+@Composable
+fun PressureDeltaForm(onConfirm: (UnlockCondition.PressureDelta) -> Unit) {
+    val L = LocalStrings.current
+    var deltaInt by remember { mutableIntStateOf(10) } // 0.5 hPa 步进，10 = 5 hPa
+    val deltaHpa = deltaInt / 2.0
+    val condition = UnlockCondition.PressureDelta(deltaHpa)
+
+    ExtendFormScaffold(
+        title = L.condPressureDrop,
+        valueCondition = condition,
+        onConfirm = { onConfirm(condition) },
+    ) {
+        Text(
+            text = ConditionText.conditionSentence(
+                UnlockCondition.PressureDelta(deltaHpa),
+                com.muxiao.timart.utils.RuntimeSettings.resolvedLang,
+            ),
+            style = TimartType.body.copy(color = com.muxiao.timart.ui.theme.TimeGold),
+            modifier = Modifier
+                .padding(top = 14.dp)
+                .align(Alignment.CenterHorizontally),
+        )
+        IntSlider(value = deltaInt, range = 2f..60f, steps = 58) { deltaInt = it }
     }
 }

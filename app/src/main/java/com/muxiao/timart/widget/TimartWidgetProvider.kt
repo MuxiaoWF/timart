@@ -15,6 +15,7 @@ import com.muxiao.timart.l10n.currentStrings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.ZoneId
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,8 +79,9 @@ class TimartWidgetProvider : AppWidgetProvider() {
         val dayMs = 24L * 60 * 60 * 1000
         val dateFmt = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
         return locked.mapNotNull { capsule ->
+            val createdDay = Instant.ofEpochMilli(capsule.createTimestamp).atZone(zone).toLocalDate()
             val target = capsule.unlockRule.conditionList
-                .mapNotNull { UpcomingReminders.fixedTargetAt(it, now, zone) }
+                .mapNotNull { UpcomingReminders.fixedTargetAt(it, now, zone, createdDay) }
                 .minOrNull() ?: return@mapNotNull null
             Entry(
                 id = capsule.id,

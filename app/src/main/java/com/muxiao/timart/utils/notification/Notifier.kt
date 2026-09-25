@@ -93,6 +93,37 @@ class Notifier(private val context: Context) {
         }
     }
 
+    /**
+     * 天气预告（储备池 v6）：概率性天气条件的「接近可解」提示（预报满足时 Worker 周期触发，
+     * 每天最多一条去重由调用方负责）。只预告不判锁——解锁仍由判定引擎依据实况天气决定。
+     */
+    fun notifyForecast(capsuleId: String, capsuleTitle: String?, weatherName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val s = stringsFor(RuntimeSettings.resolvedLang)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(s.notifForecastTitle)
+            .setContentText(
+                capsuleTitle?.let { s.notifForecastBodyFmt.format(weatherName, it) }
+                    ?: s.notifForecastTitle,
+            )
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(("forecast_$capsuleId").hashCode(), builder.build())
+        } catch (_: SecurityException) {
+        }
+    }
+
     companion object {
         const val CHANNEL_ID = "unlock_reminders"
     }

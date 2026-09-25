@@ -18,6 +18,7 @@ import com.muxiao.timart.domain.model.unlock.SolarTermCalendar
 import com.muxiao.timart.domain.model.unlock.SunCalc
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.domain.model.unlock.UnlockRule
+import com.muxiao.timart.domain.model.unlock.units
 import com.muxiao.timart.domain.model.unlock.LiftDirection
 import com.muxiao.timart.domain.model.unlock.WeatherMetricKind
 import com.muxiao.timart.domain.model.unlock.windDirFromDeg
@@ -378,6 +379,7 @@ class UnlockJudgeUseCase {
                             WeatherMetricKind.WIND -> it.windKmh
                             WeatherMetricKind.PRESSURE -> it.pressureHpa
                             WeatherMetricKind.UV -> it.uvIndex
+                            WeatherMetricKind.APPARENT -> it.feelsLikeC
                         }
                     }
                     if (snapshot == null) {
@@ -972,18 +974,199 @@ class UnlockJudgeUseCase {
 
             is UnlockCondition.TodayOpenCount ->
                 Triple(ctx.usage.todayOpenCount() >= condition.count, false, null)
+
+            // ================= 储备池 v5 扩展（delta-prd-vs-code.md D-1.5） =================
+
+            is UnlockCondition.SnowObservation -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    when {
+                        snapshot == null ->
+                            Triple(false, false, r.weatherFailed)
+                        snapshot.weatherType != com.muxiao.timart.domain.model.WeatherType.SNOW ->
+                            // 今天没下雪：两种语义都不满足，无需专用原因
+                            Triple(false, false, null)
+                        !condition.firstOfSeason ->
+                            Triple(true, false, null)
+                        // 首雪语义：今日有雪且此前历史窗口无雪记录；窗口缺失 fail-closed
+                        else -> {
+                            val past = snapshot.snowDaysPast
+                            if (past == null) {
+                                Triple(false, false, r.metricUnavailable)
+                            } else {
+                                Triple(past == 0, false, null)
+                            }
+                        }
+                    }
+                }
+            }
+
+            is UnlockCondition.CumulativeSteps -> {
+                val createdDate = java.time.Instant.ofEpochMilli(capsule.createTimestamp)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+                val total = ctx.stepHistory.stepsSince(createdDate)
+                if (total == null) {
+                    Triple(false, false, r.stepUnavailable)
+                } else {
+                    Triple(total >= condition.minSteps, false, null)
+                }
+            }
+
+            // ================= 储备池 v6 扩展（delta-prd-vs-code.md D-1.6） =================
+
+            is UnlockCondition.RainStreak -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    val streak = snapshot?.rainStreakPast
+                    when {
+                        snapshot == null ->
+                            Triple(false, false, r.weatherFailed)
+                        // 历史窗口缺失 fail-closed 按指标不可用
+                        streak == null ->
+                            Triple(false, false, r.metricUnavailable)
+                        condition.afterRain -> {
+                            // 雨后初晴：今日转晴且此前连续 days 天降雨
+                            Triple(
+                                snapshot.weatherType == com.muxiao.timart.domain.model.WeatherType.CLEAR &&
+                                    streak >= condition.days,
+                                false,
+                                null,
+                            )
+                        }
+                        else -> {
+                            // 连续降雨：今日在雨（毛雨/雨/雷）且此前连续 days-1 天降雨
+                            val rainingToday = snapshot.weatherType in RAIN_TYPES
+                            Triple(rainingToday && streak >= condition.days - 1, false, null)
+                        }
+                    }
+                }
+            }
+
+            is UnlockCondition.TempVsSealDay -> {
+                // 封存温度取 Capsule.weather（创建时的天气快照，明文字段）；当前温度走常规天气链路
+                val seal = capsule.weather
+                if (seal == null) {
+                    Triple(false, false, r.sealWeatherMissing)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(seal.cityId)
+                    when {
+                        snapshot == null ->
+                            Triple(false, false, r.weatherFailed)
+                        condition.hotter ->
+                            Triple(snapshot.tempC >= seal.tempC + condition.deltaC, false, null)
+                        else ->
+                            Triple(snapshot.tempC <= seal.tempC - condition.deltaC, false, null)
+                    }
+                }
+            }
+
+            // ================= 储备池 v7 扩展（delta-prd-vs-code.md D-1.7） =================
+
+            is UnlockCondition.LunarDayOfMonth -> {
+                // 闰月按同月同日处理（与 LunarDate 同口径）；表外日期 fail-closed
+                val lunar = LunarCalendar.solarToLunar(ctx.time.today())
+                Triple(lunar != null && lunar.day in condition.days, false, null)
+            }
+
+            is UnlockCondition.ThunderObservation -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    when {
+                        snapshot == null ->
+                            Triple(false, false, r.weatherFailed)
+                        snapshot.weatherType != com.muxiao.timart.domain.model.WeatherType.THUNDER ->
+                            // 今日无雷：两种语义都不满足，无需专用原因
+                            Triple(false, false, null)
+                        !condition.firstOfSeason ->
+                            Triple(true, false, null)
+                        // 首雷语义：今日有雷且此前历史窗口无雷记录；窗口缺失 fail-closed
+                        else -> {
+                            val past = snapshot.thunderDaysPast
+                            if (past == null) {
+                                Triple(false, false, r.metricUnavailable)
+                            } else {
+                                Triple(past == 0, false, null)
+                            }
+                        }
+                    }
+                }
+            }
+
+            is UnlockCondition.BrightLight -> {
+                val lux = ctx.ambientLight.lux()
+                if (lux == null) {
+                    Triple(false, false, r.ambientLightUnavailable)
+                } else {
+                    Triple(lux >= condition.minLux, false, null)
+                }
+            }
+
+            is UnlockCondition.AppUsageCeiling -> {
+                val minutes = ctx.usage.foregroundMinutesToday(condition.packageName)
+                if (minutes == null) {
+                    Triple(false, false, r.usageStatsUnavailable)
+                } else {
+                    Triple(minutes <= condition.maxMinutes, false, null)
+                }
+            }
+
+            is UnlockCondition.PressureDelta -> {
+                val cityId = capsule.weather?.cityId
+                if (cityId == null) {
+                    Triple(false, false, r.weatherNoSnapshot)
+                } else {
+                    val snapshot = ctx.weather.currentWeather(cityId)
+                    val baseline = snapshot?.yesterdayMeanPressureHpa
+                    when {
+                        snapshot == null ->
+                            Triple(false, false, r.weatherFailed)
+                        // 昨日基线 / 当前气压任一缺失 → fail-closed 显式报「指标不可用」
+                        baseline == null || snapshot.pressureHpa == null ->
+                            Triple(false, false, r.metricUnavailable)
+                        else ->
+                            Triple(snapshot.pressureHpa <= baseline - condition.minDropHpa, false, null)
+                    }
+                }
+            }
         }
         return ConditionStatus(condition = condition, satisfied = satisfied, skipped = skipped, reason = reason)
     }
 
-    private fun merge(rule: UnlockRule, items: List<ConditionStatus>): Boolean = when (rule.logicType) {
-        LogicType.AND -> if (items.isEmpty()) true else items.all { it.satisfied }
-        LogicType.OR -> items.any { it.satisfied }
+    private fun merge(rule: UnlockRule, items: List<ConditionStatus>): Boolean {
+        val flags = items.map { it.satisfied }
+        return when {
+            // 旧扁平语义（无子群组）：保持原路径，行为零变化
+            rule.groups.isEmpty() -> mergeFlat(rule.logicType, flags, rule.threshold)
+            // 子群组：按单元（组 + 未分组单例）合并，顶层逻辑作用于单元
+            else -> {
+                val unitFlags = units(rule).map { unit ->
+                    val memberFlags = unit.indexes.mapNotNull { flags.getOrNull(it) }
+                    mergeFlat(unit.logicType, memberFlags, unit.threshold)
+                }
+                mergeFlat(rule.logicType, unitFlags, rule.threshold)
+            }
+        }
+    }
+
+    /** 单层合并：AND 全部满足 / OR 任一满足 / AT_LEAST 满足条数 ≥ 阈值（skipped 一律按不满足计入） */
+    private fun mergeFlat(logic: LogicType, flags: List<Boolean>, threshold: Int?): Boolean = when (logic) {
+        LogicType.AND -> if (flags.isEmpty()) true else flags.all { it }
+        LogicType.OR -> flags.any { it }
         // M-of-N：满足条数达到阈值即通过；skipped / 未应答挑战照常计为不满足（fail-closed 不变）；
         // 阈值缺省回退为"全部"（等价 AND），阈值越界在序列化层已归一并 coerce，这里再兜底一次
         LogicType.AT_LEAST -> {
-            val required = (rule.threshold ?: items.size).coerceIn(1, items.size)
-            items.count { it.satisfied } >= required
+            val required = (threshold ?: flags.size).coerceIn(1, flags.size)
+            flags.count { it } >= required
         }
     }
 
@@ -996,6 +1179,13 @@ class UnlockJudgeUseCase {
     /** 感官挑战完成应答的约定值（App 当场核验物理动作后传入） */
     companion object {
         const val CHALLENGE_DONE = "DONE"
+
+        /** 降雨天气类型集（RainStreak 判定的"雨"口径 = 毛雨/雨/雷，雪不算雨） */
+        val RAIN_TYPES = setOf(
+            com.muxiao.timart.domain.model.WeatherType.DRIZZLE,
+            com.muxiao.timart.domain.model.WeatherType.RAIN,
+            com.muxiao.timart.domain.model.WeatherType.THUNDER,
+        )
 
         fun sha256Hex(input: String): String =
             java.security.MessageDigest.getInstance("SHA-256")

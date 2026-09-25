@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +66,12 @@ fun AssembleOverlay(
             engine.onSequenceFinished = null
             onFinished()
         }
+    }
+
+    // 回调卫生：overlay 提前离场（如封存动画期间系统返回）时清掉挂上的序列完成回调，
+    // 防止陈旧闭包在后续无关序列完成时被误触发
+    DisposableEffect(engine) {
+        onDispose { engine.onSequenceFinished = null }
     }
 
     Box(

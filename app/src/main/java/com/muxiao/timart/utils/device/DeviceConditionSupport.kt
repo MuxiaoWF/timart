@@ -61,6 +61,7 @@ fun UnlockCondition.requiredHardware(): Set<DeviceHardware> = when (this) {
     is UnlockCondition.CompassHeading -> setOf(DeviceHardware.ROTATION_VECTOR)
     is UnlockCondition.StepCount, is UnlockCondition.StepStreak, is UnlockCondition.WalkStepsNow ->
         setOf(DeviceHardware.STEP_COUNTER)
+    is UnlockCondition.CumulativeSteps -> setOf(DeviceHardware.STEP_COUNTER)
     is UnlockCondition.MotionActivity -> setOf(DeviceHardware.STEP_DETECTOR)
     is UnlockCondition.SpinPhone -> setOf(DeviceHardware.GYROSCOPE)
     is UnlockCondition.ShakeCount, is UnlockCondition.FlipOrHold, is UnlockCondition.StayStill,
@@ -68,7 +69,7 @@ fun UnlockCondition.requiredHardware(): Set<DeviceHardware> = when (this) {
     -> setOf(DeviceHardware.ACCELEROMETER)
     is UnlockCondition.ProximityCovered -> setOf(DeviceHardware.PROXIMITY)
     is UnlockCondition.NfcTap -> setOf(DeviceHardware.NFC)
-    is UnlockCondition.AmbientLight -> setOf(DeviceHardware.LIGHT_SENSOR)
+    is UnlockCondition.AmbientLight, is UnlockCondition.BrightLight -> setOf(DeviceHardware.LIGHT_SENSOR)
     is UnlockCondition.PhotoKeepsake, is UnlockCondition.ScanQr -> setOf(DeviceHardware.CAMERA)
     is UnlockCondition.BiometricUnlock -> setOf(DeviceHardware.BIOMETRIC)
     else -> emptySet()
@@ -111,6 +112,8 @@ fun unsupportedConditionNames(
             is UnlockCondition.ClimbFloors -> L.condClimb
             is UnlockCondition.RelativeAltitude -> L.condRelAltitude
             is UnlockCondition.ScanQr -> L.condScanQr
+            is UnlockCondition.CumulativeSteps -> L.condCumSteps
+            is UnlockCondition.BrightLight -> L.condBrightLight
             else -> continue
         }
     }

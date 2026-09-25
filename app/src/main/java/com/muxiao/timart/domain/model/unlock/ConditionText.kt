@@ -214,6 +214,34 @@ object ConditionText {
             is UnlockCondition.WidgetBound -> w.widgetBound
             is UnlockCondition.TodayOpenCount -> w.todayOpenFmt.format(condition.count)
 
+            // ---- 储备池 v5：降雪观测 / 累计步行 ----
+            is UnlockCondition.SnowObservation ->
+                if (condition.firstOfSeason) w.snowFirst else w.snowPlain
+            is UnlockCondition.CumulativeSteps -> w.cumStepsFmt.format(condition.minSteps)
+
+            // ---- 储备池 v6：连续降雨 / 雨后初晴 / 封存日温差 ----
+            is UnlockCondition.RainStreak ->
+                if (condition.afterRain) w.rainThenClearFmt.format(condition.days) else w.rainStreakFmt.format(condition.days)
+            is UnlockCondition.TempVsSealDay ->
+                if (condition.hotter) {
+                    w.tempHotterFmt.format(formatTemp(condition.deltaC))
+                } else {
+                    w.tempColderFmt.format(formatTemp(condition.deltaC))
+                }
+
+            // ---- 储备池 v7：农历日 / 首雷 / 明亮 / 用量 / 气压骤降 / 声音挑战 ----
+            is UnlockCondition.LunarDayOfMonth ->
+                w.lunarDaySetFmt.format(condition.days.sorted().joinToString(w.listSep))
+            is UnlockCondition.ThunderObservation ->
+                if (condition.firstOfSeason) w.thunderFirst else w.thunderPlain
+            is UnlockCondition.BrightLight -> w.brightLightFmt.format(condition.minLux)
+            is UnlockCondition.AppUsageCeiling ->
+                w.appUsageFmt.format(condition.packageName, condition.maxMinutes)
+            is UnlockCondition.PressureDelta ->
+                w.pressureDropFmt.format(formatMetric(WeatherMetricKind.PRESSURE, condition.minDropHpa))
+            is UnlockCondition.VoiceKeepsake -> w.voiceKeepsake
+            is UnlockCondition.ShoutOut -> w.shoutFmt.format(condition.seconds)
+
             // ---- 储备池 v4：现场挑战 ----
             is UnlockCondition.GesturePattern -> w.gesturePattern
             is UnlockCondition.WalkStepsNow -> w.walkNowFmt.format(condition.steps)
@@ -276,6 +304,7 @@ object ConditionText {
         WeatherMetricKind.WIND -> words(lang).metricWind
         WeatherMetricKind.PRESSURE -> words(lang).metricPressure
         WeatherMetricKind.UV -> words(lang).metricUv
+        WeatherMetricKind.APPARENT -> words(lang).metricApparent
     }
 
     /** 指标数值格式化（湿度 %、风速 km/h、气压 hPa、紫外线指数与海拔 m 无单位后缀差异；单位全语言通用，无 lang 参数） */
@@ -286,6 +315,7 @@ object ConditionText {
             WeatherMetricKind.WIND -> "$num km/h"
             WeatherMetricKind.PRESSURE -> "$num hPa"
             WeatherMetricKind.UV -> num
+            WeatherMetricKind.APPARENT -> "$num°C"
         }
     }
 
@@ -584,6 +614,22 @@ object ConditionText {
         scanQr = "扫一枚二维码",
         scanQrPaired = "扫出约定的那枚二维码",
         powFmt = "完成算力挑战（%d 位前导零）",
+        snowPlain = "快照城市正在下雪",
+        snowFirst = "迎来今冬首场降雪",
+        cumStepsFmt = "自封存起累计步行超过 %d 步",
+        rainStreakFmt = "连续下雨 %d 天",
+        rainThenClearFmt = "连续下雨 %d 天后放晴",
+        tempColderFmt = "比封存那天冷 %s°C 以上",
+        tempHotterFmt = "比封存那天热 %s°C 以上",
+        metricApparent = "体感温度",
+        lunarDaySetFmt = "每逢农历 %s 日",
+        thunderPlain = "快照城市雷暴天气",
+        thunderFirst = "迎来今季第一声雷",
+        brightLightFmt = "身处明亮环境（照度超过 %d lux）",
+        appUsageFmt = "今日使用应用「%s」不超过 %d 分钟",
+        pressureDropFmt = "气压比昨日下降 %s 以上",
+        voiceKeepsake = "录一段此刻的声音留言（不保存）",
+        shoutFmt = "对着麦克风持续发出响亮声音 %d 秒",
     )
 
     private val ZH_HANT_WORDS = ConditionWords(
@@ -796,6 +842,22 @@ object ConditionText {
         scanQr = "掃一枚 QR 碼",
         scanQrPaired = "掃出約定的那枚 QR 碼",
         powFmt = "完成算力挑戰（%d 位前導零）",
+        snowPlain = "快照城市正在下雪",
+        snowFirst = "迎來今冬首場降雪",
+        cumStepsFmt = "自封存起累計步行超過 %d 步",
+        rainStreakFmt = "連續下雨 %d 天",
+        rainThenClearFmt = "連續下雨 %d 天後放晴",
+        tempColderFmt = "比封存那天冷 %s°C 以上",
+        tempHotterFmt = "比封存那天熱 %s°C 以上",
+        metricApparent = "體感溫度",
+        lunarDaySetFmt = "每逢農曆 %s 日",
+        thunderPlain = "快照城市雷暴天氣",
+        thunderFirst = "迎來今季第一聲雷",
+        brightLightFmt = "身處明亮環境（照度超過 %d lux）",
+        appUsageFmt = "今日使用應用「%s」不超過 %d 分鐘",
+        pressureDropFmt = "氣壓比昨日下降 %s 以上",
+        voiceKeepsake = "錄一段此刻的聲音留言（不保存）",
+        shoutFmt = "對著麥克風持續發出響亮聲音 %d 秒",
     )
 
     private val EN_WORDS = ConditionWords(
@@ -1014,6 +1076,22 @@ object ConditionText {
         scanQr = "Scan a QR code",
         scanQrPaired = "Scan the agreed QR code",
         powFmt = "Complete the proof-of-work (%d leading zeros)",
+        snowPlain = "It is snowing in the snapshot city",
+        snowFirst = "The first snowfall of the winter arrives",
+        cumStepsFmt = "Walk over %d steps in total since sealing",
+        rainStreakFmt = "Rain for %d consecutive days",
+        rainThenClearFmt = "Clear skies after %d rainy days",
+        tempColderFmt = "%s°C colder than the sealing day",
+        tempHotterFmt = "%s°C hotter than the sealing day",
+        metricApparent = "feels-like temperature",
+        lunarDaySetFmt = "on lunar day %s of every month",
+        thunderPlain = "Thunderstorm over the snapshot city",
+        thunderFirst = "The season's first thunder arrives",
+        brightLightFmt = "In a bright place (above %d lux)",
+        appUsageFmt = "Use app \"%s\" for no more than %d minutes today",
+        pressureDropFmt = "Pressure has dropped %s or more since yesterday",
+        voiceKeepsake = "Record a short voice note of this moment (not saved)",
+        shoutFmt = "Make a loud sound into the microphone for %d seconds",
     )
 }
 
@@ -1217,6 +1295,25 @@ private data class ConditionWords(
     val scanQr: String,
     val scanQrPaired: String,
     val powFmt: String,
+    // ---- 储备池 v5 ----
+    val snowPlain: String,
+    val snowFirst: String,
+    val cumStepsFmt: String,
+    // ---- 储备池 v6 ----
+    val rainStreakFmt: String,
+    val rainThenClearFmt: String,
+    val tempColderFmt: String,
+    val tempHotterFmt: String,
+    // ---- 储备池 v7 ----
+    val metricApparent: String,
+    val lunarDaySetFmt: String,
+    val thunderPlain: String,
+    val thunderFirst: String,
+    val brightLightFmt: String,
+    val appUsageFmt: String,
+    val pressureDropFmt: String,
+    val voiceKeepsake: String,
+    val shoutFmt: String,
 )
 
 /**
@@ -1255,6 +1352,12 @@ object JudgeReasons {
     const val BT_NO_PERMISSION = "附近设备权限未授予，无法识别蓝牙设备，请到系统设置中开启"
     const val AIR_QUALITY_FAILED = "暂时无法获取空气质量，请检查网络后重试"
 
+    /** 储备池 v6 新增判定原因 */
+    const val SEAL_WEATHER_MISSING = "封存时未记录天气，无法判定该条件"
+
+    /** 储备池 v7 新增判定原因 */
+    const val USAGE_STATS_UNAVAILABLE = "使用统计权限未授予，无法判定应用用量，请在系统设置中开启"
+
     /** 按界面语言取判定原因词表（判定入口与展示比较两侧同源） */
     fun forLang(lang: Lang): JudgeReasonTexts = when (lang) {
         Lang.ZH_HANS -> ZH
@@ -1290,6 +1393,8 @@ object JudgeReasons {
         envSensorUnavailable = ENV_SENSOR_UNAVAILABLE,
         btNoPermission = BT_NO_PERMISSION,
         airQualityFailed = AIR_QUALITY_FAILED,
+        sealWeatherMissing = SEAL_WEATHER_MISSING,
+        usageStatsUnavailable = USAGE_STATS_UNAVAILABLE,
     )
 
     private val ZH_HANT = JudgeReasonTexts(
@@ -1320,6 +1425,8 @@ object JudgeReasons {
         envSensorUnavailable = "感測器不可用（裝置無對應硬體）",
         btNoPermission = "附近裝置權限未授予，無法識別藍牙裝置，請到系統設定中開啟",
         airQualityFailed = "暫時無法取得空氣品質，請檢查網路後重試",
+        sealWeatherMissing = "封存時未記錄天氣，無法判定該條件",
+        usageStatsUnavailable = "使用統計權限未授予，無法判定應用用量，請到系統設定中開啟",
     )
 
     private val EN = JudgeReasonTexts(
@@ -1350,6 +1457,8 @@ object JudgeReasons {
         envSensorUnavailable = "Sensor unavailable (missing hardware on this device)",
         btNoPermission = "Nearby devices permission not granted; Bluetooth devices can't be identified. Enable it in system settings",
         airQualityFailed = "Couldn't fetch air quality; check your network and retry",
+        sealWeatherMissing = "No weather was recorded at sealing; this condition can't be judged",
+        usageStatsUnavailable = "Usage access permission not granted; app usage can't be judged. Enable it in system settings",
     )
 }
 
@@ -1382,6 +1491,8 @@ data class JudgeReasonTexts(
     val envSensorUnavailable: String,
     val btNoPermission: String,
     val airQualityFailed: String,
+    val sealWeatherMissing: String,
+    val usageStatsUnavailable: String,
 )
 
 /**
@@ -1420,12 +1531,14 @@ fun conditionKind(condition: UnlockCondition): ConditionKind = when (condition) 
     is UnlockCondition.ZodiacSeason,
     is UnlockCondition.LunarMonthRange,
     is UnlockCondition.MonthlyDaySet,
+    is UnlockCondition.LunarDayOfMonth,
     -> ConditionKind.TIME
 
     is UnlockCondition.BatteryLevel,
     is UnlockCondition.ChargingState,
     is UnlockCondition.StepCount,
     is UnlockCondition.StepStreak,
+    is UnlockCondition.CumulativeSteps,
     is UnlockCondition.BeforeNextAlarm,
     is UnlockCondition.PowerSaveMode,
     is UnlockCondition.SilentMode,
@@ -1448,6 +1561,7 @@ fun conditionKind(condition: UnlockCondition): ConditionKind = when (condition) 
     is UnlockCondition.ProximityCovered,
     is UnlockCondition.FreshBoot,
     is UnlockCondition.InstalledApp,
+    is UnlockCondition.AppUsageCeiling,
     is UnlockCondition.BluetoothDevice,
     -> ConditionKind.DEVICE
 
@@ -1475,6 +1589,12 @@ fun conditionKind(condition: UnlockCondition): ConditionKind = when (condition) 
     is UnlockCondition.WindDirection,
     is UnlockCondition.TempDelta,
     is UnlockCondition.PrecipitationProbability,
+    is UnlockCondition.SnowObservation,
+    is UnlockCondition.RainStreak,
+    is UnlockCondition.TempVsSealDay,
+    is UnlockCondition.ThunderObservation,
+    is UnlockCondition.PressureDelta,
+    is UnlockCondition.BrightLight,
     -> ConditionKind.NET
 
     is UnlockCondition.OpenCountAtLeast,

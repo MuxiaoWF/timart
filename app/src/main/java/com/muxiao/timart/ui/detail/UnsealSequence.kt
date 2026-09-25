@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -46,16 +48,20 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.components.particle.GlowPainter
 import com.muxiao.timart.ui.components.particle.ParticleCanvas
 import com.muxiao.timart.ui.components.particle.ParticleEngine
 import com.muxiao.timart.ui.components.particle.ParticlePreset
+import com.muxiao.timart.ui.components.visual.LetterRevealClock
+import com.muxiao.timart.ui.components.visual.PaperStyle
+import com.muxiao.timart.ui.components.visual.RevealTitle
+import com.muxiao.timart.ui.components.visual.rememberLetterReveal
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.GlowGold
 import com.muxiao.timart.ui.theme.InkSecondary
-import com.muxiao.timart.ui.theme.PaperCream
 import com.muxiao.timart.ui.theme.PaperInk
 import com.muxiao.timart.ui.theme.TimartType
 import com.muxiao.timart.ui.theme.TimeGold
@@ -92,10 +98,19 @@ fun UnsealSequence(
     cardHeightPx: Int? = null,
     /** 序列启动时的音效回调（unseal 短音效；受设置音效开关控制） */
     onPlaySound: () -> Unit = {},
+    /** 信纸样式序号（与 [UnlockedLetterView] 同款 Int 契约）：双翼纸色与 CONTENT 卡片同源，交接零色差 */
+    paperStyle: Int = 0,
+
+    /** 信笺标题（hold 期起笔显示；与 CONTENT 卡片 content.title 同值） */
+    title: String,
+
+    /** 共享显现时钟（hold 起跑 → CONTENT 卡片接管续走；DetailScreen 每次进入新建） */
+    revealClock: LetterRevealClock,
 ) {
     val L = LocalStrings.current
     val density = LocalDensity.current
     val context = LocalContext.current
+    val paper = PaperStyle.of(paperStyle)
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var elapsed by remember { mutableLongStateOf(0L) }
     val finished = remember { AtomicBoolean(false) }
@@ -115,19 +130,27 @@ fun UnsealSequence(
         vibrateOnce(context)
     }
 
-    // 逐帧推进 elapsed（揭封视觉的唯一时钟），平整停留结束即落 CONTENT
+    // 逐帧推进 elapsed（揭封视觉的唯一时钟），平整停留结束即落 CONTENT。
+    // LOW 档（Reduced Motion）视觉时钟按引擎同拍快进：四阶段 + hold 在真实 ~850ms 内走完
     LaunchedEffect(Unit) {
+        val timePct = engine.sequenceTimePct
         val startNanos = withFrameNanos { it }
         while (isActive) {
             var ms = 0L
             withFrameNanos { frame -> ms = (frame - startNanos) / 1_000_000L }
-            elapsed = ms.coerceAtMost(TOTAL_MS + HOLD_MS)
-            if (ms >= TOTAL_MS + HOLD_MS) {
+            val clockMs = ms * timePct / 100
+            elapsed = clockMs.coerceAtMost(TOTAL_MS + HOLD_MS)
+            if (clockMs >= TOTAL_MS + HOLD_MS) {
                 finishNow()
                 break
             }
         }
     }
+
+    // hold 期起笔门（derivedStateOf 布尔门：仅越界瞬间重组一次，不破坏 A4 的逐帧免重组纪律）；
+    // 显现时钟由本序列在 hold 起跑，CONTENT 卡片接管续走（交接零跳变；hold 前跳过则由 CONTENT 起跑）
+    val inHold by remember { derivedStateOf { elapsed >= TOTAL_MS } }
+    val reveal = rememberLetterReveal(mode = if (inHold) true else false, clock = revealClock)
 
     // 卡片几何：与 CONTENT 相位 UnlockedLetterView 的信笺卡片严格同位（B1：常量走 PaperCardGeometry 唯一来源）
     val cardLeftPx = PaperCardGeometry.leftPx(density)
@@ -202,7 +225,7 @@ fun UnsealSequence(
                         alpha = inP
                     }
                     .background(
-                        PaperCream,
+                        paper.paper,
                         RoundedCornerShape(topStart = PaperCardGeometry.Corner, bottomStart = PaperCardGeometry.Corner),
                     ),
             ) {
@@ -233,7 +256,7 @@ fun UnsealSequence(
                         alpha = inP
                     }
                     .background(
-                        PaperCream,
+                        paper.paper,
                         RoundedCornerShape(topEnd = PaperCardGeometry.Corner, bottomEnd = PaperCardGeometry.Corner),
                     ),
             ) {
@@ -326,6 +349,28 @@ fun UnsealSequence(
             }
         }
 
+        // 平整停留期标题起笔（hold 重叠）：标题在摊平的信笺上按显现时钟起跑，
+        // 样式/位置与 UnlockedLetterView 信笺内标题严格同参（26/30dp 内衬 + 26sp 衬线），
+        // 交接瞬间文字进度零跳变，正文卡片接手后由原显现效果继续
+        if (inHold) {
+            RevealTitle(
+                text = title.ifBlank { "…" },
+                state = reveal,
+                style = TimartType.titleSerif.copy(fontSize = 26.sp, lineHeight = 36.sp),
+                color = paper.ink,
+                modifier = Modifier
+                    // 高于双翼(1)/火漆(2)：标题压在摊平的纸面之上
+                    .zIndex(3f)
+                    .offset {
+                        IntOffset(
+                            (cardLeftPx + with(density) { 26.dp.toPx() }).roundToInt(),
+                            (cardTopPx + with(density) { 30.dp.toPx() }).roundToInt(),
+                        )
+                    }
+                    .width(with(density) { (cardWpx - with(density) { 52.dp.toPx() }).toDp() }),
+            )
+        }
+
         // 底部提示（可点击跳过）
         Text(
             text = L.unsealSkipHint,
@@ -395,6 +440,8 @@ private fun vibrateOnce(context: Context) {
 fun RereadVeilOverlay(
     engine: ParticleEngine,
     onDone: () -> Unit,
+    /** 真实卡片实测高度（px）；null 时退回估算值（与 UnsealSequence 同源通道） */
+    cardHeightPx: Int? = null,
 ) {
     var progress by remember { mutableFloatStateOf(0f) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -404,7 +451,8 @@ fun RereadVeilOverlay(
     LaunchedEffect(canvasSize) {
         if (canvasSize == IntSize.Zero) return@LaunchedEffect
         val w = PaperCardGeometry.widthPx(density, canvasSize.width.toFloat())
-        val h = PaperCardGeometry.estimatedHeightPx(density, canvasSize.height.toFloat())
+        val h = cardHeightPx?.toFloat()?.coerceAtLeast(0f)
+            ?: PaperCardGeometry.estimatedHeightPx(density, canvasSize.height.toFloat())
         engine.fire(
             preset = ParticlePreset.REREAD,
             anchorX = with(density) { 24.dp.toPx() } + w / 2f,
@@ -417,7 +465,8 @@ fun RereadVeilOverlay(
         animate(
             initialValue = 0f,
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 450, easing = LinearOutSlowInEasing),
+            // LOW 档（Reduced Motion）同拍减半 → 225ms 必要过渡
+            animationSpec = tween(durationMillis = 450 * engine.sequenceTimePct / 100, easing = LinearOutSlowInEasing),
         ) { value, _ -> progress = value }
         onDone()
     }
@@ -426,11 +475,12 @@ fun RereadVeilOverlay(
             .fillMaxSize()
             .onSizeChanged { canvasSize = it },
     ) {
-        // 与 UnlockedLetterView 相同的卡片矩形（B1：常量走 PaperCardGeometry 唯一来源）
+        // 与 UnlockedLetterView 相同的卡片矩形（B1：常量走 PaperCardGeometry 唯一来源，高度实测优先）
         val cardLeft = PaperCardGeometry.leftPx(this)
         val cardTop = PaperCardGeometry.topPx(this)
         val w = PaperCardGeometry.widthPx(this, size.width)
-        val h = PaperCardGeometry.estimatedHeightPx(this, size.height)
+        val h = cardHeightPx?.toFloat()?.coerceAtLeast(0f)
+            ?: PaperCardGeometry.estimatedHeightPx(this, size.height)
         val cx = cardLeft + w / 2f
         val cy = cardTop + h / 2f
 

@@ -67,6 +67,7 @@ fun PasswordSetupScreen(
     val L = LocalStrings.current
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
+    var hint by remember { mutableStateOf("") }
     var acknowledged by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -133,6 +134,27 @@ fun PasswordSetupScreen(
                 modifier = Modifier.padding(top = 10.dp),
             )
 
+            // 口令提示语（储备池 v6；可选，明文 meta——提示语本就是给"记不起口令的自己"看的）
+            Text(
+                text = L.pwHintLabel,
+                style = TimartType.caption,
+                color = InkSecondary,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            BasicTextField(
+                value = hint,
+                onValueChange = { hint = it },
+                singleLine = true,
+                enabled = !busy,
+                textStyle = TimartType.body.copy(color = InkPrimary),
+                cursorBrush = SolidColor(TimeGold),
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .fillMaxWidth()
+                    .background(DeepCharcoal.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 13.dp),
+            )
+
             // 知晓勾选（手绘圆圈，不用 emoji/图标库）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -188,6 +210,23 @@ fun PasswordSetupScreen(
                         val ok = runCatching {
                             container.contentCryptoManager.setupPassword(password.toCharArray())
                         }.isSuccess
+                        if (ok) {
+                            // 口令提示语（储备池 v6）：可选；空 = 不写键（解锁弹窗不显示）
+                            runCatching {
+                                val trimmed = hint.trim()
+                                val dao = container.database.metaDao()
+                                if (trimmed.isEmpty()) {
+                                    dao.delete(com.muxiao.timart.utils.RuntimeSettings.KEY_PW_HINT)
+                                } else {
+                                    dao.put(
+                                        com.muxiao.timart.data.local.db.entity.MetaEntity(
+                                            com.muxiao.timart.utils.RuntimeSettings.KEY_PW_HINT,
+                                            trimmed,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
                         withContext(Dispatchers.Main) {
                             busy = false
                             if (ok) {
@@ -256,12 +295,14 @@ private fun PasswordField(
  * 口令解锁弹窗：冷启动后首次阅读时，会话密钥已随进程失效，
  * 阅读内容前需输口令重新派生（ContentCryptoManager.unlock）。
  * 详情页与星库重读共用；错误提示由调用方传入。
+ * [hintText] = 口令提示语（储备池 v6；meta `settings.pwHint`，null/空 = 不显示）。
  */
 @Composable
 fun PasswordUnlockDialog(
     errorText: String?,
     onDismiss: () -> Unit,
     onConfirm: (password: String) -> Unit,
+    hintText: String? = null,
 ) {
     val L = LocalStrings.current
     var password by remember { mutableStateOf("") }
@@ -277,6 +318,14 @@ fun PasswordUnlockDialog(
                     style = TimartType.caption,
                     color = InkSecondary,
                 )
+                if (!hintText.isNullOrBlank()) {
+                    Text(
+                        text = L.pwUnlockHintFmt.format(hintText),
+                        style = TimartType.caption,
+                        color = TimeGold,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
                 BasicTextField(
                     value = password,
                     onValueChange = { password = it },

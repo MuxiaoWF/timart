@@ -36,6 +36,8 @@ import kotlin.time.Duration.Companion.milliseconds
 fun DissolveSequence(
     engine: ParticleEngine,
     onFinished: () -> Unit,
+    /** 信笺卡片实测高度（px）；null 时退回估算值（DetailScreen 实测通道，与 UnsealSequence 同源） */
+    cardHeightPx: Int? = null,
 ) {
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -62,12 +64,13 @@ fun DissolveSequence(
     LaunchedEffect(canvasSize) {
         if (canvasSize == IntSize.Zero) return@LaunchedEffect
         // 第一幕：信笺淡出先行——DetailScreen 的 700ms 淡出在此推进到 ~40% 残影，
-        // 粒子出现时卡片已"正在消散"，因果衔接成立
-        delay(420L.milliseconds)
+        // 粒子出现时卡片已"正在消散"，因果衔接成立（LOW 档经引擎同拍缩放保持比例）
+        delay((420L * engine.sequenceTimePct / 100).milliseconds)
         // 第二幕：锚点 = 信笺卡片实际中心（DISSOLVE 相位信笺无返回按钮 → 顶距 40dp；
-        // 几何走 PaperCardGeometry 唯一来源，不再用屏幕比例位 h*0.42）
+        // 几何走 PaperCardGeometry 唯一来源，高度优先用实测值，不再用屏幕比例位 h*0.42）
         val cardTop = with(density) { 40.dp.toPx() }
-        val cardH = PaperCardGeometry.estimatedHeightPx(density, canvasSize.height.toFloat())
+        val cardH = cardHeightPx?.toFloat()?.coerceAtLeast(0f)
+            ?: PaperCardGeometry.estimatedHeightPx(density, canvasSize.height.toFloat())
         val cardW = PaperCardGeometry.widthPx(density, canvasSize.width.toFloat())
         engine.fire(
             preset = ParticlePreset.DISSOLVE,
@@ -76,7 +79,7 @@ fun DissolveSequence(
             anchorRadius = maxOf(cardW, cardH) / 2f * 0.9f,
             colorArgb = DustAsh.toArgb(),
         )
-        delay(1000L.milliseconds)
+        delay((1000L * engine.sequenceTimePct / 100).milliseconds)
         finish()
     }
 }

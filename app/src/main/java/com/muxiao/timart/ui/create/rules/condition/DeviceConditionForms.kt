@@ -461,3 +461,83 @@ private fun PercentSlider(
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+// ================= 累计步行（储备池 v5）=================
+
+/**
+ * 累计步行表单：自封存日起累计 ≥ N 步。
+ * 采样口径：按已采样每日步数合计（日级记录 + 月度归档），缺采样日按 0 计，
+ * 打开应用越勤记录越完整；判定通道见 `StepCounterReader.stepsSince`。
+ * 活动记录权限引导与 StepCountForm / StepStreakForm 同通道。
+ */
+@Composable
+fun CumulativeStepsForm(
+    onConfirm: (UnlockCondition.CumulativeSteps) -> Unit,
+) {
+    val L = LocalStrings.current
+    val context = LocalContext.current
+    var steps by remember { mutableIntStateOf(100000) }
+
+    // 活动记录权限引导（与 StepCountForm 同通道）
+    var showGuide by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    LaunchedEffect(Unit) {
+        val hasSensor = (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
+            ?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) != null
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasSensor && !granted) showGuide = true
+    }
+    if (showGuide) {
+        PermissionGuideDialog(
+            title = L.condCumSteps,
+            body = L.permActivityDesc,
+            onConfirm = {
+                showGuide = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    permissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                }
+            },
+            onDismiss = { showGuide = false },
+        )
+    }
+
+    val condition = UnlockCondition.CumulativeSteps(steps)
+
+    ExtendFormScaffold(title = L.condCumSteps, valueCondition = condition, onConfirm = {
+        onConfirm(condition)
+    }) {
+        Text(
+            text = ConditionText.conditionSentence(
+                UnlockCondition.CumulativeSteps(steps),
+                RuntimeSettings.resolvedLang,
+            ),
+            style = TimartType.body.copy(color = TimeGold),
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .align(Alignment.CenterHorizontally),
+        )
+        Slider(
+            value = steps.toFloat(),
+            onValueChange = { steps = (it / 1000).toInt() * 1000 },
+            valueRange = 1000f..1000000f,
+            colors = SliderDefaults.colors(
+                thumbColor = TimeGold,
+                activeTrackColor = TimeGold,
+                inactiveTrackColor = com.muxiao.timart.ui.theme.SurfaceRaise,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+        )
+        Text(
+            text = L.cumStepsNote,
+            style = TimartType.caption,
+            color = InkDisabled,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}

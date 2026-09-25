@@ -44,7 +44,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -57,6 +60,7 @@ import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.model.unlock.JudgeReasons
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.domain.model.unlock.oppositeState
+import com.muxiao.timart.domain.model.unlock.unitProgress
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.l10n.stringsFor
 import com.muxiao.timart.ui.components.PermissionGuideDialog
@@ -123,15 +127,26 @@ fun LockedStateView(
     remindLeadDays: Int? = null,
     onRemind: () -> Unit = {},
 
+    /** 解锁进度预估（储备池 v6）：确定性时间条件推算的最早可解时刻（epoch millis；null = 不显示） */
+    earliestUnlockAt: Long? = null,
+
+    /** 依赖链（储备池 v6）：沿 dependCapsuleId 向上的祖先节点（空 = 无依赖或单级依赖） */
+    chain: List<DetailViewModel.ChainNode> = emptyList(),
+
     /** 粒子画布（宿主 ParticleCanvas）在窗口根坐标中的原点：尘核锚点换算画布局部坐标用 */
     overlayOrigin: Offset = Offset.Zero,
 ) {
     val L = LocalStrings.current
     val context = LocalContext.current
+    val density = LocalDensity.current
     // 尘核中心（composition 根坐标，经 overlayOrigin 换算成粒子画布局部坐标供引擎使用）
     var orbCenter by remember { mutableStateOf(Offset.Zero) }
     var orbRadiusPx by remember { mutableFloatStateOf(1f) }
     var lastPulse by remember { mutableIntStateOf(0) }
+
+    // 尘核语义标签用的进度（在 modifier 链之前求值，供 semantics 播报）
+    val totalDesc = timeline?.totalCount ?: capsule.unlockRule.conditionList.size
+    val satisfiedDesc = timeline?.satisfiedCount ?: 0
 
     // 条件行权限引导（T14）：被权限阻断时，说明先于系统弹窗
     var showGpsGuide by remember { mutableStateOf(false) }
@@ -142,11 +157,11 @@ fun LockedStateView(
     val stepLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { }
+    val judgeReasons = JudgeReasons.forLang(RuntimeSettings.resolvedLang)
     val gpsBlocked = timeline?.items?.any {
-        it.reason == JudgeReasons.forLang(RuntimeSettings.resolvedLang).gpsNoPermission
+        it.reason == judgeReasons.gpsNoPermission
     } == true
     // 步数条件被阻断：仅当确因活动记录权限缺失（且设备有计步硬件）才引导申请
-    val judgeReasons = JudgeReasons.forLang(RuntimeSettings.resolvedLang)
     val hasStepSensor = remember {
         (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
             ?.getDefaultSensor(android.hardware.Sensor.TYPE_STEP_COUNTER) != null
@@ -174,6 +189,24 @@ fun LockedStateView(
             onPlayPendingSound()
         }
         lastPulse = pulseCount
+    }
+
+    // 入口拾起收束（自 HomeScreen 点击侧迁入）：进入锁定详情时在真实尘核位置向心聚合一次，
+    // 收束全程在本页画布完整播放（不再被 home 画布 detach 的 releaseAll 在转场半途处决）。
+    // 纯视觉不播音效（pending 音效属"条件满足"语义，归上方差集路径）；
+    // 本视图仅 LOCKED 相位组合，信纸各相位（UNSEAL/CONTENT/DISSOLVE/ARCHIVED）不会触发
+    var entryPulsed by remember { mutableStateOf(false) }
+    LaunchedEffect(orbCenter, overlayOrigin) {
+        if (!entryPulsed && orbCenter != Offset.Zero) {
+            entryPulsed = true
+            engine.fire(
+                preset = ParticlePreset.PENDING,
+                anchorX = orbCenter.x - overlayOrigin.x,
+                anchorY = orbCenter.y - overlayOrigin.y,
+                anchorRadius = orbRadiusPx,
+                colorArgb = ParticleEngine.TIME_GOLD,
+            )
+        }
     }
 
     Column(
@@ -248,7 +281,15 @@ fun LockedStateView(
                 .onGloballyPositioned { coords ->
                     orbCenter = coords.positionInRoot() +
                         Offset(coords.size.width / 2f, coords.size.height / 2f)
-                    orbRadiusPx = coords.size.width / 2f * 0.72f
+                    // 引擎尘环带 = 1.10–1.56× 球核半径：必须传球核实值（OrbCoreRadius），
+                    // 用盒宽比例会低估半径 → 内段尘点生成在球体后方被盖住、外段够不到封印环
+                    orbRadiusPx = with(density) { OrbCoreRadius.toPx() }
+                }
+                // 无障碍（储备池 v6）：TalkBack 语义标签——尘核是页面唯一焦点控件，
+                // 播报「胶囊标题 + 锁定态 + 满足进度」，替代纯视觉的进度表达
+                .semantics {
+                    contentDescription = L.lockedTitle + "，" + capsule.title +
+                        "，$satisfiedDesc / $totalDesc"
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -258,7 +299,7 @@ fun LockedStateView(
             val pendingSatisfied = timeline?.satisfiedCount ?: 0
             CapsuleOrbView(
                 state = CapsuleState.LOCKED,
-                radius = 88.dp,
+                radius = OrbCoreRadius,
                 pending = pendingTotal in 1..pendingSatisfied,
                 satisfyProgress = if (pendingTotal > 0) {
                     pendingSatisfied.toFloat() / pendingTotal
@@ -300,11 +341,19 @@ fun LockedStateView(
             color = TimeGold,
         )
         // 满足态措辞按逻辑类型：AND 全部达成 / OR 任一达成 / AT_LEAST 达到任选阈值
+        // （分组规则下按单元口径：组各算一单元，与判定引擎 units() 同源）
         val rule = capsule.unlockRule
+        val satisfiedFlags = timeline?.items?.map { it.satisfied } ?: emptyList()
+        val atLeastScope = if (rule.groups.isEmpty()) {
+            satisfied to total
+        } else {
+            unitProgress(rule, satisfiedFlags)
+        }
         val metText = when {
             total <= 0 -> L.condSomeMet
             rule.logicType == com.muxiao.timart.domain.model.unlock.LogicType.AT_LEAST &&
-                satisfied >= (rule.threshold ?: total).coerceIn(1, total) -> L.condAtLeastMetFmt.format(satisfied, total)
+                atLeastScope.first >= (rule.threshold ?: atLeastScope.second).coerceIn(1, atLeastScope.second) ->
+                L.condAtLeastMetFmt.format(atLeastScope.first, atLeastScope.second)
             satisfied == total -> L.condAllMet
             else -> L.condSomeMet
         }
@@ -316,12 +365,25 @@ fun LockedStateView(
         )
         // M-of-N 预告（体验储备池 §7.2）：未达任选阈值时明示还差几条（时间线顶部的口头承诺）
         if (rule.logicType == com.muxiao.timart.domain.model.unlock.LogicType.AT_LEAST &&
-            satisfied < (rule.threshold ?: total).coerceIn(1, total)
+            atLeastScope.first < (rule.threshold ?: atLeastScope.second).coerceIn(1, atLeastScope.second)
         ) {
             Text(
-                text = L.condAtLeastGapFmt.format(rule.threshold ?: total, satisfied, (rule.threshold ?: total) - satisfied),
+                text = L.condAtLeastGapFmt.format(
+                    rule.threshold ?: atLeastScope.second,
+                    atLeastScope.first,
+                    (rule.threshold ?: atLeastScope.second) - atLeastScope.first,
+                ),
                 style = TimartType.caption,
                 color = TimeGold,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        // 解锁进度预估（储备池 v6）：确定性时间条件静态推算的最早可解日期（null = 含不可推算条件）
+        earliestUnlockAt?.let { at ->
+            Text(
+                text = L.earliestUnlockFmt.format(TimeFormatter.sealDate(at)),
+                style = TimartType.caption,
+                color = InkSecondary,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
@@ -332,6 +394,11 @@ fun LockedStateView(
             // 依赖前置尘核 + 状态说明（无依赖不显示）
             if (tl.dependencyStatus != null) {
                 DependencyRow(timeline = tl)
+                Spacer(modifier = Modifier.height(22.dp))
+            }
+            // 依赖链（储备池 v6）：沿依赖向上的祖先序列（≥2 级才值得展示；1 级即上面的依赖行）
+            if (chain.size >= 2) {
+                DependencyChainSection(chain = chain)
                 Spacer(modifier = Modifier.height(22.dp))
             }
             if (tl.items.isNotEmpty()) {
@@ -529,6 +596,10 @@ private const val REGRET_LONG_PRESS_MS = 3_000L
 private const val REGRET_TAP_TRIGGER_COUNT = 5
 private const val REGRET_TAP_WINDOW_MS = 1_200L
 
+/** 尘核球核半径（CapsuleOrbView 的 radius 语义 = 球核半径）：
+ *  引擎 BREATHE 尘环带 1.10–1.56× 此值与封印环 1.32× 相接，PENDING 脉冲同源，勿改回盒宽比例 */
+private val OrbCoreRadius = 88.dp
+
 /** 详情页次级动作行（赠予 / NFC 卡贴）：整行卡片化可点（SurfaceRaise 底 + 发丝描边 + 尾部箭头），
  *  行高约 48dp，替代原先 caption 纯文本的小热区 */
 @Composable
@@ -557,6 +628,59 @@ private fun DetailActionRow(
             style = TimartType.titleSerif,
             color = TimeGold,
         )
+    }
+}
+
+/**
+ * 依赖链（储备池 v6）：沿依赖向上的祖先序列，逐级「标题 · 状态」。
+ * 状态色语义与 [DependencyRow] 一致（金 = 已解锁 / 石板 = 锁定 / 灰 = 已销毁 / 禁用 = 失联）。
+ */
+@Composable
+private fun DependencyChainSection(chain: List<DetailViewModel.ChainNode>) {
+    val L = LocalStrings.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = L.chainTitle,
+            style = TimartType.caption,
+            color = InkDisabled,
+        )
+        chain.forEachIndexed { index, node ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = if (index == 0) 10.dp else 8.dp),
+            ) {
+                Text(
+                    text = if (index == 0) "" else "└ ",
+                    style = TimartType.caption,
+                    color = InkDisabled,
+                )
+                Box(modifier = Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+                    CapsuleOrbView(state = node.state, radius = 7.dp)
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = node.title,
+                    style = TimartType.body.copy(fontSize = 14.sp),
+                    color = InkPrimary,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                val stateText = when (node.state) {
+                    CapsuleState.LOCKED -> L.depLocked
+                    CapsuleState.UNLOCKED -> L.depUnlocked
+                    CapsuleState.DESTROYED -> L.depDestroyedPermanent
+                }
+                Text(
+                    text = stateText,
+                    style = TimartType.caption,
+                    color = when (node.state) {
+                        CapsuleState.LOCKED -> LockedSlate
+                        CapsuleState.UNLOCKED -> TimeGold
+                        CapsuleState.DESTROYED -> DustAsh
+                    },
+                    modifier = Modifier.padding(start = 10.dp),
+                )
+            }
+        }
     }
 }
 

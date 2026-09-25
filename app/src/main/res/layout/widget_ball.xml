@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 单球小组件（储备池 v7）：1×1 剩余天数倒计时，仅元数据不含任何内容 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_ball_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1512">
+
+    <TextView
+        android:id="@+id/widget_ball_days"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="@string/widget_ball_placeholder"
+        android:textColor="#E6C87A"
+        android:textSize="26sp"
+        android:textStyle="bold" />
+</FrameLayout>

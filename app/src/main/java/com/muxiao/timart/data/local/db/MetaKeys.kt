@@ -67,6 +67,9 @@ object CapsuleMetaKeys {
     /** 回信转新胶囊 key 前缀（DAO 前缀扫描用） */
     const val REPLY_TO_KEY_PREFIX = REPLY_TO_PREFIX
 
+    /** 回信 key 前缀（DAO 前缀扫描用；回信信箱聚合入口） */
+    const val REPLY_KEY_PREFIX = REPLY_PREFIX
+
     /**
      * 待答之问（N20）：`capsule.question.<id>` = 封存时写下的「未来要回答的问题」文本。
      * 写入点 = CreateViewModel.performCreate；读取点 = DetailViewModel（揭封后回信编辑区引导占位）。
@@ -98,6 +101,15 @@ object CapsuleMetaKeys {
     fun remind(capsuleId: String): String = "$REMIND_KEY_PREFIX$capsuleId"
 
     fun remindSent(capsuleId: String): String = "$REMIND_SENT_KEY_PREFIX$capsuleId"
+
+    /**
+     * 天气预告通知（储备池 v6）：`settings.forecastSent.<id>` = 上次已预告的日期（ISO，
+     * 去重：每胶囊每天最多一条）。写入点 = ConditionCheckWorker（预报满足时）。
+     * 预告只是「接近可解」的提示，不触发解锁、不参与判定。
+     */
+    const val FORECAST_SENT_KEY_PREFIX = "settings.forecastSent."
+
+    fun forecastSent(capsuleId: String): String = "$FORECAST_SENT_KEY_PREFIX$capsuleId"
 
     /** 条件达成时刻 key（index = 解锁规则条件列表下标，0 起） */
     fun condMet(capsuleId: String, index: Int): String = "$COND_MET_PREFIX$capsuleId.$index"
@@ -177,6 +189,7 @@ object CapsuleMetaKeys {
         CHAPTER_AT_PREFIX,
         REMIND_KEY_PREFIX,
         REMIND_SENT_KEY_PREFIX,
+        FORECAST_SENT_KEY_PREFIX,
         COND_MET_KEY_PREFIX,
     )
 }

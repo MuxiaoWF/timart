@@ -112,7 +112,7 @@ fun CapsuleOrbView(
         if (isPending) {
             Canvas(modifier = Modifier) {
                 val r = radius.toPx()
-                val seeds = floatArrayOf(0.13f, 0.71f, 0.33f, 0.91f)
+                val seeds = PendingSeedPositions
                 val color = TimeGold
                 for (i in seeds.indices) {
                     val fx = seeds[i]
@@ -176,7 +176,7 @@ fun CapsuleOrbView(
                         style = Stroke(width = 1.2.dp.toPx()),
                     )
                     drawIntoCanvas { canvas ->
-                        for (a in floatArrayOf(210f, 30f)) {
+                        for (a in SealNodeAngles) {
                             val rad = a * Math.PI.toFloat() / 180f
                             GlowPainter.drawDot(
                                 canvas.nativeCanvas,
@@ -201,3 +201,9 @@ internal fun CapsuleState.anchorColorArgb(pending: Boolean = false): Int = when 
     this == CapsuleState.UNLOCKED -> ParticleEngine.TIME_GOLD
     else -> 0xFF7A7268.toInt()
 }
+
+/** PENDING 内部固定种子金点位置（占位分数；预分配，draw 相位只读不建数组） */
+private val PendingSeedPositions = floatArrayOf(0.13f, 0.71f, 0.33f, 0.91f)
+
+/** 封印轨道环两粒封印节点角度（与启动图标斜轨同构；预分配同上） */
+private val SealNodeAngles = floatArrayOf(210f, 30f)

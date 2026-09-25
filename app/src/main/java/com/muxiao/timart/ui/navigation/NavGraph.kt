@@ -10,14 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.muxiao.timart.AppContainer
@@ -41,8 +39,6 @@ private const val ENTER_SCALE = 0.92f
 @Composable
 fun NavGraph(container: AppContainer) {
     val navController = rememberNavController()
-
-    val backStackEntry by navController.currentBackStackEntryAsState()
 
     // NFC 实体锚点直达（体验储备池 §4）：碰卡分发 → 导航详情并消费，胶囊不存在时详情页 MISSING 态兜底
     LaunchedEffect(container.pendingNfcCapsuleId) {
@@ -91,9 +87,6 @@ fun NavGraph(container: AppContainer) {
             composable(Routes.TIME_TRACK) {
                 MainTabsScreen(
                     container = container,
-                    // 导航级激活态：进入创建/详情/口令页的瞬间（转场开始）即置 false，
-                    // Home 据此立即清空背景/循环粒子，不等 180ms 退场动画结束的 onDispose
-                    navActive = backStackEntry?.destination?.route == Routes.TIME_TRACK,
                     onOpenDetail = { id, firstUnlock ->
                         navController.navigate(Routes.detail(id, firstUnlock))
                     },

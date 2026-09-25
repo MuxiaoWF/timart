@@ -134,6 +134,22 @@ class DetailViewModel(
 
         /** 多章节信件（N10）：下一章当前可揭示（非空 [chapterHint] 时决定按钮 vs 纯文本） */
         val canRevealNextChapter: Boolean = false,
+
+        /** 口令提示语（储备池 v6；meta `settings.pwHint` 全局键；null/空 = 未设置） */
+        val pwHint: String? = null,
+
+        /** 解锁进度预估（储备池 v6；确定性时间条件静态推算，null = 存在不可推算条件） */
+        val earliestUnlockAt: Long? = null,
+
+        /** 依赖链（储备池 v6）：沿 dependCapsuleId 向上的祖先节点（不含本胶囊；空 = 无依赖） */
+        val chain: List<ChainNode> = emptyList(),
+    )
+
+    /** 依赖链节点（储备池 v6）：状态取库内实时值 */
+    data class ChainNode(
+        val id: String,
+        val title: String,
+        val state: CapsuleState,
     )
 
     /** 多章节信件 VM 内存态：段落边界 + 揭示进度（进度持久化在 meta，见 CapsuleMetaKeys.chapters 注） */
@@ -318,6 +334,14 @@ class DetailViewModel(
                 }
             }
         }
+        // 口令提示语（储备池 v6）：全局键 meta `settings.pwHint`（写入点 PasswordSetupScreen），
+        // 口令解锁弹窗显示；空值 = 未设置不显示
+        viewModelScope.launch(Dispatchers.IO) {
+            val hint = runCatching {
+                container.database.metaDao().get(RuntimeSettings.KEY_PW_HINT)
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            if (hint != null) _state.update { it.copy(pwHint = hint) }
+        }
     }
 
     // ================= 胶囊状态回流 =================
@@ -341,6 +365,31 @@ class DetailViewModel(
                     )
                 }
                 startJudgeLoop()
+                // 解锁进度预估（储备池 v6）：确定性时间条件静态推算（纯逻辑，一次进页算一遍）
+                viewModelScope.launch(Dispatchers.Default) {
+                    val estimate = runCatching {
+                        com.muxiao.timart.domain.usecase.EarliestUnlockEstimator.estimate(
+                            capsule,
+                            container.timeProvider.nowMillis(),
+                        )
+                    }.getOrNull()
+                    _state.update { it.copy(earliestUnlockAt = estimate) }
+                }
+                // 依赖链（储备池 v6）：沿 dependCapsuleId 向上的祖先节点（≤6 层防御性上限）
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        val all = repo.allSync()
+                        val byId = all.associateBy { it.id }
+                        val nodes = mutableListOf<ChainNode>()
+                        var cur = capsule.dependCapsuleId
+                        while (cur != null && nodes.size < 6) {
+                            val node = byId[cur] ?: break
+                            nodes += ChainNode(node.id, node.title, node.state)
+                            cur = node.dependCapsuleId
+                        }
+                        _state.update { it.copy(chain = nodes) }
+                    }
+                }
             }
 
             CapsuleState.UNLOCKED -> {

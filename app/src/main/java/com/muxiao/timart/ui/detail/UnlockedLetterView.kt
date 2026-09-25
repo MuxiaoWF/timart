@@ -42,6 +42,7 @@ import com.muxiao.timart.domain.model.WeatherType
 import com.muxiao.timart.domain.usecase.ReadCapsuleUseCase
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.l10n.stringsFor
+import com.muxiao.timart.ui.components.visual.LetterRevealClock
 import com.muxiao.timart.ui.components.visual.PaperLetterCard
 import com.muxiao.timart.ui.components.visual.PaperStyle
 import com.muxiao.timart.ui.components.visual.RevealBody
@@ -102,6 +103,9 @@ fun UnlockedLetterView(
      * 揭封路径落 CONTENT 时解密可能仍在跑，用它避免标题从真实值退回"…"。
      */
     titleHint: String? = null,
+
+    /** 外部共享显现时钟（揭封交接重叠）：CONTENT 相位传入揭封 hold 期起跑的时钟，续走同一时间轴 */
+    revealClock: LetterRevealClock? = null,
 
     /** 卡片高度实测回调（揭封舞台据此生成同高双翼，交接无几何差） */
     onCardHeightChanged: ((Int) -> Unit)? = null,
@@ -181,6 +185,8 @@ fun UnlockedLetterView(
                         } else {
                             false
                         },
+                        // 揭封交接重叠：复用揭封 hold 期起跑的共享时钟，标题进度零跳变续走
+                        clock = revealClock,
                     )
 
                     // 标题（随机显现效果）

@@ -124,10 +124,12 @@ fun SettingsScreen(container: AppContainer) {
     val soundEnabled by vm.soundEnabled.collectAsStateWithLifecycle()
     val dawnDuskTint by vm.dawnDuskTint.collectAsStateWithLifecycle()
     val biometricLock by vm.biometricLock.collectAsStateWithLifecycle()
+    val sessionTtl by vm.sessionTtlHours.collectAsStateWithLifecycle()
     val language by vm.language.collectAsStateWithLifecycle()
     val hasPassword by vm.hasPassword.collectAsStateWithLifecycle()
     val passwordChange by vm.passwordChange.collectAsStateWithLifecycle()
     val autoBackup by vm.autoBackup.collectAsStateWithLifecycle()
+    val backupPwSet by vm.backupPwSet.collectAsStateWithLifecycle()
 
     val engine = container.particleEngine
     val density = LocalDensity.current
@@ -147,6 +149,7 @@ fun SettingsScreen(container: AppContainer) {
     var showMigration by remember { mutableStateOf(false) }
     var showAutoBackupPeriod by remember { mutableStateOf(false) }
     var showAutoBackupHistory by remember { mutableStateOf(false) }
+    var showBackupPwDialog by remember { mutableStateOf(false) }
 
     // 自动备份目录选择（ACTION_OPEN_TREE + 持久化授权）
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -161,18 +164,18 @@ fun SettingsScreen(container: AppContainer) {
     // 语言入口行中心：弹层是独立窗口，其内坐标无法映射主窗口，选择语言后锚回入口行给粒子反馈
     var langRowCenter by remember { mutableStateOf(IntOffset.Zero) }
 
-    // 改动处一次轻 ASSEMBLE 反馈（小半径向心聚合；tick 保证同一位置可重复触发）
+    // 改动处一次星环余晖反馈（HALO 单发旋散渐淡 ~0.9–1.6s；较 1.2s ASSEMBLE 序列轻快，
+    // 且不占用 UNSEAL/ASSEMBLE 的序列互斥通道；tick 保证同一位置可重复触发）
     var feedbackAnchor by remember { mutableStateOf(IntOffset.Zero) }
     var feedbackTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(feedbackTick) {
         if (feedbackTick == 0) return@LaunchedEffect
         engine.fire(
-            preset = ParticlePreset.ASSEMBLE,
+            preset = ParticlePreset.HALO,
             anchorX = feedbackAnchor.x.toFloat(),
             anchorY = feedbackAnchor.y.toFloat(),
             anchorRadius = with(density) { 36.dp.toPx() },
             colorArgb = ParticleEngine.TIME_GOLD,
-            sequence = true,
         )
     }
     var rootOrigin by remember { mutableStateOf(IntOffset.Zero) }
@@ -360,19 +363,64 @@ fun SettingsScreen(container: AppContainer) {
                             onChanged = { value ->
                                 vm.setBiometricLock(value)
                                 // N15 新预设启用位：开 → 星环余晖 / 关 → 尘埃落定
+                                // 锚点换算到粒子画布局部坐标（privacyCenter 是根坐标，与同页 feedbackAt 同理）
+                                val local = privacyCenter - rootOrigin
                                 engine.fire(
                                     preset = if (value) {
                                         ParticlePreset.HALO
                                     } else {
                                         ParticlePreset.SETTLE
                                     },
-                                    anchorX = privacyCenter.x.toFloat(),
-                                    anchorY = privacyCenter.y.toFloat(),
+                                    anchorX = local.x.toFloat(),
+                                    anchorY = local.y.toFloat(),
                                     anchorRadius = with(density) { 36.dp.toPx() },
                                     colorArgb = ParticleEngine.TIME_GOLD,
                                 )
                             },
                         )
+                    }
+                    // 口令会话免输时长（储备池 v7）：下一次口令解锁后的免输窗口（密钥依旧不落盘）
+                    Text(
+                        text = L.setSessionTtl,
+                        style = TimartType.body,
+                        color = InkPrimary,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Text(
+                        text = L.setSessionTtlDesc,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                    ) {
+                        val ttlChoices = listOf(
+                            24 to L.sessionTtlHoursFmt.format(24),
+                            72 to L.sessionTtlDaysFmt.format(3),
+                            168 to L.sessionTtlDaysFmt.format(7),
+                        )
+                        ttlChoices.forEachIndexed { index, (hours, label) ->
+                            val selected = sessionTtl == hours
+                            SegmentedButton(
+                                selected = selected,
+                                onClick = { vm.setSessionTtlHours(hours) },
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index = index,
+                                    count = ttlChoices.size,
+                                ),
+                                colors = SegmentedButtonDefaults.colors(
+                                    activeContainerColor = TimeGold,
+                                    activeContentColor = DeepCharcoal,
+                                    inactiveContainerColor = DeepCharcoal,
+                                    inactiveContentColor = InkSecondary,
+                                ),
+                                border = BorderStroke(1.dp, if (selected) TimeGold else TrackHairline),
+                                label = { Text(text = label, style = TimartType.caption) },
+                            )
+                        }
                     }
                 }
             }
@@ -393,6 +441,13 @@ fun SettingsScreen(container: AppContainer) {
                     label = L.setGiftImport,
                     description = L.setGiftImportDesc,
                     onClick = { showGiftImportDialog = true },
+                )
+
+                // 备份口令（v3 备份口令分离）：导出/自动备份共用的独立口令，与主口令互不影响
+                SimpleRow(
+                    label = L.setBackupPw,
+                    description = if (backupPwSet) L.setBackupPwSetDesc else L.setBackupPwDesc,
+                    onClick = { showBackupPwDialog = true },
                 )
 
                 // 自动定期本地备份：打开应用达到周期即写入所选目录（密文包，零网络）
@@ -444,6 +499,7 @@ fun SettingsScreen(container: AppContainer) {
                             AutoBackupManager.Status.RAN -> L.setAutoBackupDone
                             AutoBackupManager.Status.FAILED -> L.setAutoBackupFailed
                             AutoBackupManager.Status.SKIPPED_LOCKED -> L.setAutoBackupNeedSession
+                            AutoBackupManager.Status.SKIPPED_NO_PW -> L.setAutoBackupNeedPw
                             else -> L.setAutoBackupDesc
                         },
                         onClick = vm::runAutoBackupNow,
@@ -640,9 +696,21 @@ fun SettingsScreen(container: AppContainer) {
         )
     }
 
-    // ---- 备份（T15 实现） ----
+    // ---- 备份（T15 实现；v3 备份口令独立于主口令） ----
     if (showExportDialog) {
-        BackupExportDialog(manager = container.backupManager, onDismiss = { showExportDialog = false })
+        BackupExportDialog(
+            manager = container.backupManager,
+            backupPwSet = backupPwSet,
+            onSetBackupPassword = { pw, onResult -> vm.setBackupPassword(pw, onResult) },
+            onDismiss = { showExportDialog = false },
+        )
+    }
+    if (showBackupPwDialog) {
+        BackupPasswordDialog(
+            manager = container.backupManager,
+            onSaved = { vm.refreshBackupPassword() },
+            onDismiss = { showBackupPwDialog = false },
+        )
     }
     if (showImportDialog) {
         BackupImportDialog(manager = container.backupManager, onDismiss = { showImportDialog = false })

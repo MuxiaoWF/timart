@@ -156,6 +156,13 @@ fun DustRecordsScreen(container: AppContainer) {
                             index = index,
                             selected = record.id in selection,
                             inSelection = selection.isNotEmpty(),
+                            // 删除行 240ms 淡出（与 DISSOLVE 尘埃散逸同期收场）、批量删除后重排平滑滑动；
+                            // 进场 fade 关闭——首屏 stagger 浮现由 DustRow 内部 reveal 承担
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = null,
+                                placementSpec = tween(240, easing = androidx.compose.animation.core.LinearOutSlowInEasing),
+                                fadeOutSpec = tween(240, easing = androidx.compose.animation.core.LinearOutSlowInEasing),
+                            ),
                             onPositioned = { center -> rowCenters[record.id] = center },
                             onToggle = {
                                 selection = if (record.id in selection) {
@@ -246,7 +253,10 @@ fun DustRecordsScreen(container: AppContainer) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // 选中行位置逐一 DISSOLVE 散逸；删除不等动画（Room Flow 回流清行）
+                        // 选中行位置逐一 DISSOLVE 散逸；删除不等动画（Room Flow 回流清行）。
+                        // 批删均摊：单发预算按行数摊分（封顶 4 行档，配合引擎 countScale），
+                        // 否则 N×预算 超对象池会让排后的行被饿死（尘散不完整甚至无尘）
+                        val perRowScale = 1f / maxOf(1, minOf(selection.size, 4))
                         selection.forEach { id ->
                             rowCenters[id]?.let { center ->
                                 val local = center - rootOrigin
@@ -256,6 +266,7 @@ fun DustRecordsScreen(container: AppContainer) {
                                     anchorY = local.y.toFloat(),
                                     anchorRadius = with(density) { 42.dp.toPx() },
                                     colorArgb = DustAsh.toArgb(),
+                                    countScale = perRowScale,
                                 )
                             }
                         }
@@ -290,6 +301,7 @@ private fun DustRow(
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     onDeleteRequest: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val L = LocalStrings.current
     var appeared by remember { mutableStateOf(false) }
@@ -327,7 +339,7 @@ private fun DustRow(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
                 alpha = reveal

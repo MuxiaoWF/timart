@@ -36,6 +36,12 @@ object RuntimeSettings {
     const val KEY_BIOMETRIC_LOCK = "settings.biometricLock"
     const val KEY_DAWN_DUSK = "settings.dawnDusk"
 
+    /** 口令提示语（储备池 v6；首次设置口令时可选写入，解锁弹窗显示；明文 meta，非胶囊级不进孤儿扫描） */
+    const val KEY_PW_HINT = "settings.pwHint"
+
+    /** 口令会话免输时长（储备池 v7；小时，24/72/168 三档，默认 72 = 原实现口径） */
+    const val KEY_SESSION_TTL_HOURS = "settings.sessionTtlHours"
+
     /** 陀螺仪视差（首页星图轻微偏移；ARCHITECTURE §2.14 默认关） */
     @Volatile
     var gyroEnabled: Boolean = false
@@ -61,6 +67,13 @@ object RuntimeSettings {
      */
     @Volatile
     var dawnDuskTint: Boolean = false
+
+    /**
+     * 口令会话免输时长（储备池 v7，小时）：影响下一次口令解锁后的 Vault 包裹过期时刻
+     * （已存在的包裹副本按其原过期时刻，不追溯）。密钥本体与口令依旧从不落盘。
+     */
+    @Volatile
+    var sessionTtlHours: Int = 72
 
     /** 界面语言（快照状态；默认跟随系统） */
     var appLanguage: AppLanguage by mutableStateOf(AppLanguage.SYSTEM)

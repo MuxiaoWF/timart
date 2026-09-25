@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.muxiao.timart.AppContainer
 import com.muxiao.timart.domain.model.Capsule
+import com.muxiao.timart.domain.model.CapsuleState
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.components.visual.SectionHeader
 import com.muxiao.timart.ui.cosmic.CapsuleOrbView
@@ -79,6 +80,7 @@ fun StarLibraryScreen(
     var selection by remember { mutableStateOf(setOf<String>()) }
     var confirmBatch by remember { mutableStateOf(false) }
     var confirmDestroyBatch by remember { mutableStateOf(false) }
+    var showMailbox by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -86,7 +88,12 @@ fun StarLibraryScreen(
             .background(DeepCharcoal)
             .padding(horizontal = 24.dp, vertical = 12.dp),
     ) {
-        SectionHeader(title = L.tabStarLibrary, note = "STARS")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionHeader(title = L.tabStarLibrary, note = "STARS", modifier = Modifier.weight(1f))
+            TextButton(onClick = { showMailbox = true }) {
+                Text(text = L.mailboxTitle, style = TimartType.caption, color = TimeGold)
+            }
+        }
 
         Text(
             text = L.starNarrative,
@@ -257,7 +264,9 @@ fun StarLibraryScreen(
                 items(filtered, key = { it.id }) { capsule ->
                     StarCard(
                         capsule = capsule,
-                        breathing = capsule.id == filtered.first().id,
+                        // 呼吸焦点 = 第一颗已解锁球（呼吸只作用于 UNLOCKED 辉光；旧写法首项为
+                        // 锁定/残影时 infiniteTransition 空转且全页无焦点球），无已解锁球则整页静态
+                        breathing = capsule.id == filtered.firstOrNull { it.state == CapsuleState.UNLOCKED }?.id,
                         selected = capsule.id in selection,
                         onClick = {
                             if (selection.isNotEmpty()) {
@@ -276,6 +285,14 @@ fun StarLibraryScreen(
                 }
             }
         }
+    }
+
+    if (showMailbox) {
+        ReplyMailboxDialog(
+            container = container,
+            onDismiss = { showMailbox = false },
+            onOpenCapsule = onOpenDetail,
+        )
     }
 
     if (confirmDestroyBatch) {
@@ -379,7 +396,7 @@ private fun StarCard(
             contentAlignment = Alignment.TopCenter,
         ) {
             CapsuleOrbView(
-                state = com.muxiao.timart.domain.model.CapsuleState.UNLOCKED,
+                state = CapsuleState.UNLOCKED,
                 radius = orbRadius,
                 breathing = breathing,
                 modifier = Modifier

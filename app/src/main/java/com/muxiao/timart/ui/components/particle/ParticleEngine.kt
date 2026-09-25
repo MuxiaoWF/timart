@@ -6,6 +6,7 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * 粒子引擎单例（AppContainer 持有，架构 §2.18 / §8）。
@@ -47,7 +48,7 @@ class ParticleEngine(tier: AnimationTier) {
     private val anchorColor = IntArray(MAX_ORBS)
     private var anchorCount = 0
 
-    // ---- 序列（UNSEAL 3.2s 五阶段 / ASSEMBLE 1.2s 三段） ----
+    // ---- 序列（UNSEAL 1.7s 五阶段 / ASSEMBLE 1.2s 三段） ----
     private var sequencePreset: ParticlePreset? = null
     private var sequenceElapsed = 0L
 
@@ -148,21 +149,27 @@ class ParticleEngine(tier: AnimationTier) {
     /**
      * 发射一次预设。
      * @param sequence true 表示启动时间轴序列（UNSEAL/ASSEMBLE），期间互斥
+     * @param countScale 单发粒子数缩放（0..1]：同帧批发射均摊预算用（如尘迹批删 N 行各取
+     *   1/min(N,4)），防止 N×预算 超对象池令后面的发射被饿死；对 INPUT_SPARK 不生效
      */
-    fun fire(preset: ParticlePreset, anchorX: Float, anchorY: Float, anchorRadius: Float, colorArgb: Int, sequence: Boolean = false) {
+    fun fire(preset: ParticlePreset, anchorX: Float, anchorY: Float, anchorRadius: Float, colorArgb: Int, sequence: Boolean = false, countScale: Float = 1f) {
         if (paused) return
         when {
             sequence && preset == ParticlePreset.UNSEAL -> startSequence(preset, anchorX, anchorY, anchorRadius)
             sequence && preset == ParticlePreset.ASSEMBLE -> startSequence(preset, anchorX, anchorY, anchorRadius)
-            preset == ParticlePreset.PENDING -> spawnPending(anchorX, anchorY, anchorRadius, colorArgb)
-            preset == ParticlePreset.REREAD -> spawnReread(anchorX, anchorY, anchorRadius, colorArgb)
-            preset == ParticlePreset.DISSOLVE -> spawnDissolve(anchorX, anchorY, anchorRadius, colorArgb)
+            preset == ParticlePreset.PENDING -> spawnPending(anchorX, anchorY, anchorRadius, colorArgb, countScale)
+            preset == ParticlePreset.REREAD -> spawnReread(anchorX, anchorY, anchorRadius, colorArgb, countScale)
+            preset == ParticlePreset.DISSOLVE -> spawnDissolve(anchorX, anchorY, anchorRadius, colorArgb, countScale)
             preset == ParticlePreset.INPUT_SPARK -> spawnInputSpark(anchorX, anchorY)
-            preset == ParticlePreset.SETTLE -> spawnSettle(anchorX, anchorY, anchorRadius, colorArgb)
-            preset == ParticlePreset.HALO -> spawnHalo(anchorX, anchorY, anchorRadius, colorArgb)
+            preset == ParticlePreset.SETTLE -> spawnSettle(anchorX, anchorY, anchorRadius, colorArgb, countScale)
+            preset == ParticlePreset.HALO -> spawnHalo(anchorX, anchorY, anchorRadius, colorArgb, countScale)
             else -> Unit // DUST_BACKGROUND/BREATHE 由维持逻辑负责，不经 fire
         }
     }
+
+    /** 单发数量 × 批次均摊缩放（0 预算/0 缩放 → 0；否则至少 1 粒，保证均摊后仍有可见反馈） */
+    private fun scaledCount(budgetCount: Int, countScale: Float): Int =
+        if (budgetCount <= 0 || countScale <= 0f) 0 else (budgetCount * countScale).toInt().coerceAtLeast(1)
 
     /** UNSEAL/ASSEMBLE 任意时刻安全落终态：清场 → 状态归位 → 立即回调 */
     fun skipToEnd() {
@@ -279,7 +286,9 @@ class ParticleEngine(tier: AnimationTier) {
                     if (p.x > width + dp(8f)) p.x = -dp(8f)
                     if (p.y < -dp(8f)) p.y = height + dp(8f)
                     if (p.y > height + dp(8f)) p.y = -dp(8f)
-                    p.alpha = 0.32f + 0.46f * (0.5f + 0.5f * sin((p.age / 900f) + p.seed))
+                    // 重生淡入淡出包络（与 ORBIT 同源）：清场重补/重掷位置时不闪现、不跳变
+                    val env = min(1f, p.age / 400f) * min(1f, (p.life - p.age) / 400f)
+                    p.alpha = (0.32f + 0.46f * (0.5f + 0.5f * sin((p.age / 900f) + p.seed))) * env
                 }
 
                 ParticleFlow.ORBIT.ordinal.toByte() -> {
@@ -303,11 +312,14 @@ class ParticleEngine(tier: AnimationTier) {
                 }
 
                 ParticleFlow.CONVERGE.ordinal.toByte() -> {
-                    // 由起点向目标缓动插值（先快后慢）
+                    // 由起点向目标缓动插值（先快后慢）+ 法向旋入弧（configureConverge 预置
+                    // vx/vy/seed，sin(πt) 两端归零，起终点严格不变）；alpha 两段包络在
+                    // t=0.8 处连续（旧式 0.88→1.0 突跳已修）
                     val ease = 1f - (1f - t) * (1f - t)
-                    p.x = p.startX + (p.targetX - p.startX) * ease
-                    p.y = p.startY + (p.targetY - p.startY) * ease
-                    p.alpha = if (t < 0.8f) 0.4f + 0.6f * t else (1f - t) * 5f
+                    val swirl = sin(t * 3.1415927f) * p.seed
+                    p.x = p.startX + (p.targetX - p.startX) * ease + p.vx * swirl
+                    p.y = p.startY + (p.targetY - p.startY) * ease + p.vy * swirl
+                    p.alpha = if (t < 0.8f) 0.4f + 0.6f * (t / 0.8f) else (1f - t) / 0.2f
                 }
 
                 ParticleFlow.DIVERGE.ordinal.toByte() -> {
@@ -413,8 +425,8 @@ class ParticleEngine(tier: AnimationTier) {
     }
 
     /** PENDING：300–600ms 向心聚合单发 */
-    private fun spawnPending(ax: Float, ay: Float, ar: Float, color: Int) {
-        val count = budget.pending.coerceAtMost(20)
+    private fun spawnPending(ax: Float, ay: Float, ar: Float, color: Int, countScale: Float = 1f) {
+        val count = scaledCount(budget.pending.coerceAtMost(20), countScale)
         // pool 满（obtain 返回 null）时非局部 return 停止发射
         repeat(count) {
             val p = pool.obtain() ?: return
@@ -423,16 +435,16 @@ class ParticleEngine(tier: AnimationTier) {
     }
 
     /** REREAD：重读过渡的向心聚合单发（档位预算 reread：40/20/0） */
-    private fun spawnReread(ax: Float, ay: Float, ar: Float, color: Int) {
-        repeat(budget.reread) {
+    private fun spawnReread(ax: Float, ay: Float, ar: Float, color: Int, countScale: Float = 1f) {
+        repeat(scaledCount(budget.reread, countScale)) {
             val p = pool.obtain() ?: return
             configureConverge(p, ax, ay, ar, color, 350L + nextLongBound(250L))
         }
     }
 
     /** DISSOLVE：0–1000ms 沿轨道向外散逸 */
-    private fun spawnDissolve(ax: Float, ay: Float, ar: Float, color: Int) {
-        val count = budget.dissolve
+    private fun spawnDissolve(ax: Float, ay: Float, ar: Float, color: Int, countScale: Float = 1f) {
+        val count = scaledCount(budget.dissolve, countScale)
         repeat(count) {
             val p = pool.obtain() ?: return
             val angle = random.nextFloat() * 6.28f
@@ -478,8 +490,8 @@ class ParticleEngine(tier: AnimationTier) {
     }
 
     /** SETTLE 尘埃落定（N15）：锚点上方整片撒落，DIVERGE 强衰减 → 缓坠近停驻随寿命淡出 */
-    private fun spawnSettle(ax: Float, ay: Float, ar: Float, color: Int) {
-        val count = (budget.dissolve * 60 / 100).coerceAtLeast(8)
+    private fun spawnSettle(ax: Float, ay: Float, ar: Float, color: Int, countScale: Float = 1f) {
+        val count = scaledCount((budget.dissolve * 60 / 100).coerceAtLeast(8), countScale)
         repeat(count) {
             val p = pool.obtain() ?: return
             p.flow = ParticleFlow.DIVERGE.ordinal.toByte()
@@ -498,8 +510,8 @@ class ParticleEngine(tier: AnimationTier) {
     }
 
     /** HALO 星环余晖（N15）：环带切向初速 + 轻微外扩，旋散渐淡；单发复用 DIVERGE 流 */
-    private fun spawnHalo(ax: Float, ay: Float, ar: Float, color: Int) {
-        val count = (budget.dissolve * 60 / 100).coerceAtLeast(10)
+    private fun spawnHalo(ax: Float, ay: Float, ar: Float, color: Int, countScale: Float = 1f) {
+        val count = scaledCount((budget.dissolve * 60 / 100).coerceAtLeast(10), countScale)
         repeat(count) {
             val p = pool.obtain() ?: return
             val angle = random.nextFloat() * 6.28f
@@ -531,18 +543,36 @@ class ParticleEngine(tier: AnimationTier) {
         p.targetY = ay + (random.nextFloat() - 0.5f) * ar * 0.5f
         p.x = p.startX
         p.y = p.startY
+        // 旋入弧线：法向恒偏（vx/vy = 行进方向单位法向，seed = 弧顶幅度），
+        // sin(πt) 包络两端归零——起点/终点严格不变，中段弧线旋入，与 ORBIT 公转语系统一
+        val dx = p.targetX - p.startX
+        val dy = p.targetY - p.startY
+        val len = sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
+        p.vx = -dy / len
+        p.vy = dx / len
+        p.seed = startDist * (0.25f + random.nextFloat() * 0.20f)
         p.size = dp(1.4f + random.nextFloat() * 1.6f)
         p.life = life
         p.loop = false
         p.color = color
         p.glow = true
         p.owner = OWNER_NONE
-        p.seed = 0f
-        p.vx = 0f
-        p.vy = 0f
     }
 
     // ================= 序列时间轴 =================
+
+    /**
+     * 序列时间轴缩放百分比（LOW 档 Reduced Motion = 50）：批次时刻/寿命/总时长全部减半，
+     * 覆盖层视觉时钟经 [sequenceTimePct] 同拍快进，揭封真实时长 ~850ms——
+     * 兑现 §8.2「低档保留 200–450ms 必要状态过渡（Reduced Motion 友好）」的承诺。
+     */
+    private val seqTimePct = if (tier == AnimationTier.LOW) 50 else 100
+
+    /** 档位缩放批次时刻/寿命 */
+    private fun seqTime(ms: Long): Long = ms * seqTimePct / 100
+
+    /** 覆盖层本地时间轴同拍缩放（UnsealSequence / RereadVeilOverlay / DissolveSequence 读取） */
+    val sequenceTimePct: Int get() = seqTimePct
 
     private fun startSequence(preset: ParticlePreset, ax: Float, ay: Float, ar: Float) {
         // 互斥：后到序列覆盖先到（业务不等待动画，安全）
@@ -563,21 +593,23 @@ class ParticleEngine(tier: AnimationTier) {
     private fun tickSequence(preset: ParticlePreset, dt: Long) {
         sequenceElapsed += dt
         when (preset) {
-            // ASSEMBLE 三段：0–350 聚拢 / 350–800 内光悬停 / 800–1200 成球
+            // ASSEMBLE 三段：0–350 聚拢 / 350–800 内光悬停 / 800–1200 成球（LOW 档经 seqTime 同拍减半）
             ParticlePreset.ASSEMBLE -> {
-                if (seqFiredBatches == 0) fireSequenceBatch(budget.assemble * 55 / 100, TIME_GOLD, 1150L)
-                if (sequenceElapsed >= 350 && seqFiredBatches == 1) fireSequenceBatch(budget.assemble * 25 / 100, GLOW_GOLD, 850L)
-                if (sequenceElapsed >= 800 && seqFiredBatches == 2) fireSequenceBatch(budget.assemble * 20 / 100, TIME_GOLD, 400L)
-                if (sequenceElapsed >= ASSEMBLE_TOTAL_MS) finishSequence(toState = MotionState.IDLE)
+                if (seqFiredBatches == 0) fireSequenceBatch(budget.assemble * 55 / 100, TIME_GOLD, seqTime(1150L))
+                if (sequenceElapsed >= seqTime(350) && seqFiredBatches == 1) fireSequenceBatch(budget.assemble * 25 / 100, GLOW_GOLD, seqTime(850L))
+                if (sequenceElapsed >= seqTime(800) && seqFiredBatches == 2) fireSequenceBatch(budget.assemble * 20 / 100, TIME_GOLD, seqTime(400L))
+                if (sequenceElapsed >= seqTime(ASSEMBLE_TOTAL_MS)) finishSequence(toState = MotionState.IDLE)
             }
-            // UNSEAL 五阶段：0–400 聚拢 / 400–1000 内光 / 1000–1600 金环 / 1600–2800 峰值喷发 / 2800–3200 归稳
+            // UNSEAL 五阶段（与揭封覆盖层 1400ms 舞台 + 300ms 平整停留对齐；LOW 档经 seqTime 同拍减半）：
+            // 0–350 聚拢 / 350–750 内光 / 750–1050 金环 / 1050–1350 峰值喷发 / 1350–1700 归稳
+            // 各批寿命保证在 UNSEAL_TOTAL_MS 前自然收束，自然完成时 releaseAll 不再截断可见粒子
             ParticlePreset.UNSEAL -> {
-                if (seqFiredBatches == 0) fireSequenceBatch(budget.unsealPeak * 15 / 100, TIME_GOLD, 1250L)
-                if (sequenceElapsed >= 400 && seqFiredBatches == 1) fireSequenceBatch(budget.unsealPeak * 10 / 100, GLOW_GOLD, 900L)
-                if (sequenceElapsed >= 1000 && seqFiredBatches == 2) fireSequenceBatch(budget.unsealPeak * 25 / 100, TIME_GOLD, 1100L)
-                if (sequenceElapsed >= 1600 && seqFiredBatches == 3) fireSequenceBatch(budget.unsealPeak * 35 / 100, GLOW_GOLD, 1200L)
-                if (sequenceElapsed >= 2800 && seqFiredBatches == 4) fireSequenceBatch(budget.unsealPeak * 15 / 100, TIME_GOLD, 400L)
-                if (sequenceElapsed >= UNSEAL_TOTAL_MS) finishSequence(toState = MotionState.CONTENT)
+                if (seqFiredBatches == 0) fireSequenceBatch(budget.unsealPeak * 15 / 100, TIME_GOLD, seqTime(1200L))
+                if (sequenceElapsed >= seqTime(350) && seqFiredBatches == 1) fireSequenceBatch(budget.unsealPeak * 10 / 100, GLOW_GOLD, seqTime(800L))
+                if (sequenceElapsed >= seqTime(750) && seqFiredBatches == 2) fireSequenceBatch(budget.unsealPeak * 25 / 100, TIME_GOLD, seqTime(850L))
+                if (sequenceElapsed >= seqTime(1050) && seqFiredBatches == 3) fireSequenceBatch(budget.unsealPeak * 35 / 100, GLOW_GOLD, seqTime(600L))
+                if (sequenceElapsed >= seqTime(1350) && seqFiredBatches == 4) fireSequenceBatch(budget.unsealPeak * 15 / 100, TIME_GOLD, seqTime(350L))
+                if (sequenceElapsed >= seqTime(UNSEAL_TOTAL_MS)) finishSequence(toState = MotionState.CONTENT)
             }
 
             else -> finishSequence(toState = MotionState.IDLE)
@@ -633,13 +665,9 @@ class ParticleEngine(tier: AnimationTier) {
 
     // ================= draw =================
 
-    /** 是否有活动粒子（ParticleCanvas 据此决定是否触发重绘；空池时画布静默省电） */
-    fun hasActiveParticles(): Boolean {
-        for (i in 0 until pool.size()) {
-            if (pool.at(i).active) return true
-        }
-        return false
-    }
+    /** 是否有活动粒子（ParticleCanvas 据此决定是否触发重绘；空池时画布静默省电）。
+     *  池的 activeCount 在 obtain/release/releaseAll 时增量维护，此处 O(1) 直读 */
+    fun hasActiveParticles(): Boolean = pool.activeCount > 0
 
     /** 释放不属于 [owner] 的循环型粒子（换宿主认领时防跨页残影/陈旧锚点粒子） */
     private fun releaseLoopsExcept(owner: Int) {
@@ -688,8 +716,8 @@ class ParticleEngine(tier: AnimationTier) {
         /** ASSEMBLE 三段总时长（0–350 / 350–800 / 800–1200ms） */
         const val ASSEMBLE_TOTAL_MS = 1200L
 
-        /** UNSEAL 五阶段总时长（3.2s） */
-        const val UNSEAL_TOTAL_MS = 3200L
+        /** UNSEAL 五阶段总时长（1.7s，与揭封覆盖层 1400ms 舞台 + 300ms 平整停留对齐；末批归稳在交接前收束） */
+        const val UNSEAL_TOTAL_MS = 1700L
 
         /** 光晕直径 / 粒径倍率 */
         private const val GLOW_SCALE = 5f

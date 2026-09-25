@@ -160,6 +160,9 @@ private fun ChallengeCard(
                 is UnlockCondition.LiftHighLowerLow -> LiftChallenge(condition) { onAnswer(condition, DONE) }
                 is UnlockCondition.TapCount -> TapChallenge(condition.taps) { onAnswer(condition, DONE) }
                 is UnlockCondition.ClimbFloors -> ClimbChallenge(condition.floors) { onAnswer(condition, DONE) }
+                // ---- 储备池 v7 ----
+                is UnlockCondition.VoiceKeepsake -> VoiceKeepsakeChallenge { onAnswer(condition, DONE) }
+                is UnlockCondition.ShoutOut -> ShoutChallenge(condition.seconds) { onAnswer(condition, DONE) }
             }
         }
     }

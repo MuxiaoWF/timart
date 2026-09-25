@@ -48,6 +48,8 @@ class TimartApplication : Application() {
                 metaDao.get(RuntimeSettings.KEY_BIOMETRIC_LOCK)?.toBooleanStrictOrNull() ?: false
             RuntimeSettings.dawnDuskTint =
                 metaDao.get(RuntimeSettings.KEY_DAWN_DUSK)?.toBooleanStrictOrNull() ?: false
+            RuntimeSettings.sessionTtlHours =
+                metaDao.get(RuntimeSettings.KEY_SESSION_TTL_HOURS)?.toIntOrNull() ?: 72
             container.audioManager.setEnabled(RuntimeSettings.soundEnabled)
             // 动效档位镜像：冷启动即按持久化档位重建引擎（此前只在设置页 VM 加载，
             // 导致开机后引擎一直是自动检测档位，需进设置页手动切换才生效）
@@ -56,7 +58,7 @@ class TimartApplication : Application() {
             }?.let { tier ->
                 if (tier != container.particleTier) container.rebuildParticleEngine(tier)
             }
-            // 口令会话恢复：TTL（24h）内的冷启动免重输口令（Keystore 包裹副本，失败则按需输口令）
+            // 口令会话恢复：TTL（默认 72h，可设置档位）内的冷启动免重输口令（Keystore 包裹副本，失败则按需输口令）
             container.contentCryptoManager.tryRestoreSession()
         }
     }

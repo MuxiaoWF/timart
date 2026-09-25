@@ -1,6 +1,7 @@
 package com.muxiao.timart.ui.create.rules
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.muxiao.timart.domain.model.unlock.ConditionGroup
 import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.model.unlock.LogicType
+import com.muxiao.timart.domain.model.unlock.RuleUnit
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
+import com.muxiao.timart.domain.model.unlock.UnlockRule
+import com.muxiao.timart.domain.model.unlock.units
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.theme.InkPrimary
 import com.muxiao.timart.ui.theme.InkSecondary
@@ -31,6 +36,8 @@ import com.muxiao.timart.utils.RuntimeSettings
 /**
  * 已添加条件卡列表（架构 §2.15）：每张卡显示 ConditionText 条件句，
  * 卡与卡之间按 AND/OR 显示连接词（"并且"/"或者"），右上角可移除。
+ * [groups] 非空时按单元渲染（子群组为带组头的描边块，储备池暂缓项落地）；
+ * 空时与旧扁平渲染逐像素一致。
  */
 @Composable
 fun ConditionCardList(
@@ -38,23 +45,116 @@ fun ConditionCardList(
     logic: LogicType,
     onRemove: (UnlockCondition) -> Unit,
     modifier: Modifier = Modifier,
+    groups: List<ConditionGroup> = emptyList(),
+    onEditGroups: (() -> Unit)? = null,
 ) {
     val L = LocalStrings.current
     Column(modifier = modifier.fillMaxWidth()) {
-        conditions.forEachIndexed { index, condition ->
-            if (index > 0) {
-                // AT_LEAST（任选 M 条）卡片间连接词与 OR 同为"或者"语义
-                Text(
-                    text = if (logic == LogicType.AND) L.andWord else L.orWord,
-                    style = TimartType.caption,
-                    color = InkSecondary,
-                    modifier = Modifier.padding(vertical = 8.dp),
+        if (groups.isEmpty()) {
+            conditions.forEachIndexed { index, condition ->
+                if (index > 0) {
+                    // AT_LEAST（任选 M 条）卡片间连接词与 OR 同为"或者"语义
+                    Text(
+                        text = if (logic == LogicType.AND) L.andWord else L.orWord,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+                ConditionCard(
+                    index = index,
+                    condition = condition,
+                    onRemove = { onRemove(condition) },
                 )
             }
+        } else {
+            // 子群组渲染：单元序列（组 = 描边块，未分组 = 单例卡），顶层连接词在单元之间
+            val unitList = units(UnlockRule(LogicType.AND, conditions, null, groups))
+            var groupNameSeq = 0
+            unitList.forEachIndexed { unitIndex, unit ->
+                if (unitIndex > 0) {
+                    Text(
+                        text = if (logic == LogicType.AND) L.andWord else L.orWord,
+                        style = TimartType.caption,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+                if (unit.indexes.size == 1 && unit.name == null) {
+                    val index = unit.indexes.first()
+                    ConditionCard(
+                        index = index,
+                        condition = conditions[index],
+                        onRemove = { onRemove(conditions[index]) },
+                    )
+                } else {
+                    groupNameSeq++
+                    GroupBlock(
+                        unit = unit,
+                        fallbackName = L.groupDefaultFmt.format(groupNameSeq),
+                        conditions = conditions,
+                        onRemove = onRemove,
+                        onEditGroups = onEditGroups,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 子群组块：组头（组名 + 组内逻辑摘要 + 编辑）+ 组员条件卡（缩进描边） */
+@Composable
+private fun GroupBlock(
+    unit: RuleUnit,
+    fallbackName: String,
+    conditions: List<UnlockCondition>,
+    onRemove: (UnlockCondition) -> Unit,
+    onEditGroups: (() -> Unit)?,
+) {
+    val L = LocalStrings.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, TimeGold.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = unit.name ?: fallbackName,
+                style = TimartType.caption,
+                color = TimeGold,
+            )
+            Text(
+                text = when (unit.logicType) {
+                    LogicType.AND -> L.groupLogicAnd
+                    LogicType.OR -> L.groupLogicOr
+                    LogicType.AT_LEAST -> L.groupLogicAtLeastFmt.format(
+                        (unit.threshold ?: unit.indexes.size).coerceIn(1, unit.indexes.size),
+                    )
+                },
+                style = TimartType.caption,
+                color = InkSecondary,
+                modifier = Modifier.padding(start = 10.dp),
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            if (onEditGroups != null) {
+                Text(
+                    text = L.groupEdit,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier
+                        .clickable(onClick = onEditGroups)
+                        .padding(6.dp),
+                )
+            }
+        }
+        unit.indexes.forEachIndexed { memberIndex, conditionIndex ->
+            val condition = conditions.getOrNull(conditionIndex) ?: return@forEachIndexed
             ConditionCard(
-                index = index,
+                index = conditionIndex,
                 condition = condition,
                 onRemove = { onRemove(condition) },
+                modifier = Modifier.padding(top = if (memberIndex == 0) 8.dp else 6.dp),
             )
         }
     }
@@ -66,11 +166,12 @@ private fun ConditionCard(
     index: Int,
     condition: UnlockCondition,
     onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val L = LocalStrings.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(SurfaceRaise, RoundedCornerShape(12.dp))
             .padding(horizontal = 14.dp, vertical = 13.dp),

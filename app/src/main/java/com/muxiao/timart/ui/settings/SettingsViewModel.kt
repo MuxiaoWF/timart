@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 设置页 VM：设置项全部读写 meta，进程内即时生效 + 重启后保持。
@@ -143,6 +144,20 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    // ---- 口令会话免输时长（储备池 v7；24/72/168 三档，下一次口令解锁生效） ----
+
+    private val _sessionTtlHours = MutableStateFlow(RuntimeSettings.sessionTtlHours)
+    val sessionTtlHours: StateFlow<Int> = _sessionTtlHours
+
+    fun setSessionTtlHours(value: Int) {
+        if (value !in SESSION_TTL_CHOICES) return
+        _sessionTtlHours.value = value
+        RuntimeSettings.sessionTtlHours = value
+        viewModelScope.launch(Dispatchers.IO) {
+            metaDao.put(MetaEntity(RuntimeSettings.KEY_SESSION_TTL_HOURS, value.toString()))
+        }
+    }
+
     /** 切换界面语言：写 [RuntimeSettings.appLanguage] 快照状态（全树即时重组换文案）+ 持久化 meta */
     fun setLanguage(value: AppLanguage) {
         if (_language.value == value) return
@@ -203,9 +218,29 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val _autoBackup = MutableStateFlow(AutoBackupState())
     val autoBackup: StateFlow<AutoBackupState> = _autoBackup
 
+    /** 备份口令是否已设置（v3 备份口令分离；弹窗内设置后经 [refreshBackupPassword] 回写） */
+    private val _backupPwSet = MutableStateFlow(false)
+    val backupPwSet: StateFlow<Boolean> = _backupPwSet
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             _autoBackup.value = _autoBackup.value.from(container.autoBackupManager.readConfig())
+        }
+        refreshBackupPassword()
+    }
+
+    fun refreshBackupPassword() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _backupPwSet.value = container.backupManager.isBackupPasswordSet()
+        }
+    }
+
+    /** 设置/更换备份口令（BackupPasswordDialog 与导出弹窗内联设置共用；成功后回写状态） */
+    fun setBackupPassword(password: CharArray, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = container.backupManager.setBackupPassword(password)
+            _backupPwSet.value = ok
+            withContext(Dispatchers.Main) { onResult(ok) }
         }
     }
 
@@ -286,5 +321,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         const val KEY_GYRO = RuntimeSettings.KEY_GYRO
         const val KEY_INPUT_SPARK = RuntimeSettings.KEY_INPUT_SPARK
         const val KEY_SOUND = RuntimeSettings.KEY_SOUND
+
+        /** 口令会话免输时长可选档位（小时） */
+        val SESSION_TTL_CHOICES = setOf(24, 72, 168)
     }
 }

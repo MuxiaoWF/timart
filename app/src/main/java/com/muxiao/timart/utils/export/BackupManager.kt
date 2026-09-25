@@ -39,16 +39,18 @@ class BackupException(
 ) : Exception(message)
 
 /**
- * 备份导出与导入（ARCHITECTURE §6 / 格式 v2：数据段整体加密）：
+ * 备份导出与导入（ARCHITECTURE §6 / 格式 v3：备份口令独立于主口令）：
  *
- * - 导出：`data.enc` = AES-GCM（口令经包内 KDF 参数派生的内容密钥）加密的
+ * - 导出：`data.enc` = AES-GCM（**备份口令**经包内 KDF 参数派生的内容密钥）加密的
  *   Payload{settings, capsules, destroyed}——标题/正文/标签/设置不再有任何明文；
- *   图片本就是密文原样拷贝；口令密钥来源 = 会话已解锁用会话密钥（免输），
- *   否则由调用方传入口令本地派生并经 Verifier 校验；
- * - 导入（追加语义）：包内 KDF 参数派生 → Verifier 校验（口令错 →
+ *   胶囊密文/图片/语音由会话密钥（或主口令派生）**重加密到备份口令**后入包，
+ *   包内 meta 只含备份口令的 KDF 参数与 Verifier，主口令材料零暴露
+ *   （离线爆破备份包最多命中备份口令，主口令校验面不再扩大）；
+ * - 导入（追加语义 + 重加密入库）：包内 KDF 参数派生 → Verifier 校验（口令错 →
  *   [BackupException.wrongPassword]；连续 5 错 30s 锁的计数在对话框内存态）→
- *   解密 data.enc（v2）或读取明文段（v1 兼容）→ 逐胶囊解密校验 → id 冲突跳过插入；
- * - 全程不需要 AndroidKeyStore，跨设备可恢复（密文自包含）。
+ *   解密 data.enc（v3/v2）或读取明文段（v1 兼容）→ 逐胶囊以**本机会话密钥**重加密正文、
+ *   图片与语音后插入（旧包材料为主口令，新包为备份口令，导入侧无需区分）→ id 冲突跳过；
+ * - 全程不需要 AndroidKeyStore，跨设备可恢复（密文自包含，新设备用自己的口令解锁后导入）。
  */
 class BackupManager(
     private val context: Context,
@@ -65,6 +67,33 @@ class BackupManager(
     /** 会话是否已解锁（导出弹窗据此决定是否要口令输入步） */
     fun isSessionUnlocked(): Boolean = crypto.isUnlocked
 
+    // ================= 备份口令（v3：与主口令分离，meta 明文存档供自动备份免交互派生） =================
+
+    /**
+     * 备份口令是否已设置（`settings.backupPw`，值 = 口令本体明文）。
+     * 存储口径（见 docs/spec-storage.md §6）：备份口令的价值在**离开设备的备份文件**——
+     * 明文仅存在于本机 meta 表（与库内其他数据同信任域），换来自动备份免交互派生与
+     * 重装后凭记忆可恢复；主口令本体依旧永不落盘，备份包内也不含任何主口令材料。
+     */
+    fun isBackupPasswordSet(): Boolean = backupPasswordOrNull() != null
+
+    /** 读取备份口令（未设置 / 长度不足返回 null） */
+    private fun backupPasswordOrNull(): CharArray? =
+        runCatching { metaDao.getSync(KEY_BACKUP_PW) }.getOrNull()
+            ?.takeIf { it.length >= ContentCryptoManager.MIN_PASSWORD_LENGTH }
+            ?.toCharArray()
+
+    /** 写入备份口令（设置页 / 导出弹窗内联设置共用；长度不足返回 false）。meta 同步写，**必须在 IO 线程调用** */
+    fun setBackupPassword(password: CharArray): Boolean {
+        if (password.size < ContentCryptoManager.MIN_PASSWORD_LENGTH) return false
+        return runCatching {
+            metaDao.putSync(
+                com.muxiao.timart.data.local.db.entity.MetaEntity(KEY_BACKUP_PW, password.concatToString()),
+            )
+            true
+        }.getOrDefault(false)
+    }
+
     // ================= 导出 =================
 
     /** 导出结果：文件 + 规则中本机硬件无法达成的条件名（对话框据此提示） */
@@ -74,105 +103,128 @@ class BackupManager(
     )
 
     /**
-     * 导出备份 zip（IO 派发，数据段整体加密）。
-     * @param password 会话未解锁时的口令（本地派生并校验，不改变会话状态）；会话已解锁传 null 用会话密钥
-     * @throws BackupException 未设置口令 / 口令错误 / 材料缺失 / 打包失败
+     * 导出备份 zip（IO 派发，格式 v3：全部内容重加密到备份口令）。
+     * @param backupPassword 备份口令（独立于主口令）；null = 使用 meta 存档的备份口令（自动备份/免输路径）
+     * @param mainPassword 会话未解锁时的主口令（仅用于本地取得内容解密密钥，经 Verifier 校验，不改会话状态）
+     * @throws BackupException 备份口令未设置或过短 / 未设置口令 / 主口令错误 / 材料缺失 / 打包失败
      */
-    suspend fun exportBackup(password: CharArray? = null): ExportResult = withContext(Dispatchers.IO) {
-        val capsules = capsuleRepository.allSync()
-        val destroyed = destroyedRepository.observeAll().first()
+    suspend fun exportBackup(backupPassword: CharArray? = null, mainPassword: CharArray? = null): ExportResult =
+        withContext(Dispatchers.IO) {
+            val bkPw = backupPassword
+                ?: backupPasswordOrNull()
+                ?: throw BackupException(currentStrings().bkErrNoBkPw)
+            if (bkPw.size < ContentCryptoManager.MIN_PASSWORD_LENGTH) {
+                throw BackupException(currentStrings().errPwMinFmt.format(ContentCryptoManager.MIN_PASSWORD_LENGTH))
+            }
+            val capsules = capsuleRepository.allSync()
+            val destroyed = destroyedRepository.observeAll().first()
 
-        // 设备能力提示：仅扫 LOCKED 态（已解锁/已销毁的条件不再有意义）；
-        // 备份内含本机硬件永远无法达成的条件时，完成页明示
-        val unsupportedLabels = com.muxiao.timart.utils.device.unsupportedConditionNames(
-            context,
-            capsules.filter { it.state == CapsuleState.LOCKED }.flatMap { it.unlockRule.conditionList },
-        )
-
-        val (key, kdfParams, verifier) = resolveExportMaterials(password)
-
-        val settings = BackupCodec.Settings(
-            tier = metaDao.get(RuntimeSettings.KEY_TIER),
-            gyro = metaDao.get(RuntimeSettings.KEY_GYRO)?.toBooleanStrictOrNull(),
-            inputSpark = metaDao.get(RuntimeSettings.KEY_INPUT_SPARK)?.toBooleanStrictOrNull(),
-            sound = metaDao.get(RuntimeSettings.KEY_SOUND)?.toBooleanStrictOrNull(),
-        )
-
-        val appVersion = appVersionName()
-
-        val capsulesDto = capsules.map { it.toDto() }
-        val destroyedDto = destroyed.map {
-            BackupCodec.DestroyedRecord(
-                id = it.id,
-                title = it.title,
-                createdAt = it.createdAt,
-                destroyedAt = it.destroyedAt,
+            // 设备能力提示：仅扫 LOCKED 态（已解锁/已销毁的条件不再有意义）；
+            // 备份内含本机硬件永远无法达成的条件时，完成页明示
+            val unsupportedLabels = com.muxiao.timart.utils.device.unsupportedConditionNames(
+                context,
+                capsules.filter { it.state == CapsuleState.LOCKED }.flatMap { it.unlockRule.conditionList },
             )
-        }
-        val manifest = BackupCodec.Manifest(
-            appVersion = appVersion,
-            exportedAt = OffsetDateTime.now().toString(),
-            capsuleCount = capsulesDto.size,
-            destroyedCount = destroyedDto.size,
-        )
-        val payload = BackupCodec.Payload(
-            settings = settings,
-            capsules = capsulesDto,
-            destroyed = destroyedDto,
-        )
-        val payloadBytes = BackupCodec.json
-            .encodeToString(BackupCodec.Payload.serializer(), payload)
-            .toByteArray()
 
-        val dir = File(context.filesDir, "backup").apply { mkdirs() }
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-            .format(java.util.Date())
-        val outFile = File(dir, "timart-backup-$stamp.zip")
+            // 内容解密密钥 = 会话密钥（免输）；会话锁定则由主口令本地派生校验
+            val contentKey = resolveContentKey(mainPassword)
+            // 备份口令材料：全新盐与参数派生；Verifier 加密备份口令的固定明文（主口令材料不入包）
+            val derived = KdfEngines.deriveWithFallback(
+                bkPw,
+                KdfEngines.defaultParams(KdfEngines.newSalt()),
+            )
+            val backupVerifier =
+                KdfEngines.b64Encode(cipher.encrypt(derived.key, ContentCryptoManager.VERIFIER_PLAINTEXT.toByteArray()))
 
-        try {
-            ZipOutputStream(BufferedOutputStream(FileOutputStream(outFile))).use { zip ->
-                zip.putEntry(
-                    BackupCodec.ENTRY_MANIFEST,
-                    BackupCodec.json.encodeToString(BackupCodec.Manifest.serializer(), manifest).toByteArray(),
+            val settings = BackupCodec.Settings(
+                tier = metaDao.get(RuntimeSettings.KEY_TIER),
+                gyro = metaDao.get(RuntimeSettings.KEY_GYRO)?.toBooleanStrictOrNull(),
+                inputSpark = metaDao.get(RuntimeSettings.KEY_INPUT_SPARK)?.toBooleanStrictOrNull(),
+                sound = metaDao.get(RuntimeSettings.KEY_SOUND)?.toBooleanStrictOrNull(),
+            )
+
+            val appVersion = appVersionName()
+
+            // 正文密文重加密到备份口令（图片/语音在打包时逐个重加密）
+            val capsulesDto = capsules.map { it.toDto().reEncrypted(contentKey, derived.key) }
+            val destroyedDto = destroyed.map {
+                BackupCodec.DestroyedRecord(
+                    id = it.id,
+                    title = it.title,
+                    createdAt = it.createdAt,
+                    destroyedAt = it.destroyedAt,
                 )
-                zip.putEntry(
-                    BackupCodec.ENTRY_META,
-                    BackupCodec.json.encodeToString(
-                        BackupCodec.Meta.serializer(),
-                        BackupCodec.Meta(kdfParams = kdfParams, verifier = verifier),
-                    ).toByteArray(),
-                )
-                zip.putEntry(BackupCodec.ENTRY_DATA, cipher.encrypt(key, payloadBytes))
+            }
+            val manifest = BackupCodec.Manifest(
+                appVersion = appVersion,
+                exportedAt = OffsetDateTime.now().toString(),
+                capsuleCount = capsulesDto.size,
+                destroyedCount = destroyedDto.size,
+            )
+            val payload = BackupCodec.Payload(
+                settings = settings,
+                capsules = capsulesDto,
+                destroyed = destroyedDto,
+            )
+            val payloadBytes = BackupCodec.json
+                .encodeToString(BackupCodec.Payload.serializer(), payload)
+                .toByteArray()
 
-                // 加密图片原样拷贝（不改名不重加密）
-                for (dto in capsulesDto) {
-                    for (name in dto.imageFiles) {
-                        val index = IMAGE_NAME.matchEntire(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                            ?: continue
-                        val blob = imageStore.readEncrypted(dto.id, index) ?: continue
-                        zip.putEntry("${BackupCodec.IMAGE_PREFIX}${dto.id}/$name", blob)
-                    }
-                    // 加密语音原样拷贝（体验储备池 §1 声音留言；不改名不重加密）
-                    for (index in audioStore.listIndexes(dto.id)) {
-                        val blob = audioStore.readEncrypted(dto.id, index) ?: continue
-                        zip.putEntry("${BackupCodec.AUDIO_PREFIX}${dto.id}/audio_$index.bin", blob)
+            val dir = File(context.filesDir, "backup").apply { mkdirs() }
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+            val outFile = File(dir, "timart-backup-$stamp.zip")
+
+            try {
+                ZipOutputStream(BufferedOutputStream(FileOutputStream(outFile))).use { zip ->
+                    zip.putEntry(
+                        BackupCodec.ENTRY_MANIFEST,
+                        BackupCodec.json.encodeToString(BackupCodec.Manifest.serializer(), manifest).toByteArray(),
+                    )
+                    zip.putEntry(
+                        BackupCodec.ENTRY_META,
+                        BackupCodec.json.encodeToString(
+                            BackupCodec.Meta.serializer(),
+                            BackupCodec.Meta(kdfParams = derived.params, verifier = backupVerifier),
+                        ).toByteArray(),
+                    )
+                    zip.putEntry(BackupCodec.ENTRY_DATA, cipher.encrypt(derived.key, payloadBytes))
+
+                    // 图片：本机密文 → 会话/主口令解密 → 备份口令重加密入包
+                    for (dto in capsulesDto) {
+                        for (name in dto.imageFiles) {
+                            val index = IMAGE_NAME.matchEntire(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                                ?: continue
+                            val blob = imageStore.readEncrypted(dto.id, index) ?: continue
+                            zip.putEntry(
+                                "${BackupCodec.IMAGE_PREFIX}${dto.id}/$name",
+                                reEncryptBlob(blob, contentKey, derived.key, dto.title),
+                            )
+                        }
+                        // 语音：同图片语义重加密入包
+                        for (index in audioStore.listIndexes(dto.id)) {
+                            val blob = audioStore.readEncrypted(dto.id, index) ?: continue
+                            zip.putEntry(
+                                "${BackupCodec.AUDIO_PREFIX}${dto.id}/audio_$index.bin",
+                                reEncryptBlob(blob, contentKey, derived.key, dto.title),
+                            )
+                        }
                     }
                 }
+            } catch (e: BackupException) {
+                throw e
+            } catch (e: Exception) {
+                outFile.delete()
+                throw BackupException(currentStrings().bkErrZipFmt.format(e.message ?: currentStrings().bkErrIo))
             }
-        } catch (e: BackupException) {
-            throw e
-        } catch (e: Exception) {
-            outFile.delete()
-            throw BackupException(currentStrings().bkErrZipFmt.format(e.message ?: currentStrings().bkErrIo))
+            // 备份完成标记（BackupDone 条件判定事实源；写失败不影响导出结果）
+            runCatching {
+                metaDao.putSync(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(FLAG_BACKUP_DONE, "true"),
+                )
+            }
+            ExportResult(file = outFile, unsupportedLabels = unsupportedLabels)
         }
-        // 备份完成标记（BackupDone 条件判定事实源；写失败不影响导出结果）
-        runCatching {
-            metaDao.putSync(
-                com.muxiao.timart.data.local.db.entity.MetaEntity(FLAG_BACKUP_DONE, "true"),
-            )
-        }
-        ExportResult(file = outFile, unsupportedLabels = unsupportedLabels)
-    }
 
     // ================= 导入 =================
 
@@ -186,24 +238,30 @@ class BackupManager(
     )
 
     /**
-     * 从 Uri 导入备份（追加语义；v2 数据段整体加密，自动兼容 v1 明文段）。
-     * @throws BackupException 结构无效 / 版本过新 / 口令错（wrongPassword=true） / 密文损坏
+     * 从 Uri 导入备份（追加语义 + 重加密入库；v3/v2 数据段整体加密，自动兼容 v1 明文段）。
+     * 本机口令会话必须已解锁：包内密文以包口令解出后，立刻以本机会话密钥重加密入库
+     * （v3 包 = 备份口令体系、旧包 = 导出设备主口令体系，照搬直插在本机永远解不开）。
+     * @throws BackupException 结构无效 / 版本过新 / 口令错（wrongPassword=true） / 会话未解锁 / 密文损坏
      */
     suspend fun importBackup(source: Uri, password: CharArray): ImportResult = withContext(Dispatchers.IO) {
         val entries = readZipEntries(source)
         val (_, meta) = parseZipHeader(entries)
 
-        // 口令校验：包内 KDF 参数派生 → 解密 Verifier 对比固定明文
-        val key = deriveImportKey(meta, password)
+        // 包口令校验：包内 KDF 参数派生 → 解密 Verifier 对比固定明文
+        val packageKey = deriveImportKey(meta, password)
 
-        // 数据段：v2 = 解密 data.enc；v1 = 明文 capsules/destroyed 段（兼容导入）。
+        // 重加密目标：本机会话密钥（与赠予导入同一要求；未解锁显式报错引导先解锁）
+        val localKey = crypto.sessionKeyOrNull()
+            ?: throw BackupException(currentStrings().bkImportNeedUnlock)
+
+        // 数据段：v3/v2 = 解密 data.enc；v1 = 明文 capsules/destroyed 段（兼容导入）。
         // 包内 settings 段（档位/音效等镜像）刻意不在此应用：导入只迁数据，不改写本机用户偏好
         val capsulesDto: List<BackupCodec.Capsule>
         val destroyedDto: List<BackupCodec.DestroyedRecord>
         val dataEnc = entries[BackupCodec.ENTRY_DATA]
         if (dataEnc != null) {
             val plain = try {
-                cipher.decrypt(key, dataEnc)
+                cipher.decrypt(packageKey, dataEnc)
             } catch (_: CryptoException) {
                 throw BackupException(currentStrings().bkErrWrongPwOrCorrupt, wrongPassword = true)
             }
@@ -231,14 +289,9 @@ class BackupManager(
             } ?: emptyList()
         }
 
-        // 逐胶囊解密校验（含内容密文的才校验；失败视为数据损坏，中止导入）
-        for (dto in capsulesDto) {
-            val blob = dto.contentCipher?.let { KdfEngines.b64Decode(it) } ?: continue
-            try {
-                cipher.decrypt(key, blob)
-            } catch (_: CryptoException) {
-                throw BackupException(currentStrings().bkErrContentVerifyFmt.format(dto.title))
-            }
+        // 逐胶囊以包口令解密 → 本机会话密钥重加密（明文只在内存瞬间存在；解不开 = 口令错或数据损坏，中止导入）
+        val reEncryptedDtos = capsulesDto.map { dto ->
+            dto.reEncrypted(packageKey, localKey)
         }
 
         val imageEntries = entries.filterKeys { it.startsWith(BackupCodec.IMAGE_PREFIX) }
@@ -247,7 +300,7 @@ class BackupManager(
         var imported = 0
         var skipped = 0
         val importedConditions = ArrayList<com.muxiao.timart.domain.model.unlock.UnlockCondition>()
-        for (dto in capsulesDto) {
+        for (dto in reEncryptedDtos) {
             if (capsuleRepository.byIdSync(dto.id) != null) {
                 // 追加语义：id 冲突跳过
                 skipped++
@@ -260,7 +313,7 @@ class BackupManager(
                 importedConditions.addAll(domain.unlockRule.conditionList)
             }
 
-            // 该胶囊的图片 blob 原样落盘
+            // 图片：包口令解密 → 本机密钥重加密落盘；单张损坏跳过（缺图在阅读路径按缺失处理）
             for ((entryName, blob) in imageEntries) {
                 val relative = entryName.removePrefix(BackupCodec.IMAGE_PREFIX)
                 val ownerId = relative.substringBefore('/')
@@ -268,15 +321,17 @@ class BackupManager(
                 if (ownerId != dto.id) continue
                 val index = IMAGE_NAME.matchEntire(fileName)?.groupValues?.getOrNull(1)?.toIntOrNull()
                     ?: continue
-                imageStore.writeEncrypted(dto.id, index, blob)
+                val plain = runCatching { cipher.decrypt(packageKey, blob) }.getOrNull() ?: continue
+                imageStore.writeEncrypted(dto.id, index, cipher.encrypt(localKey, plain))
             }
-            // 该胶囊的语音 blob 原样落盘（密文随口令体系，同图片语义）
+            // 语音：包口令解密 → 本机密钥重加密落盘（与图片同构；损坏跳过）
             for ((entryName, blob) in audioEntries) {
                 val relative = entryName.removePrefix(BackupCodec.AUDIO_PREFIX)
                 if (relative.substringBefore('/') != dto.id) continue
                 val index = AUDIO_NAME.matchEntire(relative.substringAfter('/'))
                     ?.groupValues?.getOrNull(1)?.toIntOrNull() ?: continue
-                audioStore.writeEncrypted(dto.id, index, blob)
+                val plain = runCatching { cipher.decrypt(packageKey, blob) }.getOrNull() ?: continue
+                audioStore.writeEncrypted(dto.id, index, cipher.encrypt(localKey, plain))
             }
             imported++
         }
@@ -305,9 +360,10 @@ class BackupManager(
     // ================= 单胶囊赠予（体验储备池 §4） =================
 
     /**
-     * 导出单颗加密胶囊（赠予文件：格式同备份 v2，manifest.kind = "gift"，仅含这一颗）。
+     * 导出单颗加密胶囊（赠予文件：格式同整库备份 v3 布局，manifest.kind = "gift"，仅含这一颗）。
      *
      * - Verifier 与 KDF 参数随文件走，**口令永不写入文件**——接受者须输入封存者告知的口令才能开封；
+     *   赠予语义 = 口令随人走，包内材料为主口令体系（与整库备份的独立备份口令不同，见 [resolveExportMaterials]）；
      * - 依赖关系刻意不随赠予携带（接受者设备上目标缺失会永久锁死该胶囊）；
      * - 会话已解锁免输口令；未解锁传口令（本地派生 + Verifier 校验，不改会话状态）。
      * - 不写 `app.backup.done` 标记：赠予不构成 BackupDone 条件事实。
@@ -485,6 +541,51 @@ class BackupManager(
 
     // ================= 内部工具 =================
 
+    /** 包内胶囊正文密文重加密：fromKey 解密（解不开 = 口令错或数据损坏，中止）→ toKey 重加密 */
+    private fun BackupCodec.Capsule.reEncrypted(fromKey: ByteArray, toKey: ByteArray): BackupCodec.Capsule {
+        val blob = contentCipher?.let { KdfEngines.b64Decode(it) } ?: return this
+        return copy(contentCipher = KdfEngines.b64Encode(reEncryptBlob(blob, fromKey, toKey, title)))
+    }
+
+    private fun reEncryptBlob(blob: ByteArray, fromKey: ByteArray, toKey: ByteArray, title: String): ByteArray {
+        val plain = try {
+            cipher.decrypt(fromKey, blob)
+        } catch (_: CryptoException) {
+            throw BackupException(currentStrings().bkErrContentVerifyFmt.format(title))
+        }
+        return cipher.encrypt(toKey, plain)
+    }
+
+    /**
+     * 内容解密密钥（整库导出用）：会话密钥优先；会话锁定则由主口令本地派生并经 Verifier 校验
+     * （不改会话状态）。主口令材料仅用于本地取钥，不进备份包。
+     */
+    private suspend fun resolveContentKey(password: CharArray?): ByteArray {
+        if (password != null) {
+            val paramsRaw = metaDao.get(ContentCryptoManager.KEY_KDF_PARAMS)
+                ?: throw BackupException(currentStrings().bkErrNoPw)
+            val verifier = metaDao.get(ContentCryptoManager.KEY_VERIFIER)
+                ?: throw BackupException(currentStrings().bkErrNoVerifier)
+            val kdfParams = runCatching { KdfEngines.paramsFromJson(paramsRaw) }
+                .getOrElse { throw BackupException(currentStrings().bkErrPwParams) }
+            val derived = try {
+                KdfEngines.byAlgo(kdfParams.algo).derive(password, kdfParams)
+            } catch (t: Throwable) {
+                throw BackupException(currentStrings().bkErrKdfFmt.format(t.message ?: currentStrings().bkErrKdfUnsupported))
+            }
+            val ok = try {
+                cipher.decrypt(derived, KdfEngines.b64Decode(verifier)).decodeToString() ==
+                    ContentCryptoManager.VERIFIER_PLAINTEXT
+            } catch (_: CryptoException) {
+                false
+            }
+            if (!ok) throw BackupException(currentStrings().bkErrWrongPw, wrongPassword = true)
+            return derived
+        }
+        return crypto.sessionKeyOrNull()
+            ?: throw BackupException(currentStrings().bkErrSessionLocked)
+    }
+
     /** 导出材料：内容加密密钥 + 随包携带的 KDF 参数与 Verifier */
     private data class ExportMaterials(
         val key: ByteArray,
@@ -501,8 +602,10 @@ class BackupManager(
     }
 
     /**
-     * 导出材料解析：会话密钥优先；否则口令本地派生并经 Verifier 校验（不改会话状态）。
-     * KDF 参数 / Verifier 缺失或派生失败按 [BackupException] 明示。
+     * 导出材料解析（**赠予导出专用**：赠予语义 = 口令随人走，包内 Verifier 必须描述
+     * 封存者告知的口令，即主口令体系材料）。会话密钥优先；否则口令本地派生并经 Verifier 校验
+     * （不改会话状态）。KDF 参数 / Verifier 缺失或派生失败按 [BackupException] 明示。
+     * 整库备份走 [resolveContentKey] + 独立备份口令（v3），不再使用本函数。
      */
     private suspend fun resolveExportMaterials(password: CharArray?): ExportMaterials {
         val kdfParamsRaw = metaDao.get(ContentCryptoManager.KEY_KDF_PARAMS)
@@ -681,6 +784,9 @@ class BackupManager(
 
         /** 备份完成标记 meta key（写入点 exportBackup，读取点 AppContainer.capsuleMetaProvider.backupDone） */
         const val FLAG_BACKUP_DONE = "app.backup.done"
+
+        /** 备份口令 meta key（v3 备份口令分离；值 = 口令本体，写入点 setBackupPassword，读取点本类与 AutoBackupManager） */
+        const val KEY_BACKUP_PW = "settings.backupPw"
 
         /** 赠予包类型标记（manifest.kind；写入点 exportGift，导入侧仅作展示区分） */
         const val KIND_GIFT = "gift"

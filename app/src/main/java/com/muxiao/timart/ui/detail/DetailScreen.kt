@@ -49,6 +49,7 @@ import com.muxiao.timart.AppContainer
 import com.muxiao.timart.ui.components.particle.ParticleCanvas
 import com.muxiao.timart.ui.components.visual.GlowOrb
 import com.muxiao.timart.ui.components.visual.SectionHeader
+import com.muxiao.timart.ui.components.visual.rememberRevealClock
 import com.muxiao.timart.ui.settings.PasswordUnlockDialog
 import com.muxiao.timart.ui.theme.DeepCharcoal
 import com.muxiao.timart.ui.theme.InkDisabled
@@ -92,6 +93,10 @@ fun DetailScreen(
     }
     // 真实卡片实测高度（揭封双翼几何对齐用；内容/图片回流时自动更新）
     var measuredCardHeight by remember { mutableStateOf<Int?>(null) }
+
+    // 揭封 hold 期与 CONTENT 卡片共享的显现时钟（每次进入详情新建，效果重抽；
+    // hold 期起跑 → 交接零跳变续走，hold 前跳过则由 CONTENT 侧起跑）
+    val unsealRevealClock = rememberRevealClock()
 
     // ---- 海报生成与分享（T15：PosterComposer + FileProvider）----
     val posterComposer = remember { PosterComposer(context) }
@@ -340,6 +345,8 @@ fun DetailScreen(
                         onWriteNfcLink = { showNfcLinkWrite = true },
                         remindLeadDays = state.remindLeadDays,
                         onRemind = { showRemindDialog = true },
+                        earliestUnlockAt = state.earliestUnlockAt,
+                        chain = state.chain,
                         overlayOrigin = overlayOrigin,
                         // 宽屏限宽居中（横屏适配）：时间线行宽过长伤可读性；
                         // 尘核锚点经 positionInRoot 实测换算，居中偏移不影响粒子定位
@@ -377,6 +384,9 @@ fun DetailScreen(
                 UnsealSequence(
                     engine = engine,
                     cardHeightPx = measuredCardHeight,
+                    paperStyle = state.paperStyle,
+                    title = state.capsule?.title.orEmpty(),
+                    revealClock = unsealRevealClock,
                     onPlaySound = { container.audioManager.playUnseal() },
                     onDone = vm::onUnsealFinished,
                 )
@@ -408,6 +418,8 @@ fun DetailScreen(
                         // （重读路径同样播放；loading/未就绪时组件内部停在骨架）
                         animateText = true,
                         titleHint = state.capsule?.title,
+                        // 揭封交接重叠：复用揭封 hold 期起跑的共享时钟，标题进度零跳变续走
+                        revealClock = unsealRevealClock,
                         parallax = tiltSensor,
                         voiceAvailable = state.voiceAvailable,
                         voicePlaying = state.voicePlaying,
@@ -438,16 +450,21 @@ fun DetailScreen(
                         )
                     }
                     if (!state.shardGate && showRereadVeil) {
-                        RereadVeilOverlay(engine = engine, onDone = { showRereadVeil = false })
+                        RereadVeilOverlay(
+                            engine = engine,
+                            onDone = { showRereadVeil = false },
+                            cardHeightPx = measuredCardHeight,
+                        )
                     }
                 }
             }
 
             DetailViewModel.Phase.DISSOLVE -> {
                 // 信笺淡出上浮（视觉层）；粒子散逸由 DissolveSequence 承担
+                // （LOW 档经引擎同拍缩放，与散逸时序保持同一比例）
                 val fade = remember { Animatable(1f) }
                 LaunchedEffect(Unit) {
-                    fade.animateTo(0.12f, animationSpec = tween(durationMillis = 700))
+                    fade.animateTo(0.12f, animationSpec = tween(durationMillis = 700 * engine.sequenceTimePct / 100))
                 }
                 Box(
                     modifier = Modifier
@@ -472,7 +489,11 @@ fun DetailScreen(
                         paperStyle = state.paperStyle,
                     )
                 }
-                DissolveSequence(engine = engine, onFinished = vm::onDissolveFinished)
+                DissolveSequence(
+                    engine = engine,
+                    onFinished = vm::onDissolveFinished,
+                    cardHeightPx = measuredCardHeight,
+                )
             }
 
             DetailViewModel.Phase.ARCHIVED -> {
@@ -787,6 +808,7 @@ fun DetailScreen(
     if (state.needPassword) {
         PasswordUnlockDialog(
             errorText = state.errorText,
+            hintText = state.pwHint,
             // 取消口令 = 放弃本次阅读：直接返回上一页。
             // 冷启动路径此时相位停在 LOADING（仅居中尘核），现场解锁路径停在 LOCKED——
             // 两者取消后都没有可交互内容，留在原地只会卡死在「未开启」视图

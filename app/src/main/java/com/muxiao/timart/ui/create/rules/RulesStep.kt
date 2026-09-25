@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.muxiao.timart.l10n.LocalStrings
+import com.muxiao.timart.domain.model.unlock.LogicType
 import com.muxiao.timart.domain.model.unlock.UnlockCondition
 import com.muxiao.timart.ui.create.CreateViewModel
 import com.muxiao.timart.utils.RuntimeSettings
@@ -112,6 +113,17 @@ import com.muxiao.timart.ui.create.rules.condition.OtherCapsuleStillLockedForm
 import com.muxiao.timart.ui.create.rules.condition.PlugTypeForm
 import com.muxiao.timart.ui.create.rules.condition.PrecipitationProbabilityForm
 import com.muxiao.timart.ui.create.rules.condition.ProofOfWorkForm
+import com.muxiao.timart.ui.create.rules.condition.RainStreakForm
+import com.muxiao.timart.ui.create.rules.condition.TempVsSealForm
+import com.muxiao.timart.ui.create.rules.condition.SnowObservationForm
+import com.muxiao.timart.ui.create.rules.condition.CumulativeStepsForm
+import com.muxiao.timart.ui.create.rules.condition.LunarDayOfMonthForm
+import com.muxiao.timart.ui.create.rules.condition.ThunderObservationForm
+import com.muxiao.timart.ui.create.rules.condition.BrightLightForm
+import com.muxiao.timart.ui.create.rules.condition.AppUsageCeilingForm
+import com.muxiao.timart.ui.create.rules.condition.PressureDeltaForm
+import com.muxiao.timart.ui.create.rules.condition.VoiceKeepsakeForm
+import com.muxiao.timart.ui.create.rules.condition.ShoutForm
 import com.muxiao.timart.ui.create.rules.condition.ProximityCoveredForm
 import com.muxiao.timart.ui.create.rules.condition.ReadCountForm
 import com.muxiao.timart.ui.create.rules.condition.ReadLinkMode
@@ -166,7 +178,21 @@ fun RulesStep(
     var showDependencySheet by remember { mutableStateOf(false) }
     var showScenarioSheet by remember { mutableStateOf(false) }
     var showDryRun by remember { mutableStateOf(false) }
+    var showGroupEditor by remember { mutableStateOf(false) }
     val ruleEmpty = vm.conditions.isEmpty() && vm.dependCapsuleId == null
+    // 顶层逻辑作用域 = 单元数（无组 = 条件数；有组 = 组 + 未分组单例）
+    val unitCount = if (vm.groups.isEmpty()) {
+        vm.conditions.size
+    } else {
+        com.muxiao.timart.domain.model.unlock.units(
+            com.muxiao.timart.domain.model.unlock.UnlockRule(
+                LogicType.AND,
+                vm.conditions.toList(),
+                null,
+                vm.groups.toList(),
+            ),
+        ).size
+    }
 
     Column(
         modifier = Modifier
@@ -209,12 +235,14 @@ fun RulesStep(
                 logic = vm.logic,
                 onRemove = vm::removeCondition,
                 modifier = Modifier.padding(top = 10.dp),
+                groups = vm.groups.toList(),
+                onEditGroups = { showGroupEditor = true },
             )
-            // AND/OR/任选 M 只在两条及以上时有意义
-            if (vm.conditions.size >= 2) {
+            // AND/OR/任选 M 只在两个及以上单元时有意义（分组规则下作用域 = 单元）
+            if (unitCount >= 2) {
                 LogicSwitch(
                     logic = vm.logic,
-                    conditionCount = vm.conditions.size,
+                    conditionCount = unitCount,
                     threshold = vm.logicThreshold,
                     onLogicChange = vm::updateLogic,
                     onThresholdChange = vm::updateThreshold,
@@ -227,6 +255,14 @@ fun RulesStep(
                     primary = false,
                     onClick = { showTypeSheet = true },
                     modifier = Modifier.padding(top = 14.dp),
+                )
+            }
+            // 子群组入口（储备池暂缓项落地）：≥2 条时可组合「（A 或 B）且 C」式分组
+            if (vm.conditions.size >= 2) {
+                GroupEntry(
+                    groupCount = vm.groups.size,
+                    onClick = { showGroupEditor = true },
+                    modifier = Modifier.padding(top = 10.dp),
                 )
             }
         } else {
@@ -330,6 +366,14 @@ fun RulesStep(
         DependencyPickerSheet(
             vm = vm,
             onDismiss = { showDependencySheet = false },
+        )
+    }
+
+    // ---- 子群组编辑面板 ----
+    if (showGroupEditor) {
+        GroupEditorSheet(
+            vm = vm,
+            onDismiss = { showGroupEditor = false },
         )
     }
 
@@ -450,6 +494,36 @@ private fun AddConditionEntry(
             style = if (primary) TimartType.titleSerif else TimartType.body,
             color = if (primary) TimeGold else InkPrimary,
             modifier = Modifier.padding(start = 10.dp),
+        )
+    }
+}
+
+/** 条件分组入口行：细边框次级入口，点开子群组编辑面板 */
+@Composable
+private fun GroupEntry(
+    groupCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val L = LocalStrings.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(SurfaceRaise, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = if (groupCount > 0) L.groupEntryWithCountFmt.format(groupCount) else L.groupEntry,
+            style = TimartType.caption,
+            color = InkSecondary,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "›",
+            style = TimartType.titleSerif,
+            color = InkDisabled,
         )
     }
 }
@@ -642,6 +716,23 @@ internal enum class ConditionType {
     CLIMB,
     SCAN_QR,
     POW,
+
+    // ---- 储备池 v5（2 条，delta-prd-vs-code.md D-1.5）----
+    SNOWFALL,
+    CUM_STEPS,
+
+    // ---- 储备池 v6（2 条，delta-prd-vs-code.md D-1.6）----
+    RAIN_STREAK,
+    TEMP_VS_SEAL,
+
+    // ---- 储备池 v7（7 条，delta-prd-vs-code.md D-1.7）----
+    LUNAR_DAY_SET,
+    THUNDER,
+    BRIGHT_LIGHT,
+    APP_USAGE,
+    PRESSURE_DELTA,
+    VOICE_KEEPSAKE,
+    SHOUT,
 }
 
 /** 条件类型显示名（随界面语言） */
@@ -756,6 +847,19 @@ private fun ConditionType.label(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.CLIMB -> L.condClimb
     ConditionType.SCAN_QR -> L.condScanQr
     ConditionType.POW -> L.condPow
+    // ---- 储备池 v5 ----
+    ConditionType.SNOWFALL -> L.condSnowfall
+    ConditionType.CUM_STEPS -> L.condCumSteps
+    ConditionType.RAIN_STREAK -> L.condRainStreak
+    ConditionType.TEMP_VS_SEAL -> L.condTempVsSeal
+    // ---- 储备池 v7 ----
+    ConditionType.LUNAR_DAY_SET -> L.condLunarDaySet
+    ConditionType.THUNDER -> L.condThunder
+    ConditionType.BRIGHT_LIGHT -> L.condBrightLight
+    ConditionType.APP_USAGE -> L.condAppUsage
+    ConditionType.PRESSURE_DELTA -> L.condPressureDrop
+    ConditionType.VOICE_KEEPSAKE -> L.condVoiceKeepsake
+    ConditionType.SHOUT -> L.condShout
 }
 
 /** 条件分组名（随界面语言） */
@@ -889,6 +993,34 @@ private fun ConditionType.group(L: com.muxiao.timart.l10n.Strings): String = whe
     ConditionType.SCAN_QR,
     ConditionType.POW,
     -> L.catChallenge
+
+    // ---- 储备池 v5 分组 ----
+    ConditionType.SNOWFALL,
+    -> L.catNet
+
+    ConditionType.CUM_STEPS,
+    -> L.catDevice
+
+    // ---- 储备池 v6 分组 ----
+    ConditionType.RAIN_STREAK,
+    ConditionType.TEMP_VS_SEAL,
+    -> L.catNet
+
+    // ---- 储备池 v7 分组 ----
+    ConditionType.LUNAR_DAY_SET,
+    -> L.catTime
+
+    ConditionType.THUNDER,
+    ConditionType.BRIGHT_LIGHT,
+    ConditionType.PRESSURE_DELTA,
+    -> L.catNet
+
+    ConditionType.APP_USAGE,
+    -> L.catDevice
+
+    ConditionType.VOICE_KEEPSAKE,
+    ConditionType.SHOUT,
+    -> L.catChallenge
 }
 
 /** 条件类型选择面板：分组 + 双列网格。
@@ -924,7 +1056,10 @@ internal fun ConditionTypeSheet(
             if (com.muxiao.timart.utils.device.DeviceHardware.GYROSCOPE in missing) add(ConditionType.SPIN)
             if (com.muxiao.timart.utils.device.DeviceHardware.PROXIMITY in missing) add(ConditionType.PROXIMITY)
             if (com.muxiao.timart.utils.device.DeviceHardware.NFC in missing) add(ConditionType.NFC)
-            if (com.muxiao.timart.utils.device.DeviceHardware.LIGHT_SENSOR in missing) add(ConditionType.AMBIENT_LIGHT)
+            if (com.muxiao.timart.utils.device.DeviceHardware.LIGHT_SENSOR in missing) {
+                add(ConditionType.AMBIENT_LIGHT)
+                add(ConditionType.BRIGHT_LIGHT)
+            }
             if (com.muxiao.timart.utils.device.DeviceHardware.CAMERA in missing) {
                 add(ConditionType.PHOTO_KEEPSAKE)
                 add(ConditionType.SCAN_QR)
@@ -937,6 +1072,7 @@ internal fun ConditionTypeSheet(
             }
             if (com.muxiao.timart.utils.device.DeviceHardware.STEP_COUNTER in missing) {
                 add(ConditionType.WALK_NOW)
+                add(ConditionType.CUM_STEPS)
             }
         }
     }
@@ -1319,6 +1455,19 @@ internal fun ConditionFormSheet(
                 ConditionType.CLIMB -> ClimbFloorsForm(onConfirm = { onConfirm(it) })
                 ConditionType.SCAN_QR -> ScanQrForm(onConfirm = { onConfirm(it) })
                 ConditionType.POW -> ProofOfWorkForm(onConfirm = { onConfirm(it) })
+                // ---- 储备池 v5 ----
+                ConditionType.SNOWFALL -> SnowObservationForm(onConfirm = { onConfirm(it) })
+                ConditionType.CUM_STEPS -> CumulativeStepsForm(onConfirm = { onConfirm(it) })
+                ConditionType.RAIN_STREAK -> RainStreakForm(onConfirm = { onConfirm(it) })
+                ConditionType.TEMP_VS_SEAL -> TempVsSealForm(onConfirm = { onConfirm(it) })
+                // ---- 储备池 v7 ----
+                ConditionType.LUNAR_DAY_SET -> LunarDayOfMonthForm(onConfirm = { onConfirm(it) })
+                ConditionType.THUNDER -> ThunderObservationForm(onConfirm = { onConfirm(it) })
+                ConditionType.BRIGHT_LIGHT -> BrightLightForm(onConfirm = { onConfirm(it) })
+                ConditionType.APP_USAGE -> AppUsageCeilingForm(onConfirm = { onConfirm(it) })
+                ConditionType.PRESSURE_DELTA -> PressureDeltaForm(onConfirm = { onConfirm(it) })
+                ConditionType.VOICE_KEEPSAKE -> VoiceKeepsakeForm(onConfirm = { onConfirm(it) })
+                ConditionType.SHOUT -> ShoutForm(onConfirm = { onConfirm(it) })
             }
         }
     }

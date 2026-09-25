@@ -18,7 +18,7 @@ import com.muxiao.timart.domain.model.Capsule
 object LibraryHealthCheck {
 
     /** 问题类别（UI 据此分组展示与决定可否清理） */
-    enum class Kind { ORPHAN_META, DEAD_DEPENDENCY, DESTROYED_DEPENDENCY, CYCLE, SHARD_MATERIAL }
+    enum class Kind { ORPHAN_META, DEAD_DEPENDENCY, DESTROYED_DEPENDENCY, CYCLE, SHARD_MATERIAL, RULE_ANOMALY }
 
     /** 一条体检发现（detail = 面向展示的 id / key 串，文案由 UI 层按 kind 包装） */
     data class Finding(val kind: Kind, val detail: String)
@@ -92,12 +92,14 @@ object LibraryHealthCheck {
             }
         }.map { it.id }
 
-    /** 一次性全量纯扫描（UI 编排一次调用） */
+    /** 一次性全量纯扫描（UI 编排一次调用；[today] 供规则异常检查的窗口判定） */
     fun scan(
         capsules: List<Capsule>,
         metaKeys: List<String>,
         condMetPrefix: String,
         prefixes: List<String>,
+        today: java.time.LocalDate = java.time.LocalDate.now(),
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
     ): List<Finding> {
         val findings = mutableListOf<Finding>()
         val orphans = orphanMetaKeys(metaKeys, capsules.map { it.id }.toSet(), condMetPrefix, prefixes)
@@ -114,6 +116,13 @@ object LibraryHealthCheck {
         if (cycles.isNotEmpty()) findings.add(Finding(Kind.CYCLE, cycles.joinToString(" · ")))
         val shards = incompleteShardMaterials(capsules)
         if (shards.isNotEmpty()) findings.add(Finding(Kind.SHARD_MATERIAL, shards.joinToString(" · ")))
+        // 规则异常：按胶囊聚合标题（detail 由 UI 用语言文案包装）
+        val anomalies = RuleSanityCheck.scan(capsules, today, zone)
+        if (anomalies.isNotEmpty()) {
+            val titlesById = capsules.associate { it.id to it.title }
+            val titles = anomalies.mapNotNull { titlesById[it.capsuleId] }.distinct()
+            if (titles.isNotEmpty()) findings.add(Finding(Kind.RULE_ANOMALY, titles.joinToString(" · ")))
+        }
         return findings
     }
 }

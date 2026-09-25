@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -490,3 +492,212 @@ private fun DoneTagPublic() {
         modifier = Modifier.padding(top = 6.dp),
     )
 }
+
+// ---- 声音纪念（储备池 v7）：当场录音 → 当场回放即删，不保存 ----
+
+@Composable
+internal fun VoiceKeepsakeChallenge(onDone: () -> Unit) {
+    val L = LocalStrings.current
+    val context = LocalContext.current
+    var phase by remember { mutableIntStateOf(0) } // 0 待开始 / 1 录音中 / 2 已录成
+    var permDenied by remember { mutableStateOf(false) }
+    var recorderRef by remember { mutableStateOf<android.media.MediaRecorder?>(null) }
+    var playerRef by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    val tempFile = remember { java.io.File(context.cacheDir, "timart_challenge_voice.m4a") }
+
+    fun startRecording() {
+        runCatching {
+            tempFile.delete()
+            val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                android.media.MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION") android.media.MediaRecorder()
+            }
+            recorder.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(96_000)
+            recorder.setAudioSamplingRate(44_100)
+            recorder.setOutputFile(tempFile.absolutePath)
+            recorder.prepare()
+            recorder.start()
+            recorderRef = recorder
+            phase = 1
+        }.onFailure { permDenied = true }
+    }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording() else permDenied = true
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { recorderRef?.stop() }
+            recorderRef?.release()
+            playerRef?.release()
+            tempFile.delete()
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = L.challengeVoiceKeepsakeHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        when (phase) {
+            0 -> Button(
+                onClick = {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.RECORD_AUDIO,
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (granted) startRecording() else {
+                        permLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TimeGold, contentColor = DeepCharcoal),
+                modifier = Modifier.padding(top = 8.dp),
+            ) { Text(L.voiceKeepsakeRecord) }
+            1 -> Text(
+                text = L.voiceKeepsakeStop,
+                style = TimartType.body.copy(color = TimeGold),
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures {
+                            runCatching { recorderRef?.stop() }
+                            recorderRef?.release()
+                            recorderRef = null
+                            phase = 2
+                        }
+                    },
+            )
+            else -> Row {
+                Button(
+                    onClick = {
+                        runCatching {
+                            playerRef?.release()
+                            val player = android.media.MediaPlayer()
+                            player.setDataSource(tempFile.absolutePath)
+                            player.prepare()
+                            player.setOnCompletionListener { it.release() }
+                            player.start()
+                            playerRef = player
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DeepCharcoal, contentColor = TimeGold),
+                    modifier = Modifier.padding(top = 8.dp),
+                ) { Text(L.voiceKeepsakeReplay) }
+                Button(
+                    onClick = {
+                        tempFile.delete()
+                        onDone()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TimeGold, contentColor = DeepCharcoal),
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                ) { Text(L.voiceKeepsakeDone) }
+            }
+        }
+    }
+}
+
+// ---- 呐喊挑战（储备池 v7）：麦克风振幅，持续响亮 N 秒 ----
+
+@Composable
+internal fun ShoutChallenge(targetSeconds: Int, onDone: () -> Unit) {
+    val L = LocalStrings.current
+    val context = LocalContext.current
+    var loudMs by remember { mutableLongStateOf(0L) }
+    var running by remember { mutableStateOf(false) }
+    var recorderRef by remember { mutableStateOf<android.media.MediaRecorder?>(null) }
+    val tempFile = remember { java.io.File(context.cacheDir, "timart_shout_probe.m4a") }
+
+    fun startProbe() {
+        runCatching {
+            tempFile.delete()
+            val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                android.media.MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION") android.media.MediaRecorder()
+            }
+            recorder.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+            recorder.setOutputFile(tempFile.absolutePath)
+            recorder.prepare()
+            recorder.start()
+            recorderRef = recorder
+            running = true
+        }
+    }
+    fun stopProbe() {
+        runCatching { recorderRef?.stop() }
+        recorderRef?.release()
+        recorderRef = null
+        running = false
+    }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startProbe()
+    }
+
+    LaunchedEffect(running) {
+        if (!running) return@LaunchedEffect
+        var lastLoud = true
+        while (isActive && running) {
+            delay(100.milliseconds)
+            val amplitude = runCatching { recorderRef?.maxAmplitude ?: 0 }.getOrDefault(0)
+            val isLoud = amplitude >= SHOUT_AMPLITUDE_THRESHOLD
+            loudMs = if (isLoud) {
+                if (lastLoud) loudMs + 100 else 100
+            } else {
+                0L
+            }
+            lastLoud = isLoud
+            if (loudMs >= targetSeconds * 1000L) {
+                stopProbe()
+                tempFile.delete()
+                onDone()
+                break
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            stopProbe()
+            tempFile.delete()
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = L.challengeShoutHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        if (running) {
+            ProgressText(
+                progress = (loudMs / 1000L).toInt().coerceAtMost(targetSeconds),
+                target = targetSeconds,
+            )
+        } else {
+            Button(
+                onClick = {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.RECORD_AUDIO,
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (granted) startProbe() else {
+                        permLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TimeGold, contentColor = DeepCharcoal),
+                modifier = Modifier.padding(top = 8.dp),
+            ) { Text(L.voiceKeepsakeRecord) }
+        }
+    }
+}
+
+/** 呐喊挑战的「响亮」门槛（MediaRecorder maxAmplitude 0–32767 的经验阈值） */
+private const val SHOUT_AMPLITUDE_THRESHOLD = 5000

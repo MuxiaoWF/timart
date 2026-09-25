@@ -395,3 +395,51 @@ fun ProofOfWorkForm(onConfirm: (UnlockCondition.ProofOfWork) -> Unit) {
         )
     }
 }
+
+// ================= 声音纪念（储备池 v7）=================
+
+/** 声音纪念表单：无参数挑战（当场录音、当场回放即删，不保存） */
+@Composable
+fun VoiceKeepsakeForm(onConfirm: (UnlockCondition.VoiceKeepsake) -> Unit) {
+    val L = LocalStrings.current
+
+    ExtendFormScaffold(
+        title = L.condVoiceKeepsake,
+        valueCondition = UnlockCondition.VoiceKeepsake("preview"),
+        onConfirm = {
+            onConfirm(UnlockCondition.VoiceKeepsake(UUID.randomUUID().toString()))
+        },
+    ) {
+        Text(
+            text = L.challengeVoiceKeepsakeHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+// ================= 呐喊挑战（储备池 v7）=================
+
+/** 呐喊挑战表单：持续响亮秒数滑条（3–30 秒） */
+@Composable
+fun ShoutForm(onConfirm: (UnlockCondition.ShoutOut) -> Unit) {
+    val L = LocalStrings.current
+    var seconds by remember { mutableIntStateOf(5) }
+
+    ExtendFormScaffold(
+        title = L.condShout,
+        valueCondition = UnlockCondition.ShoutOut("preview", seconds),
+        onConfirm = {
+            onConfirm(UnlockCondition.ShoutOut(UUID.randomUUID().toString(), seconds))
+        },
+    ) {
+        IntSlider(value = seconds, range = 3f..30f, steps = 26) { seconds = it }
+        Text(
+            text = L.challengeShoutHint,
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}

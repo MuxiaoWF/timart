@@ -6,22 +6,25 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * 备份 zip 文档模型（ARCHITECTURE §6，格式 v2：数据段整体加密）：
+ * 备份 zip 文档模型（ARCHITECTURE §6，格式 v3：备份口令独立于主口令）：
  *
  * ```
  * manifest.json   元信息（格式版本 / 应用版本 / 导出时间 / 数量统计）
- * meta.json       kdfParams + verifier（口令派生与校验材料，不含任何秘密）
+ * meta.json       kdfParams + verifier（**备份口令**的派生与校验材料，不含任何秘密；
+ *                 v2 及更早为主口令材料，导入侧按包内材料统一验证，无需区分）
  * data.enc        AES-GCM(nonce‖ct‖tag)：Payload{settings, capsules, destroyed} 整体加密
- *                 （口令经 kdfParams 派生内容密钥；标题/正文/标签/设置无明文）
- * images/{id}/img_N.bin  加密图片原样拷贝（不改名不重加密）
+ *                 （备份口令经 kdfParams 派生内容密钥；标题/正文/标签/设置无明文）
+ * images/{id}/img_N.bin  图片密文（v3：已按备份口令重加密；旧包为主口令密文，导入侧统一重加密）
  * ```
  *
+ * v2 兼容（导入侧）：包内材料为主口令 KDF 参数 + Verifier，导入输导出时的主口令；
+ * v3 起 **主口令材料不再入包**（缩小主口令校验暴露面——离线爆破只能命中备份口令）。
  * v1 兼容（导入侧）：v1 的 meta.json 携带 settings、明文 capsules.json / destroyed.json，
  * 导入时按条目存在性自动走旧路径。
  */
 object BackupCodec {
 
-    const val FORMAT_VERSION = 2
+    const val FORMAT_VERSION = 3
 
     const val ENTRY_MANIFEST = "manifest.json"
     const val ENTRY_META = "meta.json"

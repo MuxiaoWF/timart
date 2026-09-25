@@ -70,6 +70,7 @@ fun CreateScreen(
     val engine = container.particleEngine
     val step by vm.step.collectAsStateWithLifecycle()
     val assembling by vm.assembling.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // 输入飘粒：全屏粒子画布 + 光标坐标发射（画布与内容同根，坐标经 localToRoot 对齐）
     var sparkCanvasOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -137,7 +138,7 @@ fun CreateScreen(
                 }
             }
             AnimatedContent(
-                targetState = step,
+                targetState = if (vm.chainMode) -1 else step,
                 modifier = Modifier.weight(1f),
                 transitionSpec = {
                     // 方向感：前进左移入 / 后退右移入（轻微位移 1/6 宽 + 淡入），时长仍 280/180ms
@@ -158,6 +159,15 @@ fun CreateScreen(
                 label = "CreateStepTransition",
             ) { currentStep ->
                 when (currentStep) {
+                    -1 -> com.muxiao.timart.ui.create.chain.ChainWizardStep(
+                        vm = vm,
+                        onBackToSingle = {},
+                        onNeedPasswordSetup = onNeedPasswordSetup,
+                        onFailed = { message ->
+                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                    )
+
                     0 -> WriteStep(
                         vm = vm,
                         onSpark = fireInputSpark,

@@ -98,9 +98,11 @@ class ContentCryptoManager(
         return true
     }
 
-    /** 会话密钥加密副本落保险库（Keystore 包裹，TTL [SESSION_TTL_MS]；失败静默降级为下次需口令） */
+    /** 会话密钥加密副本落保险库（Keystore 包裹，TTL 按设置档位默认 [SESSION_TTL_MS]；失败静默降级为下次需口令） */
     private fun stashSession(key: ByteArray) {
-        sessionVault?.store(key, System.currentTimeMillis() + SESSION_TTL_MS)
+        val ttlMillis = com.muxiao.timart.utils.RuntimeSettings.sessionTtlHours
+            .coerceIn(1, 24 * 30) * 3_600_000L
+        sessionVault?.store(key, System.currentTimeMillis() + ttlMillis)
     }
 
     /** 同步便捷判断（UI 层在已 await 解锁协程后使用） */

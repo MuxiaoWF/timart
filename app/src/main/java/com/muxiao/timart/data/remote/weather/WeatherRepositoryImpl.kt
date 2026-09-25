@@ -59,6 +59,11 @@ class WeatherRepositoryImpl(
             windDirectionDeg = weather.windDirectionDeg,
             precipProbPercent = weather.precipProbPercent,
             yesterdayMeanTempC = weather.yesterdayMeanTempC,
+            snowDaysPast = weather.snowDaysPast,
+            rainStreakPast = weather.rainStreakPast,
+            feelsLikeC = weather.feelsLikeC,
+            thunderDaysPast = weather.thunderDaysPast,
+            yesterdayMeanPressureHpa = weather.yesterdayMeanPressureHpa,
         )
     }
 

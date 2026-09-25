@@ -69,8 +69,18 @@ internal fun ConditionEditSheet(
     var threshold by remember {
         mutableIntStateOf(capsule.unlockRule.threshold ?: (capsule.unlockRule.conditionList.size / 2).coerceAtLeast(1))
     }
+    // 子群组随编辑保留：按下标随增删重映射（组员不足 2 自动解散），编辑面板不提供组编辑
+    var groups by remember { mutableStateOf(capsule.unlockRule.groups) }
     var showTypeSheet by remember { mutableStateOf(false) }
     var activeForm by remember { mutableStateOf<ConditionType?>(null) }
+
+    fun removeConditionAt(index: Int) {
+        conditions = conditions.filterIndexed { i, _ -> i != index }
+        groups = groups.mapNotNull { group ->
+            val kept = group.indexes.filter { it != index }.map { if (it > index) it - 1 else it }
+            if (kept.size < 2) null else group.copy(indexes = kept)
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -117,9 +127,7 @@ internal fun ConditionEditSheet(
                         text = L.condEditRemove,
                         style = TimartType.caption,
                         color = InkSecondary,
-                        modifier = Modifier.clickable {
-                            conditions = conditions.filterIndexed { i, _ -> i != index }
-                        },
+                        modifier = Modifier.clickable { removeConditionAt(index) },
                     )
                 }
                 Box(
@@ -179,6 +187,7 @@ internal fun ConditionEditSheet(
                             logicType = logic,
                             conditionList = conditions,
                             threshold = threshold.takeIf { logic == LogicType.AT_LEAST },
+                            groups = groups,
                         ),
                     )
                 },
@@ -219,6 +228,7 @@ internal fun ConditionEditSheet(
             snapshotCityName = capsule.weather?.cityName,
             geocodeResolver = geocodeResolver,
             onConfirm = { condition ->
+                // 新增条件追加在扁平列表尾部（未分组，作为顶层单例单元参与合并）
                 conditions = conditions + condition
                 activeForm = null
             },

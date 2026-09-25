@@ -13,15 +13,17 @@ import androidx.core.net.toUri
  * 自动定期本地备份（本地优先红线内：密文包写入**用户指定的 SAF 目录**，零网络）：
  *
  * - 触发模型：MainActivity ON_RESUME 调 [maybeRun]——启用且已选目录、口令会话已解锁
- *   （fail-closed：未解锁不弹口令、不打断打开流程，仅跳过）、距上次备份达到周期才真正执行；
- * - 备份体 = [BackupManager.exportBackup]（格式 v2 数据段整体加密，复用导出主链路，不另写打包逻辑）；
+ *   （fail-closed：未解锁不弹口令、不打断打开流程，仅跳过）、已设置备份口令、
+ *   距上次备份达到周期才真正执行；
+ * - 备份体 = [BackupManager.exportBackup]（格式 v3：全部内容重加密到**独立备份口令**，
+ *   主口令材料不入包；口令 = 设置页「备份口令」存档，复用导出主链路，不另写打包逻辑）；
  * - 落盘：zip 先在 `filesDir/backup` 生成（FileProvider 已含该路径），再原样拷贝到用户
  *   所选目录（ACTION_OPEN_TREE 授予的持久化授权），本地临时件即删；
  * - 轮转：目标目录中 `timart-backup-*.zip` 按（文件名内时间戳）保留最近 [KEEP_COPIES] 份。
  *
  * meta 键（契约见 `docs/spec-storage.md §3.2`）：
- * `settings.autoBackup.enabled / .periodDays / .treeUri`、`app.autobackup.lastAt`、
- * `app.healthcheck.lastAt / .findings`（随备份体检摘要，见 [runNow]）。
+ * `settings.autoBackup.enabled / .periodDays / .treeUri`、`settings.backupPw`（备份口令，
+ * 见 BackupManager）、`app.autobackup.lastAt`、`app.healthcheck.lastAt / .findings`（随备份体检摘要）。
  */
 class AutoBackupManager(
     private val context: Context,
@@ -71,6 +73,12 @@ class AutoBackupManager(
 
     // ---- 执行 ----
 
+    /** 备份口令读取（BackupManager 同源；未设置 / 长度不足返回 null） */
+    private fun backupPasswordOrNull(): CharArray? =
+        runCatching { metaDao.getSync(BackupManager.KEY_BACKUP_PW) }.getOrNull()
+            ?.takeIf { it.length >= ContentCryptoManager.MIN_PASSWORD_LENGTH }
+            ?.toCharArray()
+
     /** 执行结果（UI 据此映射文案；自动路径的失败不打断应用打开） */
     enum class Status {
         /** 已完成一次备份 */
@@ -82,30 +90,36 @@ class AutoBackupManager(
         /** 口令会话未解锁（fail-closed：不弹口令，等下次解锁后打开再备） */
         SKIPPED_LOCKED,
 
+        /** 备份口令未设置（v3 导出链路必备；设置页引导先设置备份口令） */
+        SKIPPED_NO_PW,
+
         /** 执行失败（目录不可写 / 打包异常等） */
         FAILED,
     }
 
     /**
-     * 打开应用时的周期检查入口：未启用/未到周期/会话锁定均静默跳过。
+     * 打开应用时的周期检查入口：未启用/未到周期/会话锁定/备份口令未设置均静默跳过。
      * @return 是否真正完成了一次备份
      */
     suspend fun maybeRun(): Status {
         val config = readConfig()
         if (!config.enabled || config.treeUri == null) return Status.SKIPPED
         if (!crypto.isUnlocked) return Status.SKIPPED_LOCKED
+        if (backupPasswordOrNull() == null) return Status.SKIPPED_NO_PW
         val last = config.lastAt ?: 0L
         if (System.currentTimeMillis() - last < config.periodDays * DAY_MS) return Status.SKIPPED
         return runNow()
     }
 
-    /** 设置页「立即备份一次」手动触发（同样要求会话已解锁，用会话密钥免输口令） */
+    /** 设置页「立即备份一次」手动触发（同样要求会话已解锁与备份口令已设置） */
     suspend fun runNow(): Status {
         val config = readConfig()
         val treeUri = config.treeUri?.let { runCatching { it.toUri() }.getOrNull() }
             ?: return Status.FAILED
         if (!crypto.isUnlocked) return Status.SKIPPED_LOCKED
-        val export = runCatching { backupManager.exportBackup(null) }.getOrElse { return Status.FAILED }
+        val backupPassword = backupPasswordOrNull() ?: return Status.SKIPPED_NO_PW
+        val export = runCatching { backupManager.exportBackup(backupPassword) }.getOrElse { return Status.FAILED }
+        backupPassword.fill('\u0000')
         val copied = runCatching { copyToTree(treeUri, export.file) }.getOrDefault(false)
         // 本地临时件无论拷贝成败都清理（filesDir/backup 不作为自动备份的留存位）
         runCatching { export.file.delete() }

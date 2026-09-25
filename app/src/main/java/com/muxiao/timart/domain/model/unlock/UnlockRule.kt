@@ -433,13 +433,68 @@ sealed class UnlockCondition {
         override val challengeId: String,
         val difficulty: Int,
     ) : UnlockCondition(), ChallengeCondition
+
+    // ---- 网络 & 环境扩展（储备池 v5；delta-prd-vs-code.md D-1.5）----
+
+    /** 降雪观测：快照城市正在下雪；[firstOfSeason] = true 时还要求此前无雪记录（今冬首雪；历史窗口见 `WeatherSnapshot.snowDaysPast`） */
+    data class SnowObservation(val firstOfSeason: Boolean) : UnlockCondition()
+
+    // ---- 应用内统计扩展（储备池 v5；delta-prd-vs-code.md D-1.5）----
+
+    /** 自封存日（含）起累计步行 ≥ [minSteps] 步（按已采样每日步数合计，缺采样日按 0 计；通道见 `StepHistoryProvider.stepsSince`） */
+    data class CumulativeSteps(val minSteps: Int) : UnlockCondition()
+
+    // ---- 网络与环境扩展（储备池 v6；delta-prd-vs-code.md D-1.6）----
+
+    /**
+     * 连续降雨观测：截至今日连续 [days] 天降雨（`WeatherSnapshot.rainStreakPast` 历史窗口 +
+     * 今日天气类型；雨类 = 毛雨/雨/雷，见 `WmoCodeMapper.isRain`）。
+     * [afterRain] = true 为「雨后初晴」语义：此前连续 [days] 天降雨且今日转晴。
+     */
+    data class RainStreak(val days: Int, val afterRain: Boolean) : UnlockCondition()
+
+    /**
+     * 封存日天气对比：当前气温比封存时刻（`Capsule.weather.tempC`，创建时的天气快照）
+     * 更冷/更热 ≥ [deltaC] °C（[hotter] 二选一）。封存时未选天气城市 → fail-closed 给原因。
+     */
+    data class TempVsSealDay(val deltaC: Double, val hotter: Boolean) : UnlockCondition()
+
+    // ---- 扩展（储备池 v7；delta-prd-vs-code.md D-1.7）----
+
+    /** 每月农历固定多天（如每月农历初一/十五；闰月按同月同日，与 [LunarDate] 同口径） */
+    data class LunarDayOfMonth(val days: Set<Int>) : UnlockCondition()
+
+    /** 雷暴观测：快照城市今日雷暴；[firstOfSeason] = true 时还要求此前历史窗口无雷记录（今季首雷） */
+    data class ThunderObservation(val firstOfSeason: Boolean) : UnlockCondition()
+
+    /** 明亮环境：环境光照度 ≥ [minLux]（阳光下/亮灯处；光线传感器，硬件门控；[AmbientLight] 的反向语义） */
+    data class BrightLight(val minLux: Int) : UnlockCondition()
+
+    /** 今日使用 [packageName] 应用不超过 [maxMinutes] 分钟（数字戒断；需系统使用统计权限，未授予 fail-closed） */
+    data class AppUsageCeiling(val packageName: String, val maxMinutes: Int) : UnlockCondition()
+
+    /** 气压较昨日均压下降 ≥ [minDropHpa] hPa（风雨将至；复用天气链路历史窗口，缺昨日数据 fail-closed） */
+    data class PressureDelta(val minDropHpa: Double) : UnlockCondition()
+
+    // ---- 现场挑战扩展（储备池 v7；周期巡检 fail-closed）----
+
+    /** 录一段此刻的声音留念（当场录、当场回放即删，不保存；完成后应答 DONE） */
+    data class VoiceKeepsake(
+        override val challengeId: String,
+    ) : UnlockCondition(), ChallengeCondition
+
+    /** 对着麦克风持续发出响亮声音 [seconds] 秒（呐喊/吹气；振幅 RMS 判定，当场完成） */
+    data class ShoutOut(
+        override val challengeId: String,
+        val seconds: Int,
+    ) : UnlockCondition(), ChallengeCondition
 }
 
 /** 太阳相位 */
 enum class SunPhaseKind { SUNRISE, DAY, SUNSET, NIGHT }
 
 /** 天气指标（[UnlockCondition.WeatherMetric] 判定通道） */
-enum class WeatherMetricKind { HUMIDITY, WIND, PRESSURE, UV }
+enum class WeatherMetricKind { HUMIDITY, WIND, PRESSURE, UV, APPARENT }
 
 /** 月相（8 相） */
 enum class MoonPhaseKind {
@@ -530,12 +585,94 @@ fun UnlockCondition.oppositeState(): UnlockCondition? = when (this) {
 data class GeoPoint(val lat: Double, val lng: Double)
 
 /**
- * 解锁规则：逻辑类型 + 条件列表 + 阈值。
+ * 子群组（储备池暂缓项落地）：把 [UnlockRule.conditionList] 中的若干条按**下标**归为一组，
+ * 组内独立 AND/OR/任选M。例：「（周六 或 周日）且（在家 或 在公司）」= 顶层 AND + 两个 OR 组。
+ * [indexes] 指向扁平 [UnlockRule.conditionList] 的下标（扁平列表是唯一存储权威，
+ * 组只是其上的划分视图——condMet `capsule.condMet.<id>.<index>` 等按下标落键的契约不受影响）；
+ * [name] 仅为展示层组名，可空。
+ */
+data class ConditionGroup(
+    val name: String? = null,
+    val logicType: LogicType = LogicType.AND,
+    val threshold: Int? = null,
+    val indexes: List<Int>,
+)
+
+/**
+ * 解锁规则：逻辑类型 + 条件列表 + 阈值 + 可选子群组。
  * [threshold] 仅在 [LogicType.AT_LEAST] 下生效（"N 条满足 M 条即可"，备用钥匙语义）；
  * 其余逻辑类型应为 null。挑战条目照常计入 N 与 M（未应答按不满足，快照 fail-closed 不变）。
+ * [groups] 非空时为**部分划分**：判定按 [units] 划成「组 + 未分组单例」单元，顶层逻辑作用于单元；
+ * 为空 / 非法（下标越界或重叠）时整体回退旧扁平语义（见 [units]，向后兼容零行为变化）。
  */
 data class UnlockRule(
     val logicType: LogicType,
     val conditionList: List<UnlockCondition>,
     val threshold: Int? = null,
+    val groups: List<ConditionGroup> = emptyList(),
 )
+
+/**
+ * 判定/预估/摘要共用的「单元」划分：组 = 多条件单元，未分组条件 = 单例单元。
+ * 组无重叠且下标都在界内时按扁平顺序输出（命中组首条时输出整组）；否则全部退化为单例
+ * （等价旧扁平语义——脏数据 fail-safe，宁可退化也不猜）。
+ */
+data class RuleUnit(
+    val indexes: List<Int>,
+
+    /** null = 未分组单例；非空 = 子群组（展示名） */
+    val name: String?,
+    val logicType: LogicType,
+    val threshold: Int? = null,
+)
+
+/** 把规则划成判定/预估/摘要共用的单元序列（组在扁平顺序中首次命中处整体展开） */
+fun units(rule: UnlockRule): List<RuleUnit> {
+    val valid = rule.groups.filter { group ->
+        group.indexes.isNotEmpty() &&
+            group.indexes.all { it in rule.conditionList.indices } &&
+            group.indexes.toSet().size == group.indexes.size
+    }
+    val claimed = valid.flatMap { it.indexes }
+    if (valid.isEmpty() || claimed.size != claimed.toSet().size) {
+        // 无组 / 下标越界 / 组间重叠：全部退化为单例（与旧扁平判定逐字节一致）
+        return rule.conditionList.indices.map { RuleUnit(listOf(it), name = null, logicType = LogicType.AND) }
+    }
+    val groupByIndex = buildMap {
+        valid.forEach { group -> group.indexes.forEach { put(it, group) } }
+    }
+    val emitted = mutableSetOf<ConditionGroup>()
+    return buildList {
+        for (index in rule.conditionList.indices) {
+            val group = groupByIndex[index]
+            when {
+                group == null -> add(RuleUnit(listOf(index), name = null, logicType = LogicType.AND))
+                group in emitted -> Unit // 组内非首条：已在组单元里
+                else -> {
+                    emitted += group
+                    add(RuleUnit(group.indexes, group.name, group.logicType, group.threshold))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 单元进度：(已满足单元数, 单元总数)。单例单元满足 = 该条件满足；组单元满足按组内逻辑。
+ * 详情页「差 M 项」与 M-of-N 措辞在分组规则下按单元口径计算（判定引擎同源）。
+ */
+fun unitProgress(rule: UnlockRule, satisfiedFlags: List<Boolean>): Pair<Int, Int> {
+    val unitList = units(rule)
+    val satisfiedUnits = unitList.count { unit ->
+        val memberFlags = unit.indexes.mapNotNull { satisfiedFlags.getOrNull(it) }
+        when (unit.logicType) {
+            LogicType.AND -> memberFlags.all { it }
+            LogicType.OR -> memberFlags.any { it }
+            LogicType.AT_LEAST -> {
+                val required = (unit.threshold ?: memberFlags.size).coerceIn(1, memberFlags.size)
+                memberFlags.count { it } >= required
+            }
+        }
+    }
+    return satisfiedUnits to unitList.size
+}
