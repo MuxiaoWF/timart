@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 锁屏小组件（Android 12+ 设备支持锁屏组件的形态）：只显示单球（widget_ball），
+     比桌面版更克制——无标题、无列表，仅剩余天数。复用单球 RemoteViews 布局与刷新链路。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="40dp"
+    android:minHeight="30dp"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_ball"
+    android:resizeMode="none"
+    android:widgetCategory="keyguard" />

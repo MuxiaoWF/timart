@@ -508,6 +508,15 @@ class DetailViewModel(
     private suspend fun judgeOnce(newAnswers: Map<String, String> = emptyMap()) {
         val capsule = repo.byIdSync(capsuleId) ?: return
         if (capsule.state != CapsuleState.LOCKED) return
+        // 回收站缓冲期（capsule.trash.*，契约见 CapsuleMetaKeys）内不判定不解锁：
+        // 深链误入按锁定态静默呈现，恢复后判定自然接续
+        if (runCatching {
+                container.database.metaDao()
+                    .getSync(com.muxiao.timart.data.local.db.CapsuleMetaKeys.trash(capsuleId))
+            }.getOrNull() != null
+        ) {
+            return
+        }
         val result = judge.judge(
             capsule,
             container.defaultContext(foregroundOnly = false),

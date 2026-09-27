@@ -25,7 +25,7 @@ import kotlin.math.ceil
  * **仅剩余天数元数据：标题/密文/判定结果不进 1×1**（尺寸只够一个数字）。
  * 刷新：6h 周期 Worker 收尾 [refreshAll] + 系统刷新回调（onUpdate）；点击深链详情。
  */
-class TimartWidgetBallProvider : AppWidgetProvider() {
+open class TimartWidgetBallProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val pending = goAsync()
@@ -41,10 +41,11 @@ class TimartWidgetBallProvider : AppWidgetProvider() {
         }
     }
 
-    /** Worker 收尾触发的全量刷新（与列表小组件同拍；无实例 no-op） */
-    fun refreshAll(context: Context) {
+    /** Worker 收尾触发的全量刷新（与列表小组件同拍；无实例 no-op）。
+     *  open = 锁屏变体（TimartWidgetLockProvider）复用本实现，仅替换组件类。 */
+    open fun refreshAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
-        val ids = manager.getAppWidgetIds(ComponentName(context, TimartWidgetBallProvider::class.java))
+        val ids = manager.getAppWidgetIds(ComponentName(context, widgetComponentClass()))
         if (ids.isEmpty()) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -56,6 +57,9 @@ class TimartWidgetBallProvider : AppWidgetProvider() {
             }
         }
     }
+
+    /** refreshAll 枚举实例时的组件类（锁屏变体覆写为自身） */
+    protected open fun widgetComponentClass(): Class<*> = TimartWidgetBallProvider::class.java
 
     /** 最近可预估目标剩余整天数（无可预估胶囊时 null → 静默圆点） */
     private suspend fun nearestDaysLeft(context: Context): Int? = nearestEntry(context)?.daysLeft

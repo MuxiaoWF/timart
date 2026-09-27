@@ -75,7 +75,11 @@ fun CityPickerSheet(
         lastUsed = withContext(Dispatchers.IO) { vm.lastUsedCity() }
     }
 
-    val cities = remember(keyword) { vm.searchCities(keyword) }
+    // 搜索结果异步产出（IO）：首键不会撞上码表冷加载把 JSON 解析落到主线程
+    var cities by remember { mutableStateOf<List<City>>(emptyList()) }
+    LaunchedEffect(keyword) {
+        cities = vm.searchCities(keyword)
+    }
 
     val context = LocalContext.current
     // 定位状态：未授权 → 顶部「使用当前位置」引导条；已授权 → 附近分区（无 fix 不展示）

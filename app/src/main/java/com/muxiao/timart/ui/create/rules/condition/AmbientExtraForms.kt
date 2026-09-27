@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -199,6 +200,11 @@ fun CityLocationForm(
     var picked by remember { mutableStateOf<City?>(null) }
     var radius by remember { mutableIntStateOf(30) }
 
+    // 搜索结果异步产出（IO）：避免首键撞上城市码表冷加载把 JSON 解析落到主线程
+    LaunchedEffect(keyword) {
+        results = vm.searchCities(keyword).take(8)
+    }
+
     val condition: UnlockCondition? = picked?.let {
         UnlockCondition.CityLocation(
             cityName = it.name,
@@ -216,10 +222,7 @@ fun CityLocationForm(
     ) {
         androidx.compose.foundation.text.BasicTextField(
             value = keyword,
-            onValueChange = {
-                keyword = it
-                results = vm.searchCities(it).take(8)
-            },
+            onValueChange = { keyword = it },
             singleLine = true,
             textStyle = TimartType.body.copy(color = com.muxiao.timart.ui.theme.InkPrimary),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(com.muxiao.timart.ui.theme.TimeGold),

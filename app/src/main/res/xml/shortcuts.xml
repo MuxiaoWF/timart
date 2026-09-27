@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App Shortcuts（静态声明）：桌面长按图标直达。目标在应用内运行时解析——
+     create 直达创建页；nextUnlock 由 NavGraph 解析「确定性目标时刻最近的锁定胶囊」
+     （AppContainer.nextUnlockableCapsuleId，休眠种子跳过）。extra 契约见 MainActivity。 -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="25">
+    <shortcut
+        android:shortcutId="create"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_create_short"
+        android:shortcutLongLabel="@string/shortcut_create_long"
+        tools:targetApi="25">
+        <intent
+            android:action="com.muxiao.timart.action.SHORTCUT"
+            android:targetPackage="com.muxiao.timart"
+            android:targetClass="com.muxiao.timart.MainActivity">
+            <extra
+                android:name="timart.extra.SHORTCUT_ACTION"
+                android:value="create" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="nextUnlock"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_next_short"
+        android:shortcutLongLabel="@string/shortcut_next_long"
+        tools:targetApi="25">
+        <intent
+            android:action="com.muxiao.timart.action.SHORTCUT"
+            android:targetPackage="com.muxiao.timart"
+            android:targetClass="com.muxiao.timart.MainActivity">
+            <extra
+                android:name="timart.extra.SHORTCUT_ACTION"
+                android:value="nextUnlock" />
+        </intent>
+    </shortcut>
+</shortcuts>

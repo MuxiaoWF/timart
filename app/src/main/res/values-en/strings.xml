@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher/widget/shortcut labels (system language decides; not part of in-app language switching).
+         app_name keeps the Chinese brand deliberately — same convention as l10n StringsEn.posterBrand ("时粒 TIMART"). -->
+    <string name="app_name">时粒</string>
+    <string name="widget_subtitle">Time capsules</string>
+    <!-- App Shortcuts (launcher long-press labels) -->
+    <string name="shortcut_create_short">New capsule</string>
+    <string name="shortcut_create_long">Seal a new capsule</string>
+    <string name="shortcut_next_short">Nearest unlock</string>
+    <string name="shortcut_next_long">Open the nearest unlockable capsule</string>
+</resources>

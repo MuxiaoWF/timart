@@ -52,7 +52,7 @@ object StringsZhHant : Strings {
     override val starEmptyTag = "這個標籤下還沒有內容。"
     override val starBatchDeleteTitle = "刪除選中的膠囊？"
     override val starBatchDeleteBodyFmt =
-        $$"將徹底刪除 %1$d 顆已解鎖膠囊及其全部內容與圖片，不會留下檔案，此操作不可復原。"
+        $$"將把 %1$d 顆已解鎖膠囊移入回收站，30 天內可在塵跡頁復原；到期自動徹底清除，不留檔案。"
     override val starBatchDestroyTitle = "歸為銷毀選中的膠囊？"
     override val starBatchDestroyBodyFmt =
         $$"將把 %1$d 顆已解鎖膠囊歸入塵跡檔案，內容隨之銷毀且不可復原。"
@@ -1075,5 +1075,75 @@ object StringsZhHant : Strings {
     override val setBackupPwDesc = "未設定；匯出與自動備份需要它"
     override val setBackupPwSetDesc = "已設定；只用於備份包，與主密碼無關"
     override val setAutoBackupNeedPw = "已跳過：請先設定備份密碼"
+
+    // ---- 回收站（最近刪除緩衝，30 天自動清空；塵跡頁分區） ----
+    override val trashSectionTitle = "回收站"
+    override val trashSectionDesc = "最近刪除的膠囊在此緩衝，到期自動徹底清除（可提前復原或刪除）。"
+    override val trashEntryDaysFmt = $$"約 %1$d 天後自動清除"
+    override val trashRestore = "復原"
+    override val trashDeleteNow = "徹底刪除"
+    override val trashDeleteConfirmTitle = "徹底刪除這顆膠囊？"
+    override val trashDeleteConfirmBodyFmt =
+        $$"將立即刪除《%1$s》的全部內容與圖片，不會留下檔案，此操作不可復原。"
+
+    // ---- 建立草稿自動儲存（恢復橫幅；明示草稿未加密） ----
+    override val draftFoundTitle = "有一份未完成的草稿"
+    override val draftFoundInfoFmt = $$"%1$s ·《%2$s》"
+    override val draftPlainNote = "草稿以明文儲存在本機，未加密，且不含圖片與語音；封存後才會加密。"
+    override val draftRestore = "恢復草稿"
+    override val draftDiscard = "捨棄"
+    override val draftUntitled = "未命名"
+
+    // ---- 遺產移交嚮導（移交包 = 加密贈予包 + 開啟指引圖） ----
+    override val setHandover = "遺產移交"
+    override val setHandoverDesc = "把一顆膠囊封進移交包，連同一頁開啟指引一起交給信任的人"
+    override val handoverTitle = "遺產移交"
+    override val handoverPickInfo = "選擇要移交的膠囊。移交包只含這一顆；生成後請自行轉交給信任的人妥善保管。"
+    override val handoverPickEmpty = "還沒有可移交的膠囊（已銷毀或空的膠囊不可移交）。"
+    override val handoverConfirmInfo = "將生成兩份檔案：加密的移交包（.zip）與一頁開啟指引圖（.jpg）。接收方憑「安裝時粒 + 移交包 + 你告知的密碼」即可開啟。"
+    override val handoverSealAction = "生成交接包"
+    override val handoverDoneInfo = "移交包已生成，請轉交給你信任的人："
+    override val handoverDoneNote = "建議當面轉交或經可靠渠道發送，並另行告知開啟密碼。"
+    override val handoverShare = "分享移交包"
+    override val handoverShareTitle = "時粒移交包"
+    override val handoverShareHint = "已喚起分享面板，請選擇轉交方式"
+    override val handoverStep1 = "在手機上安裝「時粒」應用。"
+    override val handoverStep2 = "開啟時粒，進入「設定 → 贈予匯入」。"
+    override val handoverStep3 = "選擇收到的移交包檔案（.zip）。"
+    override val handoverStep4 = "輸入移交人告知的密碼，膠囊即進入你的時軌。"
+    override val handoverNoteLine = "開啟密碼請向移交人取得；本圖不含密碼。"
+    override val handoverGuideBrand = "時粒 · 移交"
+    override val handoverGuideSection = "開啟指引"
+    override val handoverUnlockSection = "解鎖條件"
+    override val handoverFooterLine = "這是一份留給未來的信。"
+
+    // ---- 紀念冊按年合訂（海報頁縱向拼接分卷匯出） ----
+    override val setAlbumExport = "紀念冊合訂"
+    override val setAlbumExportDesc = "把某一年開啟的膠囊合成一本紀念冊長圖，分卷匯出"
+    override val albumTitle = "紀念冊合訂"
+    override val albumNeedSession = "生成紀念冊需要解密內容：請先在應用內解鎖密碼會話（例如開啟任意一顆已解鎖的膠囊）後再來。"
+    override val albumNoCapsule = "還沒有已開啟的膠囊——開啟第一顆後就能合訂紀念冊。"
+    override val albumPickYear = "選擇年份"
+    override val albumYearInfoFmt = $$"%1$d 年共 %2$d 顆已開啟"
+    override val albumPagingNote = "按開啟時間排版：封面 + 每顆一頁海報，縱向拼接、自動分卷。"
+    override val albumCompose = "合成紀念冊"
+    override val albumComposingFmt = $$"正在合成… %1$d / %2$d 頁"
+    override val albumDone = "紀念冊已生成"
+    override val albumShare = "分享紀念冊"
+    override val albumFail = "合成失敗，請重試"
+    override val albumCoverSubtitle = "時粒紀念冊"
+
+    // ---- ics 日曆匯出（確定性時間條件 → 使用者日曆） ----
+    override val setCalendarExport = "匯出到日曆（.ics）"
+    override val setCalendarExportDesc = "把等待中膠囊的可推算解鎖日期寫進你的日曆"
+    override val icsDialogTitle = "匯出到日曆"
+    override val icsDialogInfo = $$"將匯出 %1$d 個待解日期為 .ics 日曆檔案，可匯入系統日曆或其他日曆應用。"
+    override val icsDialogNote = "只包含可靜態推算的時間類條件（固定日期/時刻、每年紀念日、農曆節氣月相等）；感測器、挑戰類不可預估，不會出現。"
+    override val icsEventSummaryFmt = $$"時粒待解 ·《%1$s》"
+    override val icsCalendarName = "時粒待解"
+    override val icsExportAction = "匯出"
+    override val icsExportDone = "已匯出日曆檔案"
+    override val icsExportFail = "匯出失敗，請重試"
+    override val icsEmpty = "目前沒有可預估的待解日期。"
 
 }

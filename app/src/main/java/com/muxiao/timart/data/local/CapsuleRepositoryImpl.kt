@@ -34,6 +34,9 @@ class CapsuleRepositoryImpl(private val dao: CapsuleDao) : CapsuleRepository {
     override suspend fun allLockedSync(): List<Capsule> =
         dao.allLocked().map(CapsuleMapper::toDomain)
 
+    override suspend fun allTrashedSync(): List<Capsule> =
+        dao.allTrashed().map(CapsuleMapper::toDomain)
+
     override suspend fun insert(capsule: Capsule) = dao.insert(CapsuleMapper.toEntity(capsule))
 
     /** 更新（layoutX/Y 随领域模型往返；destroyTimestamp 不在领域模型上，按库中既有值保留） */

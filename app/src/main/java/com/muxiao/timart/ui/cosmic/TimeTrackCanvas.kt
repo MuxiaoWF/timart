@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -58,6 +60,9 @@ import kotlin.math.sqrt
  * 手势与主页面滑动切换的分工：单指拖动不消费（让 HorizontalPager 完成翻页），
  * 仅双指捏合/平移被画布消费；长按拖拽球体在长按触发后照常接管。
  *
+ * 手势状态（zoom/pan/拖拽）内聚本画布：逐帧更新只触发重绘与锚点流重同步，
+ * 不上溯 HomeScreen 逐帧重组，也不以高频值为 pointerInput/LaunchedEffect key 逐帧重启。
+ *
  * 粒子层由共享 [ParticleEngine]（ParticleCanvas 背景层 + BREATHE 锚点）承担，
  * 本画布每帧同步锚点屏幕坐标与状态色（预分配通道，零分配）。
  * 锚点坐标系约定：引擎在宿主 ParticleCanvas 的**画布局部坐标系**绘制，
@@ -69,8 +74,6 @@ import kotlin.math.sqrt
 fun TimeTrackCanvas(
     capsules: List<Capsule>,
     engine: ParticleEngine,
-    zoom: Float,
-    pan: Offset,
     focusId: String?,
     unsealedIds: Set<String>,
     pendingIds: Set<String>,
@@ -84,7 +87,6 @@ fun TimeTrackCanvas(
      * 与「即将达成」PENDING 的金色渐变段区分开——成熟只给温度，不冒充可开启）。
      */
     satisfactionRatios: Map<String, Float> = emptyMap(),
-    onTransform: (panDelta: Offset, zoomDelta: Float) -> Unit,
     onCapsuleTap: (id: String, firstUnlock: Boolean) -> Unit,
     onLayoutChange: (id: String, nx: Float, ny: Float, finished: Boolean) -> Unit,
     parallax: ParallaxSensor? = null,
@@ -102,6 +104,17 @@ fun TimeTrackCanvas(
     // 画布原点（根坐标）：引擎粒子在 ParticleCanvas（全屏浮层）坐标系渲染，
     // 锚点若直接用画布局部坐标会整体错位一个页眉高度，同步时必须加上本原点
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+
+    // ---- 缩放/平移（状态内聚本画布）----
+    // 手势逐帧更新只触发本画布重绘/锚点流重同步：绘制相位经状态读取不重组，
+    // HomeScreen 不再组合期读取 zoom/pan（与页签切换卡顿同源的逐帧重组问题）
+    var zoomState by remember { mutableFloatStateOf(1f) }
+    var panState by remember { mutableStateOf(Offset.Zero) }
+    // 胶囊增多时自动收拢：最外轨超出画布则把 zoom 压到刚好全量可见（只缩不放，手动缩放仍自由）
+    LaunchedEffect(capsules.size) {
+        val fit = TimeTrackLayout.fitZoom(capsules.size)
+        if (zoomState > fit) zoomState = fit
+    }
 
     // 视差幅度（px）：球体层最大（近景）、星野反向（远景）、星云居中
     val orbParallaxPx = with(density) { ORB_PARALLAX_DP.toPx() }
@@ -173,17 +186,19 @@ fun TimeTrackCanvas(
     val moteSizePx = remember(density) { with(density) { 2.2.dp.toPx() } }
     val titleGapPx = remember(density) { with(density) { 6.dp.toPx() } }
 
-    // 布局计算（星图坐标系：画布中心为原点参考，已含 zoom）
+    // 布局计算（星图坐标系：画布中心为原点参考，已含 zoom）。
+    // 拖拽已移出布局路径：被拖球位置由绘制/命中/锚点三处的覆盖值实时叠加（dragOverride），
+    // 布局只随低频输入重算；zoom 仍为 key（捏合逐帧 O(N) 纯数学，无协程重启/持久化连锁）
     val baseRadiusPx = if (canvasSize == IntSize.Zero) {
         0f
     } else {
         minOf(canvasSize.width, canvasSize.height) / 2f - with(density) { 24.dp.toPx() }
     }
-    val layout = remember(capsules, canvasSize, zoom, focusId, dragId, dragFinger, blindMaskTitle) {
+    val layout = remember(capsules, canvasSize, zoomState, focusId, blindMaskTitle) {
         if (canvasSize == IntSize.Zero || baseRadiusPx <= 0f) {
             TimeTrackLayout.TrackLayoutResult(emptyList(), emptyList())
         } else {
-            val result = TimeTrackLayout.layout(
+            TimeTrackLayout.layout(
                 items = capsules
                     .filter { it.state != CapsuleState.DESTROYED }
                     .map {
@@ -199,31 +214,23 @@ fun TimeTrackCanvas(
                 centerX = canvasSize.width / 2f,
                 centerY = canvasSize.height / 2f,
                 baseRadius = baseRadiusPx,
-                zoom = zoom,
+                zoom = zoomState,
                 focusId = focusId,
             )
-            // 拖拽中的球体覆盖为手指位置（星图空间），即时反馈
-            val id = dragId
-            if (id != null) {
-                val shift = orbShift(parallax, orbParallaxPx)
-                TimeTrackLayout.TrackLayoutResult(
-                    capsules = result.capsules.map {
-                        if (it.id == id) it.copy(x = dragFinger.x - pan.x - shift.x, y = dragFinger.y - pan.y - shift.y) else it
-                    },
-                    orbitRadii = result.orbitRadii,
-                )
-            } else {
-                result
-            }
         }
     }
 
     // 星座连线端点查找（draw 相位零分配：随 layout 记忆，不每帧重建）
     val placedById = remember(layout) { layout.capsules.associateBy { it.id } }
+    // 手势命中用的实时布局镜像：pointerInput 不再以 pan/zoom/layout 为 key，
+    // 命中测试经状态读取始终拿到最新布局（捏合/平移中点击也落点准确）
+    val currentLayout by rememberUpdatedState(layout)
 
     /** 屏幕坐标 → 归一化星图坐标（±1.5 钳制，与 TimeTrackLayout 自定义覆盖约定一致） */
     fun normalized(screen: Offset): Pair<Float, Float> {
         val shift = orbShift(parallax, orbParallaxPx)
+        val zoom = zoomState
+        val pan = panState
         val denom = (baseRadiusPx * TimeTrackLayout.clampZoom(zoom)).coerceAtLeast(1f)
         val nx = ((screen.x - pan.x - shift.x - canvasSize.width / 2f) / denom).coerceIn(-1.5f, 1.5f)
         val ny = ((screen.y - pan.y - shift.y - canvasSize.height / 2f) / denom).coerceIn(-1.5f, 1.5f)
@@ -232,20 +239,24 @@ fun TimeTrackCanvas(
 
     // 引擎锚点同步（BREATHE 内流粒子跟随球体；视差倾斜实时重同步）。
     // 锚点用「本画布相对粒子画布的原点差」换算成粒子画布局部坐标：
-    // delta = rootOrigin − overlayOrigin（状态栏 + 页眉高度此前被误计进偏移）
-    LaunchedEffect(layout, pan, engine, parallax, rootOrigin, overlayOrigin, resync) {
+    // delta = rootOrigin − overlayOrigin（状态栏 + 页眉高度此前被误计进偏移）。
+    // 平移/缩放/拖拽不再作为 effect key（逐帧重启改为 snapshotFlow 状态流重同步）
+    LaunchedEffect(layout, engine, parallax, rootOrigin, overlayOrigin, resync) {
         fun syncAnchors() {
             val shift = orbShift(parallax, orbParallaxPx)
             val dx = rootOrigin.x - overlayOrigin.x
             val dy = rootOrigin.y - overlayOrigin.y
+            val pan = panState
             engine.setOrbCount(layout.capsules.size)
             layout.capsules.forEachIndexed { i, p ->
                 val capsuleState = capsulesById[p.id]?.state ?: CapsuleState.LOCKED
+                // 拖拽中的球实时跟手：锚点 = 原点差 + 手指位置（绘制覆盖式的等价化简）
+                val isDragged = p.id == dragId
                 engine.setOrbAnchor(
                     index = i,
-                    x = dx + p.x + pan.x + shift.x,
-                    y = dy + p.y + pan.y + shift.y,
-                    radius = orbitDotRadius(p.orbitRadius, zoom, density),
+                    x = if (isDragged) dx + dragFinger.x else dx + p.x + pan.x + shift.x,
+                    y = if (isDragged) dy + dragFinger.y else dy + p.y + pan.y + shift.y,
+                    radius = orbitDotRadius(p.orbitRadius, zoomState, density),
                     colorArgb = dustWhitened(
                         when {
                             p.id in unsealedIds -> ParticleEngine.TIME_GOLD
@@ -261,17 +272,27 @@ fun TimeTrackCanvas(
             }
         }
         syncAnchors()
-        if (parallax != null) {
-            snapshotFlow { parallax.tilt }.collect { syncAnchors() }
-        }
+        // 平移/缩放/拖拽/视差任一变化即重同步（snapshotFlow 按相等去重，不重启协程）
+        snapshotFlow {
+            AnchorKey(
+                shift = orbShift(parallax, orbParallaxPx),
+                pan = panState,
+                zoom = zoomState,
+                dragId = dragId,
+                dragFinger = if (dragId != null) dragFinger else Offset.Zero,
+            )
+        }.collect { syncAnchors() }
     }
 
     // 条件新满足 → PENDING 向心单发（在该球锚点；300–600ms，不持续）
     var firedPending by remember { mutableStateOf(emptySet<String>()) }
-    LaunchedEffect(pendingIds, layout, pan, rootOrigin, overlayOrigin) {
+    LaunchedEffect(pendingIds, layout, rootOrigin, overlayOrigin) {
         val shift = orbShift(parallax, orbParallaxPx)
         val dx = rootOrigin.x - overlayOrigin.x
         val dy = rootOrigin.y - overlayOrigin.y
+        // 触发时刻的平移/缩放快照（单发脉冲锚定当帧位置；pan 不再作为 key 逐帧重启）
+        val pan = panState
+        val zoom = zoomState
         pendingIds.filter { it !in firedPending }.forEach { id ->
             val placed = layout.capsules.firstOrNull { it.id == id } ?: return@forEach
             engine.fire(
@@ -288,17 +309,23 @@ fun TimeTrackCanvas(
     fun hitTest(position: Offset): PlacedHit? {
         val shift = orbShift(parallax, orbParallaxPx)
         val now = System.nanoTime() / 1_000_000_000.0
+        val pan = panState
+        val zoom = zoomState
+        // 拖拽中的球以手指实时位置参与命中（与绘制覆盖同式）
+        val dragPos = dragId?.let { Offset(dragFinger.x - pan.x - shift.x, dragFinger.y - pan.y - shift.y) }
         val p = position - pan - shift
         var best: PlacedHit? = null
-        for (c in layout.capsules) {
+        for (c in currentLayout.capsules) {
             // 命中测试与绘制共用同一漂浮偏移，保证点得准
-            val dy = c.y + orbBobY(c.id, dragId, now, density)
-            val dx = p.x - c.x
-            val dyy = p.y - dy
+            val isDragged = c.id == dragId && dragPos != null
+            val cx = if (isDragged) dragPos.x else c.x
+            val cy = (if (isDragged) dragPos.y else c.y) + orbBobY(c.id, dragId, now, density)
+            val dx = p.x - cx
+            val dyy = p.y - cy
             val d = sqrt(dx * dx + dyy * dyy)
             val touch = orbitDotRadius(c.orbitRadius, zoom, density) + with(density) { 16.dp.toPx() }
             if (d <= touch && (best == null || d < best.dist)) {
-                best = PlacedHit(c.id, d, c.x, dy)
+                best = PlacedHit(c.id, d, cx, cy)
             }
         }
         return best
@@ -307,7 +334,9 @@ fun TimeTrackCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(layout, pan, zoom) {
+            // 手势 key 只放低频输入（canvasSize/unsealedIds/Unit）：pan/zoom/drag 均经状态读取，
+            // 不再以高频值为 key 逐帧取消重启手势检测（此前捏合/平移中每帧重建手势协程）
+            .pointerInput(unsealedIds, canvasSize) {
                 detectTapGestures { position ->
                     hitTest(position)?.let { hit ->
                         // 拾起收束由详情页侧承担（LockedStateView 入口脉冲），此处只上报命中
@@ -315,7 +344,7 @@ fun TimeTrackCanvas(
                     }
                 }
             }
-            .pointerInput(layout, pan, zoom) {
+            .pointerInput(canvasSize) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { position ->
                         hitTest(position)?.let { hit ->
@@ -323,12 +352,13 @@ fun TimeTrackCanvas(
                             dragFinger = position
                         }
                     },
+                    // 拖拽过程只更新手指位置（绘制/锚点经状态跟随）；松手才持久化星图坐标，
+                    // 不再逐帧回调 onLayoutChange（落库由 finished=true 单次承担）
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        val id = dragId ?: return@detectDragGesturesAfterLongPress
-                        dragFinger += dragAmount
-                        val (nx, ny) = normalized(dragFinger)
-                        onLayoutChange(id, nx, ny, false)
+                        if (dragId != null) {
+                            dragFinger += dragAmount
+                        }
                     },
                     onDragEnd = {
                         val id = dragId ?: return@detectDragGesturesAfterLongPress
@@ -339,8 +369,9 @@ fun TimeTrackCanvas(
                     onDragCancel = { dragId = null },
                 )
             }
-            // 双指捏合缩放 / 平移（Initial 相位消费，优先级高于页面翻页）；单指让位给 pager
-            .pointerInput(onTransform) {
+            // 双指捏合缩放 / 平移（Initial 相位消费，优先级高于页面翻页）；单指让位给 pager。
+            // 缩放/平移状态内聚画布（zoomState/panState），key=Unit 不再随 lambda 身份重启
+            .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     do {
@@ -349,7 +380,8 @@ fun TimeTrackCanvas(
                             val zoomChange = event.calculateZoom()
                             val panChange = event.calculatePan()
                             if (zoomChange != 1f || panChange != Offset.Zero) {
-                                onTransform(panChange, zoomChange)
+                                zoomState = TimeTrackLayout.clampZoom(zoomState * zoomChange)
+                                panState += panChange
                                 event.changes.forEach { if (it.pressed) it.consume() }
                             }
                         }
@@ -399,8 +431,13 @@ fun TimeTrackCanvas(
             }
         }
 
+        // 拖拽覆盖（draw 相位读取状态，仅重绘不重组）：被拖球实时跟手（含连线端点），
+        // 布局本身不随拖拽重算——布局空间位置 = 手指 − pan − 球体层视差
+        val dragOverride = dragId?.let {
+            Offset(dragFinger.x - panState.x - orbShiftX, dragFinger.y - panState.y - orbShiftY)
+        }
         // 轨道细线 + 球体（星图坐标 + pan 平移 + 球体层视差；zoom 已计入 layout）
-        withTransform({ translate(pan.x + orbShiftX, pan.y + orbShiftY) }) {
+        withTransform({ val pan = panState; translate(pan.x + orbShiftX, pan.y + orbShiftY) }) {
             layout.orbitRadii.forEach { r ->
                 drawCircle(
                     color = TrackHairline,
@@ -416,21 +453,30 @@ fun TimeTrackCanvas(
                 val prereq = placedById[prereqId] ?: return@forEach
                 val lit = childId in unsealedIds ||
                     capsulesById[childId]?.state == CapsuleState.UNLOCKED
+                // 被拖球作为连线端点时同样实时跟手
+                val sx = if (childId == dragId && dragOverride != null) dragOverride.x else child.x
+                val sy = if (childId == dragId && dragOverride != null) dragOverride.y else child.y
+                val ex = if (prereqId == dragId && dragOverride != null) dragOverride.x else prereq.x
+                val ey = if (prereqId == dragId && dragOverride != null) dragOverride.y else prereq.y
                 drawLine(
                     color = if (lit) CONSTELLATION_LIT else CONSTELLATION_DIM,
-                    start = Offset(child.x, child.y),
-                    end = Offset(prereq.x, prereq.y),
+                    start = Offset(sx, sy),
+                    end = Offset(ex, ey),
                     strokeWidth = if (lit) 1.6f else 1.2f,
                 )
             }
-            layout.capsules.forEach { p ->
+            layout.capsules.forEach { placed ->
+                // 被拖球以手指覆盖位置绘制（布局空间），其余球走布局坐标——统一形参后逐处沿用
+                val p = if (placed.id == dragId && dragOverride != null) {
+                    placed.copy(x = dragOverride.x, y = dragOverride.y)
+                } else placed
                 val state = capsulesById[p.id]?.state ?: CapsuleState.LOCKED
                 val isUnsealed = p.id in unsealedIds
                 val isPending = p.id in pendingIds
                 // 已读金球余温降档：金相保留（身份不变），亮度/光晕/环带/尘埃整体弱化——
                 // 金球三档：UNSEAL 待点击（最亮）> 未读金球（满亮度，引导开启）> 已读（余温，不再催点）
                 val isReadGold = !isUnsealed && state == CapsuleState.UNLOCKED && p.id in readIds
-                val r = orbitDotRadius(p.orbitRadius, zoom, density)
+                val r = orbitDotRadius(p.orbitRadius, zoomState, density)
                 val coreColor = when {
                     isUnsealed -> TimeGold
                     state == CapsuleState.UNLOCKED -> if (isReadGold) ReadGoldDraw else TimeGold
@@ -563,6 +609,15 @@ private fun orbBobY(id: String, dragId: String?, nowSec: Double, density: androi
 }
 
 private data class PlacedHit(val id: String, val dist: Float, val cx: Float, val cy: Float)
+
+/** 锚点重同步流 key：任一分量变化 → 重写引擎锚点（snapshotFlow 按相等去重，不重启协程） */
+private data class AnchorKey(
+    val shift: Offset,
+    val pan: Offset,
+    val zoom: Float,
+    val dragId: String?,
+    val dragFinger: Offset,
+)
 
 /** 球半径随轨道微缩（外圈略小，视觉聚拢），并随 zoom（≤1）等比联动：
  *  自动收拢/捏合缩小时轨道与球整体等比缩放，圈距压缩不致球体压叠；zoom ≥1 保持原大小 */

@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 仅保留桌面图标名（系统语言决定，不参与应用内语言切换）。
+    <!-- 仅保留桌面图标名 / 小组件与桌面快捷方式标签（系统语言决定，不参与应用内语言切换）。
          其余全部界面文案迁移至 com.muxiao.timart.l10n.Strings（简/繁/英三词表）。 -->
     <string name="app_name">时粒</string>
     <!-- 桌面小组件副标题（widget_timart.xml；系统语言决定，不参与应用内语言切换） -->
     <string name="widget_subtitle">时间胶囊</string>
     <!-- 单球小组件无临近可解时的静默圆点（widget_ball.xml；纯符号不参与翻译） -->
     <string name="widget_ball_placeholder" translatable="false">·</string>
+    <!-- App Shortcuts（桌面长按图标；系统语言决定，不参与应用内语言切换，英文见 values-en） -->
+    <string name="shortcut_create_short">新建胶囊</string>
+    <string name="shortcut_create_long">封存一颗新胶囊</string>
+    <string name="shortcut_next_short">最近可解</string>
+    <string name="shortcut_next_long">打开最近可解的一颗</string>
 </resources>

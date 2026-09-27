@@ -22,10 +22,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.clickable
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,34 +95,28 @@ fun HomeScreen(
     // 转场重叠期不会在新页面留残影（ParticleCanvas owner 过滤）——尘随本页淡出自然收场，
     // 离场后由 onDispose 统一清场。若在此提前 setState(IDLE)，退场动画开头尘会瞬间消失。
 
-    var zoom by remember { mutableFloatStateOf(1f) }
-
-    // 胶囊增多时自动收拢：最外轨超出画布则把 zoom 压到刚好全量可见（只缩不放，手动缩放仍自由）
-    LaunchedEffect(capsules.size) {
-        val fit = TimeTrackLayout.fitZoom(capsules.size)
-        if (zoom > fit) zoom = fit
-    }
-
-    var pan by remember { mutableStateOf(Offset.Zero) }
+    // 缩放/平移状态已内聚至 TimeTrackCanvas：手势逐帧更新不再重组 HomeScreen（卡顿修复）
     var focusId by remember { mutableStateOf<String?>(null) }
 
     // 陀螺仪视差（设置页开关；页面重入组合时按最新开关值决定是否监听）
     val context = androidx.compose.ui.platform.LocalContext.current
     val parallax = remember { com.muxiao.timart.utils.sensor.ParallaxSensor(context) }
 
-    // 生命周期：进页 300ms 尘粒复位 + 背景开启；ON_PAUSE 背景暂停；离页清空 BREATHE 归属
+    // 生命周期：进页 300ms 尘粒复位 + 背景开启；ON_PAUSE 背景暂停；离页清空 BREATHE 归属。
+    // 全量重判（onScreenResumed）只挂生命周期：pager 切回本页不再重跑——判定循环与翻页
+    // 动画帧抢 CPU、收尾状态更新又落在落定帧，是切页卡顿来源之一；条件满足刷新由
+    // Activity ON_RESUME 全链判定、预览卡 30s 周期与 6h Worker 覆盖
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, engine, pageActive) {
-        val startParallax = { if (com.muxiao.timart.utils.RuntimeSettings.gyroEnabled && pageActive) parallax.start() }
-        startParallax()
+    // 生命周期闭包读实时激活态：本效果不随 pageActive 重启，rememberUpdatedState 防旧值捕获
+    val activePageState by rememberUpdatedState(pageActive)
+    DisposableEffect(lifecycleOwner, engine) {
         engine.resume()
-        engine.setBackground(pageActive, backgroundOwner)
         vm.onScreenResumed()
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
-                    startParallax()
-                    engine.setBackground(pageActive, backgroundOwner)
+                    if (com.muxiao.timart.utils.RuntimeSettings.gyroEnabled && activePageState) parallax.start()
+                    engine.setBackground(activePageState, backgroundOwner)
                     resumeTick++
                     vm.onScreenResumed()
                 }
@@ -141,6 +135,21 @@ fun HomeScreen(
             engine.setBackground(false, backgroundOwner)
             // 交还 BREATHE 归属：清空循环尘，星屑不再滞留到其他 pager 页
             engine.setState(MotionState.IDLE)
+        }
+    }
+
+    // 页面激活态：切离停视差、交还背景，切回按最新开关重启视差（不重跑全量判定，见上）
+    DisposableEffect(engine, pageActive) {
+        engine.resume()
+        if (com.muxiao.timart.utils.RuntimeSettings.gyroEnabled && pageActive) {
+            parallax.start()
+        } else {
+            parallax.stop()
+        }
+        engine.setBackground(pageActive, backgroundOwner)
+        onDispose {
+            parallax.stop()
+            engine.setBackground(false, backgroundOwner)
         }
     }
 
@@ -203,8 +212,6 @@ fun HomeScreen(
                 TimeTrackCanvas(
                     capsules = capsules,
                     engine = engine,
-                    zoom = zoom,
-                    pan = pan,
                     focusId = focusId,
                     unsealedIds = unsealed,
                     pendingIds = pending,
@@ -212,10 +219,6 @@ fun HomeScreen(
                     satisfactionRatios = satisfaction,
                     parallax = parallax,
                     tier = container.particleTier,
-                    onTransform = { panDelta, zoomDelta ->
-                        zoom = TimeTrackLayout.clampZoom(zoom * zoomDelta)
-                        pan += panDelta
-                    },
                     onCapsuleTap = { id, firstUnlock ->
                         focusId = id
                         if (firstUnlock) vm.consumeUnsealed(id)

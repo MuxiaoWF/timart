@@ -154,7 +154,8 @@ class CapsuleCrudUseCase(
 
     /**
      * 销毁：立即物理删除密文与图片文件（不可逆）→ 状态 DESTROYED + 销毁时间 → 写入销毁元记录。
-     * 调用前 UI 必须完成二次确认，不存在静默销毁路径。
+     * 调用前 UI 必须完成二次确认，不存在静默销毁路径。回收站缓冲不适用于本路径
+     * （「归为销毁」是用户显式选择的终局，与「删除」的语义差异见 AGENTS.md §3.10）。
      */
     suspend fun markDestroyed(id: String) {
         val capsule = capsules.byIdSync(id) ?: return
@@ -173,14 +174,38 @@ class CapsuleCrudUseCase(
                 destroyedAt = System.currentTimeMillis(),
             ),
         )
+        // 4. 销毁是终局：清掉回收站标记（若此前在缓冲期内，档案行无需再被回收站引用）
+        runCatching { metaDao?.delete(com.muxiao.timart.data.local.db.CapsuleMetaKeys.trash(id)) }
     }
 
-    /** 删除胶囊本体（不写销毁档案，用于清理未完成流程的草稿残留） */
+    /**
+     * 删除胶囊 = 移入回收站（最近删除缓冲，[TRASH_RETENTION_MILLIS] 后到期自动物理清空）。
+     * 缓冲期内本体、密文、图片、meta 均保持原样（可经 [restoreFromTrash] 恢复）；
+     * 列表 / 判定 / 备份导出由 CapsuleDao 的回收站排除查询统一不可见。
+     * 键契约 `capsule.trash.<id>`（值 = 移入时刻）见 CapsuleMetaKeys。
+     */
     suspend fun delete(id: String) {
+        if (capsules.byIdSync(id) == null) return
+        metaDao?.put(
+            com.muxiao.timart.data.local.db.entity.MetaEntity(
+                com.muxiao.timart.data.local.db.CapsuleMetaKeys.trash(id),
+                System.currentTimeMillis().toString(),
+            ),
+        )
+    }
+
+    /** 从回收站恢复：清除缓冲标记，胶囊回到原状态（锁定/已解锁）与各列表 */
+    suspend fun restoreFromTrash(id: String) {
+        metaDao?.delete(com.muxiao.timart.data.local.db.CapsuleMetaKeys.trash(id))
+    }
+
+    /** 立即彻底删除（回收站页「彻底删除」或到期清空；物理删除，不写销毁档案） */
+    suspend fun deleteNow(id: String) {
         capsules.delete(id)
         imageStore.deleteDir(id)
         audioStore?.deleteDir(id)
-        // 物理删除时清掉影响分组语义的 meta：拼图占位（防死组）、嵌套归属（防幽灵休眠引用）。
+        // 物理删除时清掉影响分组语义的 meta：拼图占位（防死组）、嵌套归属（防幽灵休眠引用）、
+        // 回收站标记（防幽灵缓冲条目）。
         // 回信 / 生平刻度 / 信纸样式 / 已读标记刻意保留（与既有行为一致，删除不留档案但元痕迹无害）
         runCatching {
             val dao = metaDao ?: return
@@ -189,10 +214,34 @@ class CapsuleCrudUseCase(
                 keys.puzzle(id),
                 keys.seedOf(id),
                 keys.sprout(id),
+                keys.trash(id),
             ).forEach { key ->
                 runCatching { dao.delete(key) }
             }
         }
+    }
+
+    /**
+     * 回收站到期清空：移入超过 [retentionMillis] 的胶囊物理删除（不写销毁档案——数据已被
+     * 用户显式删除过一次，清空是缓冲期终点而非新的销毁决策）。MainActivity ON_RESUME 周期调用。
+     * @return 本次物理删除的胶囊数
+     */
+    suspend fun purgeExpiredTrash(
+        now: Long = System.currentTimeMillis(),
+        retentionMillis: Long = TRASH_RETENTION_MILLIS,
+    ): Int {
+        val dao = metaDao ?: return 0
+        val entries = runCatching {
+            dao.listLike(com.muxiao.timart.data.local.db.CapsuleMetaKeys.TRASH_KEY_PREFIX)
+        }.getOrDefault(emptyList())
+        var purged = 0
+        for (entry in entries) {
+            val deletedAt = entry.value.toLongOrNull() ?: continue
+            if (now - deletedAt < retentionMillis) continue
+            deleteNow(entry.key.removePrefix(com.muxiao.timart.data.local.db.CapsuleMetaKeys.TRASH_KEY_PREFIX))
+            purged++
+        }
+        return purged
     }
 }
 
@@ -202,6 +251,9 @@ private fun crudMsgs(lang: Lang) = when (lang) {
     Lang.ZH_HANT -> "密碼未設定或未解鎖，無法封存"
     Lang.EN -> "Passphrase not set or not unlocked; cannot seal"
 }
+
+/** 回收站缓冲期（最近删除自动清空窗口）：30 天 */
+const val TRASH_RETENTION_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
 
 private fun shardTextOnlyMsgs(lang: Lang) = when (lang) {
     Lang.ZH_HANS -> "分片胶囊仅支持纯文本，请移除照片与声音留言"

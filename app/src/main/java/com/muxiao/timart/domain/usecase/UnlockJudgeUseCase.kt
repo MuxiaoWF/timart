@@ -86,6 +86,8 @@ class UnlockJudgeUseCase {
      * 每轮全量判定都会对已满足条件重复回调，去重责任在回调侧。默认空实现。
      * [shouldJudge]：跳过不该参与周期判定的胶囊（嵌套种子的休眠态，体验储备池 §3——
      * 藏着的种子条件即便已达成也不能在萌芽前解锁）；默认全量判定。
+     * [onJudged]：单胶囊判定完成即回调（satisfied/total = 条件满足计数，overallOk = 整体达标）；
+     * 前台判定链借此聚合满足比快照供首页 UI 复用（同一 ON_RESUME 不做二次全量判定），默认空实现。
      */
     suspend fun judgeAllLocked(
         ctx: ConditionContext,
@@ -94,6 +96,7 @@ class UnlockJudgeUseCase {
         onUnlocked: (Capsule) -> Unit = {},
         onConditionSatisfied: (capsuleId: String, index: Int, condition: UnlockCondition) -> Unit = { _, _, _ -> },
         shouldJudge: (Capsule) -> Boolean = { _ -> true },
+        onJudged: (capsuleId: String, satisfied: Int, total: Int, overallOk: Boolean) -> Unit = { _, _, _, _ -> },
     ) {
         for (capsule in repo.allLockedSync()) {
             if (!shouldJudge(capsule)) continue
@@ -101,6 +104,12 @@ class UnlockJudgeUseCase {
             result.items.forEachIndexed { index, item ->
                 if (item.satisfied) onConditionSatisfied(capsule.id, index, item.condition)
             }
+            onJudged(
+                capsule.id,
+                result.items.count { it.satisfied },
+                result.items.size,
+                result.overallOk,
+            )
             if (result.overallOk) {
                 val now = ctx.time.nowMillis()
                 repo.updateState(capsule.id, CapsuleState.UNLOCKED, now)

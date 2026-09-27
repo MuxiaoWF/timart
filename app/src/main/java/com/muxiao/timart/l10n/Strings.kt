@@ -1247,4 +1247,73 @@ interface Strings {
     val setBackupPwDesc: String
     val setBackupPwSetDesc: String
     val setAutoBackupNeedPw: String
+
+    // ---- 回收站（最近删除缓冲，30 天自动清空；尘迹页分区） ----
+    val trashSectionTitle: String
+    val trashSectionDesc: String
+    val trashEntryDaysFmt: String
+    val trashRestore: String
+    val trashDeleteNow: String
+    val trashDeleteConfirmTitle: String
+    val trashDeleteConfirmBodyFmt: String
+
+    // ---- 创建草稿自动保存（恢复横幅；明示草稿未加密） ----
+    val draftFoundTitle: String
+    val draftFoundInfoFmt: String
+    val draftPlainNote: String
+    val draftRestore: String
+    val draftDiscard: String
+    val draftUntitled: String
+
+    // ---- 遗产移交向导（移交包 = 加密赠予包 + 开启指引图） ----
+    val setHandover: String
+    val setHandoverDesc: String
+    val handoverTitle: String
+    val handoverPickInfo: String
+    val handoverPickEmpty: String
+    val handoverConfirmInfo: String
+    val handoverSealAction: String
+    val handoverDoneInfo: String
+    val handoverDoneNote: String
+    val handoverShare: String
+    val handoverShareTitle: String
+    val handoverShareHint: String
+    val handoverStep1: String
+    val handoverStep2: String
+    val handoverStep3: String
+    val handoverStep4: String
+    val handoverNoteLine: String
+    val handoverGuideBrand: String
+    val handoverGuideSection: String
+    val handoverUnlockSection: String
+    val handoverFooterLine: String
+
+    // ---- 纪念册按年合订（海报页纵向拼接分卷导出） ----
+    val setAlbumExport: String
+    val setAlbumExportDesc: String
+    val albumTitle: String
+    val albumNeedSession: String
+    val albumNoCapsule: String
+    val albumPickYear: String
+    val albumYearInfoFmt: String
+    val albumPagingNote: String
+    val albumCompose: String
+    val albumComposingFmt: String
+    val albumDone: String
+    val albumShare: String
+    val albumFail: String
+    val albumCoverSubtitle: String
+
+    // ---- ics 日历导出（确定性时间条件 → 用户日历） ----
+    val setCalendarExport: String
+    val setCalendarExportDesc: String
+    val icsDialogTitle: String
+    val icsDialogInfo: String
+    val icsDialogNote: String
+    val icsEventSummaryFmt: String
+    val icsCalendarName: String
+    val icsExportAction: String
+    val icsExportDone: String
+    val icsExportFail: String
+    val icsEmpty: String
 }

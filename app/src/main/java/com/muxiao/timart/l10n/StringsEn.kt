@@ -52,7 +52,7 @@ object StringsEn : Strings {
     override val starEmptyTag = "Nothing under this tag yet."
     override val starBatchDeleteTitle = "Delete selected capsules?"
     override val starBatchDeleteBodyFmt =
-        $$"%1$d unlocked capsules will be permanently deleted with all content and images, leaving no archive record. This cannot be undone."
+        $$"%1$d unlocked capsules will be moved to the recycle bin; they can be restored from the Dust Records page within 30 days, and are purged automatically afterwards, leaving no archive record."
     override val starBatchDestroyTitle = "Destroy selected capsules?"
     override val starBatchDestroyBodyFmt =
         $$"%1$d unlocked capsules will be archived as dust records; their content is destroyed and cannot be undone."
@@ -1079,5 +1079,75 @@ object StringsEn : Strings {
     override val setBackupPwDesc = "Not set; needed for export and auto backup"
     override val setBackupPwSetDesc = "Set; only for backup files, unrelated to the main password"
     override val setAutoBackupNeedPw = "Skipped: set the backup passphrase first"
+
+    // ---- Recycle bin (recent-delete buffer, 30-day auto purge; Dust Records section) ----
+    override val trashSectionTitle = "Recycle bin"
+    override val trashSectionDesc = "Recently deleted capsules are buffered here and purged automatically when due (restore or delete earlier if you like)."
+    override val trashEntryDaysFmt = $$"Auto-purged in about %1$d days"
+    override val trashRestore = "Restore"
+    override val trashDeleteNow = "Delete now"
+    override val trashDeleteConfirmTitle = "Delete this capsule permanently?"
+    override val trashDeleteConfirmBodyFmt =
+        $$"All content and images of \u300a%1$s\u300bwill be deleted immediately, leaving no archive record. This cannot be undone."
+
+    // ---- Create draft autosave (restore banner; plaintext explicitly disclosed) ----
+    override val draftFoundTitle = "An unfinished draft is waiting"
+    override val draftFoundInfoFmt = $$"%1$s · \u300a%2$s\u300b"
+    override val draftPlainNote = "The draft is stored unencrypted on this device and excludes photos and voice notes; content is only encrypted when sealed."
+    override val draftRestore = "Restore draft"
+    override val draftDiscard = "Discard"
+    override val draftUntitled = "Untitled"
+
+    // ---- Legacy handover wizard (handover pack = encrypted gift + opening guide image) ----
+    override val setHandover = "Legacy handover"
+    override val setHandoverDesc = "Seal a capsule into a handover pack with a one-page opening guide, for someone you trust"
+    override val handoverTitle = "Legacy handover"
+    override val handoverPickInfo = "Choose the capsule to hand over. A pack contains just this one capsule; after it is generated, deliver it to someone you trust."
+    override val handoverPickEmpty = "No capsule can be handed over yet (destroyed or empty capsules are excluded)."
+    override val handoverConfirmInfo = "Two files will be produced: the encrypted handover pack (.zip) and a one-page opening guide (.jpg). The recipient only needs the app, the pack, and the passphrase you tell them."
+    override val handoverSealAction = "Generate pack"
+    override val handoverDoneInfo = "The handover pack is ready — deliver it to someone you trust:"
+    override val handoverDoneNote = "Deliver in person or via a reliable channel, and tell the recipient the opening passphrase separately."
+    override val handoverShare = "Share pack"
+    override val handoverShareTitle = "Timart handover pack"
+    override val handoverShareHint = "Share sheet opened — choose how to deliver"
+    override val handoverStep1 = "Install the Timart app on a phone."
+    override val handoverStep2 = "Open Timart and go to Settings → Gift import."
+    override val handoverStep3 = "Pick the handover pack file (.zip) you received."
+    override val handoverStep4 = "Enter the passphrase given by the sender; the capsule joins your time track."
+    override val handoverNoteLine = "Ask the sender for the opening passphrase; it is not printed on this page."
+    override val handoverGuideBrand = "Timart · Handover"
+    override val handoverGuideSection = "How to open"
+    override val handoverUnlockSection = "Unlock conditions"
+    override val handoverFooterLine = "A letter left for the future."
+
+    // ---- Annual album (poster pages stitched vertically, paged export) ----
+    override val setAlbumExport = "Annual album"
+    override val setAlbumExportDesc = "Bind the capsules opened in a year into album pages, exported in volumes"
+    override val albumTitle = "Annual album"
+    override val albumNeedSession = "Building the album needs decryption: unlock the passphrase session in the app first (for example by opening any unlocked capsule), then come back."
+    override val albumNoCapsule = "No capsule has been opened yet — open the first one to start an album."
+    override val albumPickYear = "Pick a year"
+    override val albumYearInfoFmt = $$"%1$d · %2$d capsules opened"
+    override val albumPagingNote = "Ordered by unlock time: a cover page plus one poster page per capsule, stitched vertically and split into volumes automatically."
+    override val albumCompose = "Build album"
+    override val albumComposingFmt = $$"Composing… %1$d / %2$d pages"
+    override val albumDone = "Album ready"
+    override val albumShare = "Share album"
+    override val albumFail = "Composition failed, try again"
+    override val albumCoverSubtitle = "Timart album"
+
+    // ---- .ics calendar export (deterministic time conditions → user's calendar) ----
+    override val setCalendarExport = "Export to calendar (.ics)"
+    override val setCalendarExportDesc = "Put the predictable unlock dates of waiting capsules into your calendar"
+    override val icsDialogTitle = "Export to calendar"
+    override val icsDialogInfo = $$"%1$d upcoming dates will be exported as an .ics calendar file, ready to import into the system calendar or any calendar app."
+    override val icsDialogNote = "Only statically computable time conditions are included (fixed dates/times, yearly anniversaries, lunar terms and moon phases); sensor- and challenge-based conditions cannot be predicted and are excluded."
+    override val icsEventSummaryFmt = $$"Timart · \u300a%1$s\u300b"
+    override val icsCalendarName = "Timart pending"
+    override val icsExportAction = "Export"
+    override val icsExportDone = "Calendar file exported"
+    override val icsExportFail = "Export failed, try again"
+    override val icsEmpty = "No predictable upcoming dates right now."
 
 }

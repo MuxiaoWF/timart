@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 桌面名稱 / 小組件與桌面快捷方式標籤（系統語言決定，不參與應用內語言切換） -->
+    <string name="app_name">時粒</string>
+    <string name="widget_subtitle">時間膠囊</string>
+    <!-- App Shortcuts（桌面長按標籤） -->
+    <string name="shortcut_create_short">新建膠囊</string>
+    <string name="shortcut_create_long">封存一顆新膠囊</string>
+    <string name="shortcut_next_short">最近可解</string>
+    <string name="shortcut_next_long">開啟最近可解的一顆</string>
+</resources>

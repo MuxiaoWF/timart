@@ -31,8 +31,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 三步封存草稿 VM（架构 §2.15）：三步共享状态 + 城市天气拉取 + 依赖校验 + 封存提交。
@@ -46,10 +48,12 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun next() {
         if (step.value < 2) step.value += 1
+        flushDraft()
     }
 
     fun back() {
         if (step.value > 0) step.value -= 1
+        flushDraft()
     }
 
     // ---- 写下（信笺草稿） ----
@@ -71,6 +75,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updateSealStyle(style: Int) {
         sealStyle = style.coerceIn(0, com.muxiao.timart.ui.components.visual.WaxSealStyle.COUNT)
+        draftTouched = true
     }
 
     /** 已选图片字节（封存时才加密落盘；内存暂存上限 9 张） */
@@ -100,22 +105,27 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updatePaperStyle(v: Int) {
         paperStyle = v
+        draftTouched = true
     }
 
     fun updateTitle(v: String) {
         title = v.take(TITLE_MAX)
+        draftTouched = true
     }
 
     fun updateContent(v: String) {
         content = v.take(CONTENT_MAX)
+        draftTouched = true
     }
 
     fun updateNote(v: String) {
         note = v
+        draftTouched = true
     }
 
     fun updateQuestion(v: String) {
         question = v.take(80)
+        draftTouched = true
     }
 
     // ---- 多章节信件（N10）：创建时一次加密入库，meta 只记段落边界 ----
@@ -130,6 +140,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     fun updateChaptersEnabled(v: Boolean) {
         chaptersEnabled = v
         if (!v) chapterTexts.clear()
+        draftTouched = true
     }
 
     /** 追加一章（上限 3 章）；无更多章为 no-op */
@@ -137,10 +148,12 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         if (chapterTexts.size < com.muxiao.timart.domain.usecase.ChapterLetter.MAX_CHAPTERS - 1) {
             chapterTexts.add("")
         }
+        draftTouched = true
     }
 
     fun updateChapterText(index: Int, v: String) {
         if (index in chapterTexts.indices) chapterTexts[index] = v.take(CONTENT_MAX)
+        draftTouched = true
     }
 
     /**
@@ -159,6 +172,16 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     /** 回信转新胶囊（N5）：预填草稿的来源胶囊 id（封存成功落 meta `capsule.replyTo.<newId>`，失败静默） */
     private var replyToSourceId: String? = null
 
+    // ---- 草稿自动保存（写长信防进程被杀；明文落 meta，恢复入口 UI 明示未加密） ----
+
+    /** 已保存待恢复的草稿（null = 无横幅）；恢复 / 丢弃 / 首次自动保存落库后清空 */
+    var savedDraft by mutableStateOf<CreateDraftData?>(null)
+        private set
+
+    /** 用户是否在本 VM 内动过草稿内容（脏标记：未动过绝不覆写/清槽已存草稿） */
+    private var draftTouched = false
+    private var lastSavedJson: String? = null
+
     init {
         // 一次性消费 Detail 页交接的预填草稿（回信转新胶囊；普通入口为 null 不受影响）
         container.pendingCapsulePrefill?.let { prefill ->
@@ -166,6 +189,113 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
             title = prefill.title.take(TITLE_MAX)
             content = prefill.body.take(CONTENT_MAX)
             replyToSourceId = prefill.replySourceId
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val raw = runCatching {
+                container.database.metaDao().get(CreateDraftStore.DRAFT_KEY)
+            }.getOrNull()
+            val data = raw?.let { CreateDraftStore.decode(it) }
+                ?.takeIf { !CreateDraftStore.isEmpty(it) }
+            withContext(Dispatchers.Main) { savedDraft = data }
+            // 自动保存循环：5s 脏检查落库（进程被杀最多丢最后 5s 输入；next/back 步进即时补拍）
+            while (isActive) {
+                kotlinx.coroutines.delay(DRAFT_SAVE_INTERVAL_MS.milliseconds)
+                saveDraftTick()
+            }
+        }
+    }
+
+    /** 步进切换即时补拍（不等 5s 周期，跨步/离开前尽量落最新快照） */
+    private fun flushDraft() {
+        viewModelScope.launch(Dispatchers.IO) { saveDraftTick() }
+    }
+
+    private suspend fun saveDraftTick() {
+        if (!draftTouched || chainMode || _assembling.value) return
+        val current = draftSnapshot()
+        val encoded = CreateDraftStore.encode(current)
+        if (encoded == lastSavedJson) return
+        lastSavedJson = encoded
+        runCatching {
+            val dao = container.database.metaDao()
+            if (CreateDraftStore.isEmpty(current)) {
+                dao.delete(CreateDraftStore.DRAFT_KEY)
+            } else {
+                dao.put(
+                    com.muxiao.timart.data.local.db.entity.MetaEntity(
+                        CreateDraftStore.DRAFT_KEY,
+                        encoded,
+                    ),
+                )
+            }
+        }
+        // 已落库的草稿被当前输入覆盖（或清空）后，恢复横幅使命完成
+        withContext(Dispatchers.Main) { if (savedDraft != null) savedDraft = null }
+    }
+
+    private fun draftSnapshot() = CreateDraftData(
+        savedAt = System.currentTimeMillis(),
+        step = step.value.coerceIn(0, 2),
+        title = title,
+        content = content,
+        note = note,
+        question = question,
+        sealStyle = sealStyle,
+        paperStyle = paperStyle,
+        chaptersEnabled = chaptersEnabled,
+        chapterTexts = chapterTexts.toList(),
+        tags = tags.toList(),
+        autoDestroy = autoDestroy,
+        blindBox = blindBox,
+        logic = logic.name,
+        logicThreshold = logicThreshold,
+        ruleJson = if (conditions.isEmpty()) {
+            null
+        } else {
+            runCatching { UnlockRuleJson.toJson(currentRule()) }.getOrNull()
+        },
+    )
+
+    /** 恢复已存草稿（横幅确认后调用；恢复即视为已编辑，后续编辑正常自动保存） */
+    fun restoreSavedDraft() {
+        val data = savedDraft ?: return
+        title = data.title.take(TITLE_MAX)
+        content = data.content.take(CONTENT_MAX)
+        note = data.note
+        question = data.question.take(80)
+        sealStyle = data.sealStyle
+        paperStyle = data.paperStyle
+        chaptersEnabled = data.chaptersEnabled
+        chapterTexts.clear()
+        chapterTexts.addAll(data.chapterTexts.take(2).map { it.take(CONTENT_MAX) })
+        tags.clear()
+        data.tags.take(TAG_MAX).forEach { tags.add(it) }
+        autoDestroy = data.autoDestroy
+        blindBox = data.blindBox
+        logic = runCatching { LogicType.valueOf(data.logic) }.getOrDefault(LogicType.AND)
+        logicThreshold = data.logicThreshold
+        conditions.clear()
+        groups.clear()
+        data.ruleJson?.let { raw ->
+            runCatching {
+                val rule = UnlockRuleJson.fromJson(raw)
+                conditions.addAll(rule.conditionList)
+                groups.addAll(rule.groups)
+                rule.threshold?.let { logicThreshold = it }
+            }
+        }
+        step.value = data.step.coerceIn(0, 2)
+        savedDraft = null
+        draftTouched = true
+    }
+
+    /** 丢弃已存草稿（横幅放弃入口；立即清槽，本 VM 后续输入重新开始积累） */
+    fun discardSavedDraft() {
+        savedDraft = null
+        draftTouched = false
+        lastSavedJson = null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.database.metaDao().delete(CreateDraftStore.DRAFT_KEY) }
         }
     }
 
@@ -211,10 +341,12 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** 城市 / 省份模糊搜索（码表常驻内存后为纯内存查询） */
-    fun searchCities(keyword: String): List<City> = runCatching {
-        if (keyword.isBlank()) container.cityRepository.all() else container.cityRepository.search(keyword.trim())
-    }.getOrDefault(emptyList())
+    /** 城市 / 省份模糊搜索（码表常驻内存后为纯内存查询；IO 执行，首键不撞冷加载的主线程解析） */
+    suspend fun searchCities(keyword: String): List<City> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (keyword.isBlank()) container.cityRepository.all() else container.cityRepository.search(keyword.trim())
+        }.getOrDefault(emptyList())
+    }
 
     /** 当前气压计海拔快照（RelativeAltitude 条件的创建期基准值；null = 无读数 / 无气压计） */
     fun currentAltitudeMeters(): Double? =
@@ -290,10 +422,12 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
             // 切到任选模式：M 默认取单元数（组各算一单元）的一半（至少 1）
             logicThreshold = (ruleUnitCount() / 2).coerceAtLeast(1)
         }
+        draftTouched = true
     }
 
     fun updateThreshold(v: Int) {
         logicThreshold = v.coerceIn(1, ruleUnitCount())
+        draftTouched = true
     }
 
     /** 顶层 AT_LEAST 阈值的作用域：无组 = 条件数；有组 = 单元数（组各算一单元） */
@@ -303,13 +437,17 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun addCondition(condition: UnlockCondition) {
-        if (conditions.size < CONDITION_MAX) conditions.add(condition)
+        if (conditions.size < CONDITION_MAX) {
+            conditions.add(condition)
+            draftTouched = true
+        }
     }
 
     fun removeCondition(condition: UnlockCondition) {
         val index = conditions.indexOf(condition)
         if (index < 0) return
         conditions.removeAt(index)
+        draftTouched = true
         // 组下标重映射：剔除被删下标、其余前移；组员不足 2 自动解散（单例组无语义）
         val remapped = groups.mapNotNull { group ->
             val kept = group.indexes.filter { it != index }.map { if (it > index) it - 1 else it }
@@ -325,10 +463,14 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         if (valid.size < 2) return
         if (groups.any { group -> group.indexes.any { it in valid } }) return
         groups.add(ConditionGroup(name = null, logicType = LogicType.OR, threshold = null, indexes = valid.sorted()))
+        draftTouched = true
     }
 
     fun dissolveGroup(groupIndex: Int) {
-        if (groupIndex in groups.indices) groups.removeAt(groupIndex)
+        if (groupIndex in groups.indices) {
+            groups.removeAt(groupIndex)
+            draftTouched = true
+        }
     }
 
     /** 更新组名 / 组内逻辑 / M 值（名称空串归一为 null；AT_LEAST 阈值 coerce 到 [1, 组员数]） */
@@ -340,6 +482,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
             logicType = groupLogic,
             threshold = threshold.takeIf { groupLogic == LogicType.AT_LEAST }?.coerceIn(1, old.indexes.size),
         )
+        draftTouched = true
     }
 
     // ---- 沙盘推演（N2）----
@@ -417,6 +560,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updateAutoDestroy(v: Boolean) {
         autoDestroy = v
+        draftTouched = true
     }
 
     // ---- 盲盒封存（连自己也保密） ----
@@ -426,6 +570,7 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun updateBlindBox(v: Boolean) {
         blindBox = v
+        draftTouched = true
     }
 
     // ---- 拼图分组（体验储备池 §3：一封信切 N 片各自封存，全部解锁后合信） ----
@@ -818,11 +963,14 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun addTag(raw: String) {
         val v = raw.trim()
-        if (v.isNotEmpty() && v !in tags && tags.size < TAG_MAX) tags.add(v)
+        if (v.isNotEmpty() && v !in tags && tags.size < TAG_MAX) {
+            tags.add(v)
+            draftTouched = true
+        }
     }
 
     fun removeTag(tag: String) {
-        tags.remove(tag)
+        if (tags.remove(tag)) draftTouched = true
     }
 
     // ---- 封存提交 ----
@@ -992,6 +1140,11 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
             sealError = null
+            // 封存成功：草稿使命完成，清槽并复位横幅（IO 协程内，直接落 meta）
+            draftTouched = false
+            lastSavedJson = null
+            savedDraft = null
+            runCatching { container.database.metaDao().delete(CreateDraftStore.DRAFT_KEY) }
             withContext(Dispatchers.Main) { _assembling.value = true }
         } catch (e: Exception) {
             val message = e.message ?: currentStrings().errSealFailed
@@ -1065,6 +1218,10 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
         chainIntervalDays = 7
         chainSubStep = 0
         step.value = 0
+        // 草稿自动保存状态复位（封存成功路径已在 performCreate 清槽；此处兜底横幅与脏标记）
+        savedDraft = null
+        draftTouched = false
+        lastSavedJson = null
     }
 
     // ---- 内部 ----
@@ -1086,6 +1243,9 @@ class CreateViewModel(private val container: AppContainer) : ViewModel() {
     companion object {
         private const val TAG = "CreateViewModel"
         private const val DRAFT_ID = "__draft__"
+
+        /** 草稿自动保存脏检查周期（毫秒；进程被杀最多丢最后 5s 输入） */
+        private const val DRAFT_SAVE_INTERVAL_MS = 5_000L
 
         /** 沙盘推演探针 id（N2；合成胶囊不入库，命名风格与 DRAFT_ID 一致防冲突） */
         private const val DRY_RUN_ID = "__dry_run__"

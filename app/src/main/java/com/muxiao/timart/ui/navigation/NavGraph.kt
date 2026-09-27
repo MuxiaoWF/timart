@@ -49,6 +49,24 @@ fun NavGraph(container: AppContainer) {
         }
     }
 
+    // App Shortcuts：静态 shortcut extra → 动作交接位消费
+    // create = 直达创建页；nextUnlock = 解析「最近可解的一颗」后直达详情（无可解目标则原地留在时轨）
+    LaunchedEffect(container.pendingShortcutAction) {
+        val action = container.pendingShortcutAction ?: return@LaunchedEffect
+        container.pendingShortcutAction = null
+        when (action) {
+            com.muxiao.timart.MainActivity.SHORTCUT_CREATE -> navController.navigate(Routes.CREATE)
+            com.muxiao.timart.MainActivity.SHORTCUT_NEXT_UNLOCK -> {
+                val id = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    container.nextUnlockableCapsuleId()
+                }
+                if (!id.isNullOrEmpty()) {
+                    navController.navigate(Routes.detail(id, firstUnlock = false))
+                }
+            }
+        }
+    }
+
     Scaffold(
         containerColor = DeepCharcoal,
         contentWindowInsets = WindowInsets.statusBars,

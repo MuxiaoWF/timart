@@ -52,7 +52,7 @@ object StringsZhHans : Strings {
     override val starEmptyTag = "这个标签下还没有内容。"
     override val starBatchDeleteTitle = "删除选中的胶囊？"
     override val starBatchDeleteBodyFmt =
-        $$"将彻底删除 %1$d 颗已解锁胶囊及其全部内容与图片，不会留下档案，此操作不可恢复。"
+        $$"将把 %1$d 颗已解锁胶囊移入回收站，30 天内可在尘迹页恢复；到期自动彻底清除，不留档案。"
     override val starBatchDestroyTitle = "归为销毁选中的胶囊？"
     override val starBatchDestroyBodyFmt =
         $$"将把 %1$d 颗已解锁胶囊归入尘迹档案，内容随之销毁且不可恢复。"
@@ -1075,5 +1075,75 @@ object StringsZhHans : Strings {
     override val setBackupPwDesc = "未设置；导出与自动备份需要它"
     override val setBackupPwSetDesc = "已设置；仅用于备份包，与主口令无关"
     override val setAutoBackupNeedPw = "已跳过：请先设置备份口令"
+
+    // ---- 回收站（最近删除缓冲，30 天自动清空；尘迹页分区） ----
+    override val trashSectionTitle = "回收站"
+    override val trashSectionDesc = "最近删除的胶囊在此缓冲，到期自动彻底清除（可提前恢复或删除）。"
+    override val trashEntryDaysFmt = $$"约 %1$d 天后自动清除"
+    override val trashRestore = "恢复"
+    override val trashDeleteNow = "彻底删除"
+    override val trashDeleteConfirmTitle = "彻底删除这颗胶囊？"
+    override val trashDeleteConfirmBodyFmt =
+        $$"将立即删除《%1$s》的全部内容与图片，不会留下档案，此操作不可恢复。"
+
+    // ---- 创建草稿自动保存（恢复横幅；明示草稿未加密） ----
+    override val draftFoundTitle = "有一份未完成的草稿"
+    override val draftFoundInfoFmt = $$"%1$s ·《%2$s》"
+    override val draftPlainNote = "草稿以明文保存在本机，未加密，且不含图片与语音；封存后才会加密。"
+    override val draftRestore = "恢复草稿"
+    override val draftDiscard = "丢弃"
+    override val draftUntitled = "未命名"
+
+    // ---- 遗产移交向导（移交包 = 加密赠予包 + 开启指引图） ----
+    override val setHandover = "遗产移交"
+    override val setHandoverDesc = "把一颗胶囊封进移交包，连同一页开启指引一起交给信任的人"
+    override val handoverTitle = "遗产移交"
+    override val handoverPickInfo = "选择要移交的胶囊。移交包只含这一颗；生成后请自行转交给信任的人妥善保管。"
+    override val handoverPickEmpty = "还没有可移交的胶囊（已销毁或空的胶囊不可移交）。"
+    override val handoverConfirmInfo = "将生成两份文件：加密的移交包（.zip）与一页开启指引图（.jpg）。接收方凭「安装时粒 + 移交包 + 你告知的口令」即可开启。"
+    override val handoverSealAction = "生成交接包"
+    override val handoverDoneInfo = "移交包已生成，请转交给你信任的人："
+    override val handoverDoneNote = "建议当面转交或经可靠渠道发送，并另行告知开启口令。"
+    override val handoverShare = "分享移交包"
+    override val handoverShareTitle = "时粒移交包"
+    override val handoverShareHint = "已唤起分享面板，请选择转交方式"
+    override val handoverStep1 = "在手机上安装「时粒」应用。"
+    override val handoverStep2 = "打开时粒，进入「设置 → 赠予导入」。"
+    override val handoverStep3 = "选择收到的移交包文件（.zip）。"
+    override val handoverStep4 = "输入移交人告知的口令，胶囊即进入你的时轨。"
+    override val handoverNoteLine = "开启口令请向移交人获取；本图不含口令。"
+    override val handoverGuideBrand = "时粒 · 移交"
+    override val handoverGuideSection = "开启指引"
+    override val handoverUnlockSection = "解锁条件"
+    override val handoverFooterLine = "这是一份留给未来的信。"
+
+    // ---- 纪念册按年合订（海报页纵向拼接分卷导出） ----
+    override val setAlbumExport = "纪念册合订"
+    override val setAlbumExportDesc = "把某一年开启的胶囊合成一本纪念册长图，分卷导出"
+    override val albumTitle = "纪念册合订"
+    override val albumNeedSession = "生成纪念册需要解密内容：请先在应用内解锁口令会话（例如打开任意一颗已解锁的胶囊）后再来。"
+    override val albumNoCapsule = "还没有已开启的胶囊——开启第一颗后就能合订纪念册。"
+    override val albumPickYear = "选择年份"
+    override val albumYearInfoFmt = $$"%1$d 年共 %2$d 颗已开启"
+    override val albumPagingNote = "按开启时间排版：封面 + 每颗一页海报，纵向拼接、自动分卷。"
+    override val albumCompose = "合成纪念册"
+    override val albumComposingFmt = $$"正在合成… %1$d / %2$d 页"
+    override val albumDone = "纪念册已生成"
+    override val albumShare = "分享纪念册"
+    override val albumFail = "合成失败，请重试"
+    override val albumCoverSubtitle = "时粒纪念册"
+
+    // ---- ics 日历导出（确定性时间条件 → 用户日历） ----
+    override val setCalendarExport = "导出到日历（.ics）"
+    override val setCalendarExportDesc = "把等待中胶囊的可推算解锁日期写进你的日历"
+    override val icsDialogTitle = "导出到日历"
+    override val icsDialogInfo = $$"将导出 %1$d 个待解日期为 .ics 日历文件，可导入系统日历或其他日历应用。"
+    override val icsDialogNote = "只包含可静态推算的时间类条件（固定日期/时刻、每年纪念日、农历节气月相等）；传感器、挑战类不可预估，不会出现。"
+    override val icsEventSummaryFmt = $$"时粒待解 ·《%1$s》"
+    override val icsCalendarName = "时粒待解"
+    override val icsExportAction = "导出"
+    override val icsExportDone = "已导出日历文件"
+    override val icsExportFail = "导出失败，请重试"
+    override val icsEmpty = "当前没有可预估的待解日期。"
 
 }

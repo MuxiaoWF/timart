@@ -76,6 +76,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="vnd.android.nfc" android:host="ext" android:pathPrefix="/timart.com:link" />
             </intent-filter>
+            <!-- App Shortcuts（静态声明）：桌面长按直达「新建胶囊 / 最近可解」 -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- 备份 zip / 海报 PNG 分享用 -->
@@ -111,6 +115,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/timart_widget_ball_info" />
+        </receiver>
+
+        <!-- 锁屏小组件（Android 12+ 设备支持锁屏组件的形态）：只显示单球，比桌面版更克制。
+             复用单球 Provider 与 RemoteViews 布局（widgetCategory=keyguard 由系统侧按设备能力取用） -->
+        <receiver
+            android:name=".widget.TimartWidgetLockProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/timart_widget_lock_info" />
         </receiver>
     </application>
 

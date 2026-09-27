@@ -12,11 +12,19 @@ import kotlinx.coroutines.flow.Flow
 /**
  * 胶囊 DAO：Flow / suspend / 同步三态查询。
  * 同步版供 DependencyCheckerImpl 的 runBlocking(IO) 适配（全项目唯一允许的 runBlocking 场景）。
+ *
+ * 回收站语义（capsule.trash.*，契约见 CapsuleMetaKeys）：常规查询统一排除回收站内胶囊
+ * （NOT IN 子查询），使列表 / 判定 / 备份导出 / 小组件在 SQL 层一次兜底；
+ * 观察单颗与回收站清单不过滤（恢复与回收站页需要）。
  */
 @Dao
 interface CapsuleDao {
 
-    @Query("SELECT * FROM capsules ORDER BY createTimestamp ASC")
+    @Query(
+        "SELECT * FROM capsules WHERE id NOT IN " +
+            "(SELECT SUBSTR(`key`, 15) FROM meta WHERE `key` LIKE 'capsule.trash.%') " +
+            "ORDER BY createTimestamp ASC",
+    )
     fun observeAll(): Flow<List<CapsuleEntity>>
 
     @Query("SELECT * FROM capsules WHERE id = :id")
@@ -28,14 +36,34 @@ interface CapsuleDao {
     @Query("SELECT * FROM capsules WHERE id = :id")
     fun byIdSync(id: String): CapsuleEntity?
 
-    @Query("SELECT * FROM capsules WHERE state = 'LOCKED' ORDER BY createTimestamp ASC")
+    @Query(
+        "SELECT * FROM capsules WHERE state = 'LOCKED' AND id NOT IN " +
+            "(SELECT SUBSTR(`key`, 15) FROM meta WHERE `key` LIKE 'capsule.trash.%') " +
+            "ORDER BY createTimestamp ASC",
+    )
     suspend fun allLocked(): List<CapsuleEntity>
 
-    @Query("SELECT * FROM capsules WHERE state = 'LOCKED' ORDER BY createTimestamp ASC")
+    @Query(
+        "SELECT * FROM capsules WHERE state = 'LOCKED' AND id NOT IN " +
+            "(SELECT SUBSTR(`key`, 15) FROM meta WHERE `key` LIKE 'capsule.trash.%') " +
+            "ORDER BY createTimestamp ASC",
+    )
     fun allLockedSync(): List<CapsuleEntity>
 
-    @Query("SELECT * FROM capsules ORDER BY createTimestamp ASC")
+    @Query(
+        "SELECT * FROM capsules WHERE id NOT IN " +
+            "(SELECT SUBSTR(`key`, 15) FROM meta WHERE `key` LIKE 'capsule.trash.%') " +
+            "ORDER BY createTimestamp ASC",
+    )
     suspend fun all(): List<CapsuleEntity>
+
+    /** 回收站内胶囊（软删除缓冲期，30 天到期由 CapsuleCrudUseCase.purgeExpiredTrash 物理清空） */
+    @Query(
+        "SELECT * FROM capsules WHERE id IN " +
+            "(SELECT SUBSTR(`key`, 15) FROM meta WHERE `key` LIKE 'capsule.trash.%') " +
+            "ORDER BY createTimestamp ASC",
+    )
+    suspend fun allTrashed(): List<CapsuleEntity>
 
     @Upsert
     suspend fun insert(entity: CapsuleEntity)

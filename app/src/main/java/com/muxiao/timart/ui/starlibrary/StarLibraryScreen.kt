@@ -253,6 +253,8 @@ fun StarLibraryScreen(
             // 下限 140dp + 间距 14dp ⇒ 可用宽 ≥294dp（窗口 ≥342dp）即两列，
             // 覆盖 360dp 窄屏竖屏（内容宽 312dp）；窗口 ≥496dp 起自动加列。
             // 注意：160dp 下限会让 360dp 窄屏（内容宽 312dp < 334dp 门槛）退化为单列。
+            // 呼吸焦点 ID 在列表项外一次算清：原写法每张卡内联 firstOrNull，整格 O(n²)
+            val breathingId = remember(filtered) { filtered.firstOrNull { it.state == CapsuleState.UNLOCKED }?.id }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(STAR_CARD_MIN_WIDTH),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -266,7 +268,7 @@ fun StarLibraryScreen(
                         capsule = capsule,
                         // 呼吸焦点 = 第一颗已解锁球（呼吸只作用于 UNLOCKED 辉光；旧写法首项为
                         // 锁定/残影时 infiniteTransition 空转且全页无焦点球），无已解锁球则整页静态
-                        breathing = capsule.id == filtered.firstOrNull { it.state == CapsuleState.UNLOCKED }?.id,
+                        breathing = capsule.id == breathingId,
                         selected = capsule.id in selection,
                         onClick = {
                             if (selection.isNotEmpty()) {

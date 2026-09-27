@@ -39,10 +39,11 @@ class ConditionCheckWorker(
             )
             runUpcomingReminders(container)
             runForecastNotices(container)
-            // 小组件列表化（N21）+ 单球（储备池 v7）：与判定/提醒同拍刷新（6h 周期；无实例时 no-op）
+            // 小组件列表化（N21）+ 单球（储备池 v7）+ 锁屏单球：与判定/提醒同拍刷新（6h 周期；无实例时 no-op）
             runCatching {
                 com.muxiao.timart.widget.TimartWidgetProvider().refreshAll(applicationContext)
                 com.muxiao.timart.widget.TimartWidgetBallProvider().refreshAll(applicationContext)
+                com.muxiao.timart.widget.TimartWidgetLockProvider().refreshAll(applicationContext)
             }
             Result.success()
         } catch (_: Throwable) {

@@ -91,7 +91,14 @@ class MainActivity : FragmentActivity() {
                     judgeScope.launch(Dispatchers.IO) {
                         container.autoBackupManager.maybeRun()
                     }
+                    // 回收站到期清空（最近删除缓冲 30 天；静默，不阻塞）
+                    judgeScope.launch(Dispatchers.IO) {
+                        runCatching { container.capsuleCrudUseCase.purgeExpiredTrash() }
+                    }
                     judgeScope.launch {
+                        // 满足比快照聚合（仍锁定 = overallOk=false 的胶囊）：完成后发布到 container，
+                        // HomeViewModel 同一 ON_RESUME 直接采纳，避免双重全量判定（卡顿排查修复）
+                        val ratios = HashMap<String, Float>()
                         container.unlockJudgeUseCase.judgeAllLocked(
                             ctx = container.defaultContext(foregroundOnly = false),
                             repo = container.capsuleRepository,
@@ -107,7 +114,14 @@ class MainActivity : FragmentActivity() {
                                 }
                             },
                             shouldJudge = { capsule -> !container.isSeedDormant(capsule.id) },
+                            onJudged = { capsuleId, satisfied, total, overallOk ->
+                                if (!overallOk && total > 0) {
+                                    ratios[capsuleId] = satisfied.toFloat() / total
+                                }
+                            },
                         )
+                        container.foregroundJudgeSnapshot =
+                            AppContainer.ForegroundJudgeSnapshot(System.currentTimeMillis(), ratios)
                     }
                     maybeGuideNotificationPermission(container)
                 }
@@ -231,13 +245,20 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** NFC 实体锚点分发（体验储备池 §4）+ 小组件深链（N21）：extra 携带待直达胶囊 id */
+    /**
+     * NFC 实体锚点分发（体验储备池 §4）+ 小组件深链（N21）+ App Shortcuts：
+     * extra / NDEF 载荷携带待直达胶囊 id 或快捷动作，统一写入 container 交接位。
+     */
     private fun handleNfcLinkIntent(container: AppContainer, intent: android.content.Intent?) {
         val fromNfc = intent?.let { com.muxiao.timart.utils.device.NfcCardWriter.parseLinkCapsuleId(it) }
         val fromWidget = intent?.getStringExtra(EXTRA_OPEN_CAPSULE_ID)
         val capsuleId = fromNfc?.takeIf { it.isNotEmpty() } ?: fromWidget?.takeIf { it.isNotEmpty() }
         if (!capsuleId.isNullOrEmpty()) {
             container.pendingNfcCapsuleId = capsuleId
+        }
+        val shortcut = intent?.getStringExtra(EXTRA_SHORTCUT_ACTION)
+        if (!shortcut.isNullOrEmpty()) {
+            container.pendingShortcutAction = shortcut
         }
     }
 
@@ -277,6 +298,11 @@ class MainActivity : FragmentActivity() {
 
         /** 小组件行深链（N21）：widget PendingIntent extra → 待直达胶囊 id（复用 NFC 交接位） */
         const val EXTRA_OPEN_CAPSULE_ID = "timart.extra.OPEN_CAPSULE_ID"
+
+        /** App Shortcuts：静态 shortcut intent extra → 动作值（[SHORTCUT_CREATE] / [SHORTCUT_NEXT_UNLOCK]） */
+        const val EXTRA_SHORTCUT_ACTION = "timart.extra.SHORTCUT_ACTION"
+        const val SHORTCUT_CREATE = "create"
+        const val SHORTCUT_NEXT_UNLOCK = "nextUnlock"
     }
 }
 

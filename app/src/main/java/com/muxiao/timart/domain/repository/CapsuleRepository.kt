@@ -4,7 +4,8 @@ import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.CapsuleState
 import kotlinx.coroutines.flow.Flow
 
-/** 胶囊仓库接口（T4/T5/T6 全部面向本接口编程） */
+/** 胶囊仓库接口（T4/T5/T6 全部面向本接口编程）。
+ *  常规读取默认排除回收站内胶囊（capsule.trash.*，SQL 层兜底）；回收站清单走 [allTrashedSync]。 */
 interface CapsuleRepository {
 
     /** 全量胶囊 Flow（按创建时间升序），首页时轨与星库共用 */
@@ -21,6 +22,9 @@ interface CapsuleRepository {
 
     /** 全部 LOCKED 胶囊同步查询（判定入口） */
     suspend fun allLockedSync(): List<Capsule>
+
+    /** 回收站内胶囊同步查询（软删除缓冲期清单；尘迹页回收站分区消费） */
+    suspend fun allTrashedSync(): List<Capsule>
 
     suspend fun insert(capsule: Capsule)
 

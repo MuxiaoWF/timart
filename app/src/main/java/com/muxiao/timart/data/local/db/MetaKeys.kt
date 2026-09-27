@@ -27,6 +27,11 @@ package com.muxiao.timart.data.local.db
  * - `capsule.chapters.<capsuleId>` / `capsule.chapter.<capsuleId>` / `capsule.chapterAt.<capsuleId>`：
  *   多章节信件（N10，边界 / 已揭示章数 / 最近揭示时刻）。写入点 = CreateViewModel.performCreate（边界）与
  *   DetailViewModel（揭示进度）；读取点 = DetailViewModel（按章过滤正文段落）。纯阅读侧行为，判定引擎不感知。
+ * - `capsule.trash.<capsuleId>`：回收站标记（最近删除缓冲，值 = 移入时刻 epoch millis）。
+ *   写入点 = CapsuleCrudUseCase.moveToTrash（星库「删除」入口）；清除点 = restoreFromTrash（恢复）
+ *   与 purgeExpiredTrash（30 天到期物理清空，MainActivity ON_RESUME 周期调用）。
+ *   「删除 ≠ 归为销毁」语义不变：删除走回收站缓冲（可恢复），销毁仍是立即物理删除的显式确认路径。
+ *   查询侧排除由 CapsuleDao 的 NOT IN 子查询统一兜底（列表/判定/备份均见不到回收站内胶囊）。
  */
 object CapsuleMetaKeys {
 
@@ -162,6 +167,13 @@ object CapsuleMetaKeys {
 
     /** 条件达成时刻 key 前缀（整库体检孤儿扫描用；与 [COND_MET_PREFIX] 同值） */
     const val COND_MET_KEY_PREFIX = COND_MET_PREFIX
+
+    /** 回收站标记（最近删除缓冲）：值 = 移入时刻 epoch millis；写入/清除点 = CapsuleCrudUseCase */
+    private const val TRASH_PREFIX = "capsule.trash."
+
+    fun trash(capsuleId: String): String = "$TRASH_PREFIX$capsuleId"
+
+    const val TRASH_KEY_PREFIX = TRASH_PREFIX
 
     /**
      * 胶囊级 meta 前缀全集（整库体检孤儿扫描通道，LibraryHealthCheck.orphanMetaKeys 消费）：

@@ -5,10 +5,12 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Shader
 import android.util.LruCache
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withClip
@@ -30,13 +32,16 @@ import androidx.core.graphics.withClip
  */
 object PlanetPainter {
 
-    /** 位图缓存：上限 8 张（详情页大球 ~600px ≈ 1.4MB，其余为小图；超出按 LRU 淘汰） */
-    private val cache = object : LruCache<String, Bitmap>(8) {
+    /** 位图缓存：上限 16 张（尺寸 16px 档位化后同类骤减；详情页大球 ~600px ≈ 1.4MB；超出按 LRU 淘汰） */
+    private val cache = object : LruCache<String, Bitmap>(16) {
         override fun sizeOf(key: String, value: Bitmap): Int = 1
     }
 
     /** 绘制用 Paint 复用（帧循环零分配） */
     private val drawPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    /** 目标矩形复用（帧循环零分配）：位图按档位尺寸烘焙、按真实球径绘出 */
+    private val drawRect = RectF()
 
     /**
      * 绘制预渲染球核。
@@ -44,15 +49,20 @@ object PlanetPainter {
      */
     fun drawPlanet(canvas: Canvas, cx: Float, cy: Float, radius: Float, colorArgb: Int, alpha: Float) {
         if (radius < 1f || alpha <= 0.01f) return
-        val sizePx = ceil(radius * 2f).toInt().coerceIn(2, 2048)
+        // 尺寸 16px 档位向上取整：缩放/布局微动不再逐像素生成新 key 触发重烘焙（缓存抖动修复）；
+        // 位图略大于需求，经 drawRect 按真实球径绘出（FILTER_BITMAP 双线性，视觉不可辨）
+        val rawPx = ceil(radius * 2f).toInt().coerceIn(2, 2048)
+        val sizePx = ((rawPx + 15) / 16) * 16
         val key = "$sizePx-$colorArgb"
         var bmp = cache.get(key)
         if (bmp == null) {
             bmp = render(sizePx, colorArgb)
             cache.put(key, bmp)
         }
+        val drawRadius = min(radius, 1024f)
+        drawRect.set(cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius)
         drawPaint.alpha = (alpha.coerceIn(0f, 1f) * 255f).toInt()
-        canvas.drawBitmap(bmp, cx - bmp.width / 2f, cy - bmp.height / 2f, drawPaint)
+        canvas.drawBitmap(bmp, null, drawRect, drawPaint)
     }
 
     // ================= 烘焙 =================

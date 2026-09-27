@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Stable
 import com.muxiao.timart.data.local.CapsuleRepositoryImpl
 import com.muxiao.timart.data.local.CityRepositoryImpl
 import com.muxiao.timart.data.local.DestroyedRepositoryImpl
@@ -49,7 +50,14 @@ import java.io.File
  * 手写 DI 组合根（全应用唯一依赖组装处）：
  * db/dao → crypto → repositories → providers → useCases → audio/notifier。
  * 全部单例经 lazy 装配，冷启动零重活（粒子引擎在首帧后初始化）。
+ *
+ * @Stable 恢复 Compose 跳过重组能力：公开 var 会让稳定性推断判为 unstable，
+ * 捕获它的 lambda（如 pager 四页内容）无法 memoize，页签切换期间逐帧重组（卡顿主因之一）。
+ * 可观察可变位均由 mutableStateOf 承载（pendingNfcCapsuleId / particleEngine / particleTier）；
+ * 唯一例外 [pendingCapsulePrefill] 是普通 var，但只在 ViewModel 构造与事件回调中读写、
+ * 从不参与组合期读取，快照不可观察不构成漏重组。
  */
+@Stable
 class AppContainer(context: Context) {
 
     private val appContext: Context = context.applicationContext
@@ -326,6 +334,41 @@ class AppContainer(context: Context) {
     var pendingNfcCapsuleId: String? by mutableStateOf(null)
 
     /**
+     * App Shortcuts 待执行动作（静态 shortcut extra → MainActivity 解析写入）：
+     * 值 = MainActivity.SHORTCUT_CREATE / SHORTCUT_NEXT_UNLOCK；NavGraph 消费并清空。
+     * 与 [pendingNfcCapsuleId] 同为一次性进程内交接位。
+     */
+    var pendingShortcutAction: String? by mutableStateOf(null)
+
+    /**
+     * 「最近可解的一颗」（App Shortcut nextUnlock 目标解析）：全部锁定胶囊中
+     * 确定性可推算目标时刻最近的一颗（口径与单球小组件 nearestEntry 一致；休眠种子跳过；无可推算目标返回 null）。
+     */
+    suspend fun nextUnlockableCapsuleId(nowMillis: Long = timeProvider.nowMillis()): String? {
+        val zone = runCatching { java.time.ZoneId.of(timeProvider.zoneId()) }
+            .getOrDefault(java.time.ZoneId.systemDefault())
+        var bestId: String? = null
+        var bestAt = Long.MAX_VALUE
+        for (capsule in capsuleRepository.allLockedSync()) {
+            if (isSeedDormant(capsule.id)) continue
+            val createdDay = java.time.Instant.ofEpochMilli(capsule.createTimestamp)
+                .atZone(zone).toLocalDate()
+            val target = capsule.unlockRule.conditionList
+                .mapNotNull {
+                    com.muxiao.timart.domain.usecase.UpcomingReminders.fixedTargetAt(
+                        it, nowMillis, zone, createdDay,
+                    )
+                }
+                .minOrNull() ?: continue
+            if (target < bestAt) {
+                bestAt = target
+                bestId = capsule.id
+            }
+        }
+        return bestId
+    }
+
+    /**
      * 回信转新胶囊的待预填草稿（N5）：Detail 写入 (预填标题, 预填正文, 回信来源胶囊 id)，
      * CreateViewModel 构造时消费并清空；来源 id 非空时封存成功落 meta `capsule.replyTo.<newId>`。
      * 与 [pendingNfcCapsuleId] 同为一次性进程内交接位。
@@ -333,6 +376,18 @@ class AppContainer(context: Context) {
     data class CapsulePrefill(val title: String, val body: String, val replySourceId: String?)
 
     var pendingCapsulePrefill: CapsulePrefill? = null
+
+    /**
+     * 前台全量判定满足比快照（MainActivity ON_RESUME 判定链完成后发布）：
+     * key = 仍锁定的胶囊 id（overallOk=false），value = satisfied/total。
+     * HomeViewModel 回前台时若快照晚于本次 resume 即采纳，避免同一前台周期双重全量判定。
+     * 非 Compose 状态：仅后台线程读写，@Volatile 保证可见性。
+     */
+    @Volatile
+    var foregroundJudgeSnapshot: ForegroundJudgeSnapshot? = null
+
+    /** 前台判定快照（完成时刻 + 仍锁定胶囊的满足比） */
+    data class ForegroundJudgeSnapshot(val completedAtMillis: Long, val ratios: Map<String, Float>)
 
     /**
      * 嵌套种子是否休眠（体验储备池 §3）：有 seedOf 标记且无 sprout 标记。

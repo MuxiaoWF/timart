@@ -53,7 +53,27 @@ class PosterComposer(private val context: Context) {
      * @param seed 尘粒随机种子（同种子同边缘，视觉可复现）
      * @return 成功返回文件；失败返回 null（不抛出）
      */
-    fun compose(content: PosterContent, seed: Long = System.currentTimeMillis()): File? = runCatching {
+    fun compose(content: PosterContent, seed: Long = System.currentTimeMillis()): File? =
+        composeBitmap(content, seed)?.let { bitmap ->
+            runCatching {
+                val dir = context.getExternalFilesDir("Pictures")
+                    ?: File(context.filesDir, "Pictures").apply { mkdirs() }
+                dir.mkdirs()
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(java.util.Date())
+                val file = File(dir, "timart_poster_$stamp.jpg")
+                file.outputStream().use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                }
+                bitmap.recycle()
+                file
+            }.getOrNull()
+        }
+
+    /**
+     * 仅合成海报位图（不落盘）：纪念册按年合订（AlbumComposer）复用单页渲染，
+     * 调用方自行负责 recycle 与拼接。失败返回 null（不抛出）。
+     */
+    fun composeBitmap(content: PosterContent, seed: Long = System.currentTimeMillis()): Bitmap? = runCatching {
         val bitmap = createBitmap(W, H)
         val canvas = Canvas(bitmap)
         drawBackground(canvas)
@@ -73,17 +93,7 @@ class PosterComposer(private val context: Context) {
 
         drawFooter(canvas, content)
         drawEdgeDust(canvas, seed)
-
-        val dir = context.getExternalFilesDir("Pictures")
-            ?: File(context.filesDir, "Pictures").apply { mkdirs() }
-        dir.mkdirs()
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(java.util.Date())
-        val file = File(dir, "timart_poster_$stamp.jpg")
-        file.outputStream().use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
-        }
-        bitmap.recycle()
-        file
+        bitmap
     }.getOrNull()
 
     // ---- 背景与氛围 ----

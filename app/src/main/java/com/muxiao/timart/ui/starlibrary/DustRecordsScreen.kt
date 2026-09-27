@@ -86,14 +86,18 @@ fun DustRecordsScreen(container: AppContainer) {
             destroyedRepository = container.destroyedRepository,
             capsuleRepository = container.capsuleRepository,
             metaDao = container.database.metaDao(),
+            crud = container.capsuleCrudUseCase,
         )
     }
     val records by vm.records.collectAsStateWithLifecycle()
+    val trash by vm.trash.collectAsStateWithLifecycle()
     val engine = container.particleEngine
     val density = LocalDensity.current
 
     // 待确认删除的记录（非 null 时显示确认弹窗）
     var pendingDelete by remember { mutableStateOf<DestroyRecord?>(null) }
+    // 待确认彻底删除的回收站条目（最近删除缓冲；二次确认后物理删除）
+    var pendingTrashDelete by remember { mutableStateOf<DustRecordsViewModel.TrashEntry?>(null) }
     // 「胶囊的一生」生平弹层（体验储备池 §5）：行点击按需加载
     var biography by remember { mutableStateOf<DustRecordsViewModel.Biography?>(null) }
     // 长按进入批量删除：selection 非空即为选择态，点击在 选中/取消 间切换；确认后移除档案
@@ -127,6 +131,65 @@ fun DustRecordsScreen(container: AppContainer) {
                 color = InkSecondary,
                 modifier = Modifier.padding(top = 14.dp),
             )
+
+            // ---- 回收站（最近删除缓冲，30 天到期自动清空）：星库「删除」的胶囊在此缓冲可挽回 ----
+            if (trash.isNotEmpty()) {
+                val nowMillis = remember { System.currentTimeMillis() }
+                Text(
+                    text = L.trashSectionTitle,
+                    style = TimartType.titleSerif,
+                    color = InkPrimary,
+                    modifier = Modifier.padding(top = 20.dp),
+                )
+                Text(
+                    text = L.trashSectionDesc,
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                ) {
+                    trash.forEach { entry ->
+                        val daysLeft = kotlin.math.ceil(
+                            (com.muxiao.timart.domain.usecase.TRASH_RETENTION_MILLIS -
+                                (nowMillis - entry.deletedAt)).coerceAtLeast(1L) / 86_400_000.0,
+                        ).toInt().coerceAtLeast(1)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SurfaceRaise)
+                                .padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.capsule.title,
+                                    style = TimartType.body,
+                                    color = InkPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = L.trashEntryDaysFmt.format(daysLeft),
+                                    style = TimartType.caption,
+                                    color = InkDisabled,
+                                )
+                            }
+                            TextButton(onClick = { vm.restoreFromTrash(entry.capsule.id) }) {
+                                Text(text = L.trashRestore, style = TimartType.caption, color = TimeGold)
+                            }
+                            TextButton(onClick = { pendingTrashDelete = entry }) {
+                                Text(text = L.trashDeleteNow, style = TimartType.caption, color = InkSecondary)
+                            }
+                        }
+                    }
+                }
+            }
 
             if (records.isEmpty()) {
                 Box(
@@ -233,6 +296,38 @@ fun DustRecordsScreen(container: AppContainer) {
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) {
                     Text(text = L.keep, color = InkSecondary)
+                }
+            },
+        )
+    }
+
+    // 回收站「彻底删除」二次确认（与归为销毁弹窗同级别的显式确认；不写销毁档案）
+    pendingTrashDelete?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingTrashDelete = null },
+            containerColor = SurfaceRaise,
+            title = { Text(text = L.trashDeleteConfirmTitle, style = TimartType.titleSerif) },
+            text = {
+                Text(
+                    text = L.trashDeleteConfirmBodyFmt.format(entry.capsule.title),
+                    style = TimartType.caption,
+                    color = InkSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.deleteTrashedNow(entry.capsule.id)
+                        pendingTrashDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+                ) {
+                    Text(text = L.trashDeleteNow)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTrashDelete = null }) {
+                    Text(text = L.cancel, color = InkSecondary)
                 }
             },
         )

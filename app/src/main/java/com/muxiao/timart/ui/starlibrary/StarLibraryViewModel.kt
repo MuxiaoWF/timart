@@ -128,12 +128,13 @@ class StarLibraryViewModel(container: AppContainer) : ViewModel() {
 
     /**
      * 批量删除已解锁胶囊（长按多选 + 二次确认后调用）：
-     * 走 CRUD 的物理删除（内容 + 图片目录 + 元记录），不写销毁档案（内容还在，非"销毁"语义）。
+     * 走 CRUD 的软删除（移入回收站，30 天后到期自动物理清空；缓冲期内可在尘迹页回收站恢复），
+     * 不写销毁档案（内容还在，非"销毁"语义）。「删除 ≠ 归为销毁」的语义差异见 AGENTS.md §3.10。
      */
     fun deleteSelected(ids: Collection<String>) {
         if (ids.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            ids.forEach { crud.delete(it) }
+            ids.forEach { runCatching { crud.delete(it) } }
         }
     }
 

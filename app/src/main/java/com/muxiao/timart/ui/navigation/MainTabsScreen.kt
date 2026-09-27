@@ -56,10 +56,12 @@ import kotlinx.coroutines.launch
  * 四大主页面容器（PRD §2.2 页脚导航）：HorizontalPager 承载 时轨 / 星库 / 尘迹 / 设置，
  * 支持手势横向滑动切换（核心对象连续运动，不整页替换），导航条与页码双向联动。
  * 页面切换动效 = pager 自带位移 + 页内容保持组合态（无独立进场动画，符合 §2.3 连续性要求）。
+ * beyondViewportPageCount = 1：相邻页常驻（冷启动只多组合一页）；相邻页签切换零重建，
+ * 跨页远跳仍组合目标页一次——但切页期间逐帧重组已由「连续页位置只在导航条局部读取」消除，
+ * 远跳不会再叠加重组风暴。
  * 竖屏 = 底部导航条；高度紧凑（手机横屏，见 `ui/theme/Adaptive.kt`）= 左侧栏，
  * 两种形态页签视觉同规格，Pager 始终横向滑动。
  */
-@SuppressLint("FrequentlyChangingValue")
 @Composable
 fun MainTabsScreen(
     container: AppContainer,
@@ -69,10 +71,6 @@ fun MainTabsScreen(
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { MAIN_TAB_COUNT })
     val scope = rememberCoroutineScope()
     val adaptive = rememberWindowAdaptive()
-
-    // 连续页位置（currentPage + offsetFraction）：底栏/侧栏光晕随手指与翻页动画连续跟随，
-    // 取代「翻页过半瞬间整体跳档」的离散联动
-    val pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction
 
     val onSelect: (Int) -> Unit = { page ->
         scope.launch {
@@ -86,11 +84,12 @@ fun MainTabsScreen(
     if (adaptive.isCompactHeight) {
         Row(modifier = Modifier.fillMaxSize().background(DeepCharcoal)) {
             TimartSideRail(
-                pagePosition = pagePosition,
+                pagerState = pagerState,
                 onSelect = onSelect,
             )
             HorizontalPager(
                 state = pagerState,
+                beyondViewportPageCount = BEYOND_PAGES,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -102,6 +101,7 @@ fun MainTabsScreen(
         Column(modifier = Modifier.fillMaxSize().background(DeepCharcoal)) {
             HorizontalPager(
                 state = pagerState,
+                beyondViewportPageCount = BEYOND_PAGES,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -109,7 +109,7 @@ fun MainTabsScreen(
                 MainTabPage(page, container, pagerState, onOpenDetail, onCreate)
             }
             TimartBottomBar(
-                pagePosition = pagePosition,
+                pagerState = pagerState,
                 onSelect = onSelect,
             )
         }
@@ -148,9 +148,13 @@ private fun MainTabPage(
 }
 
 /** 底部导航条：四页签各用专属图标（TabIcons），选中项为「金色图标 + 加宽光晕胶囊」；
- *  光晕/墨色按与 [pagePosition]（连续页位置）的距离插值，随手指与翻页动画连续跟随 */
+ *  光晕/墨色按与连续页位置的距离插值，随手指与翻页动画连续跟随。
+ *  连续页位置（currentPage + offsetFraction）在本函数局部读取：每帧重组只落在导航条自身，
+ *  不再上溯触发 MainTabsScreen 与 pager 各页逐帧重组（切页卡顿主因之一） */
+@SuppressLint("FrequentlyChangingValue")
 @Composable
-private fun TimartBottomBar(pagePosition: Float, onSelect: (Int) -> Unit) {
+private fun TimartBottomBar(pagerState: PagerState, onSelect: (Int) -> Unit) {
+    val pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction
     val L = LocalStrings.current
     val labels = listOf(
         L.tabTimeTrack,
@@ -220,6 +224,10 @@ private fun TimartBottomBar(pagePosition: Float, onSelect: (Int) -> Unit) {
 /** 主 Tab 数量 */
 const val MAIN_TAB_COUNT = 4
 
+/** Pager 常驻页半径：1 = 相邻页常驻（相邻页签切换零重建，冷启动仅多组合一页）；
+ *  改为 MAIN_TAB_COUNT - 1 可四页全常驻（任意切换零重建，冷启动一次性组合全部四页） */
+private const val BEYOND_PAGES = 1
+
 /** 底部导航条内容高度 */
 private val BOTTOM_BAR_HEIGHT = 66.dp
 
@@ -229,9 +237,12 @@ private val SIDE_RAIL_WIDTH = 80.dp
 /**
  * 横屏侧栏：竖向四页签，视觉与底栏同规格（SurfaceRaise 底 + TrackHairline 分隔线 + 金色光晕胶囊）。
  * 背景延伸到系统条之下，内容经 systemBarsPadding 内缩（横屏状态栏在顶、导航条在侧，各自兜住）。
+ * 连续页位置与底栏同规则：本函数局部读取，逐帧重组不外溢到页面。
  */
+@SuppressLint("FrequentlyChangingValue")
 @Composable
-private fun TimartSideRail(pagePosition: Float, onSelect: (Int) -> Unit) {
+private fun TimartSideRail(pagerState: PagerState, onSelect: (Int) -> Unit) {
+    val pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction
     val L = LocalStrings.current
     val labels = listOf(
         L.tabTimeTrack,

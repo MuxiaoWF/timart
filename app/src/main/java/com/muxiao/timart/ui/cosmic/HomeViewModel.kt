@@ -77,7 +77,8 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
      */
     val satisfaction: StateFlow<Map<String, Float>> = _satisfaction.asStateFlow()
 
-    private val satisfiedCache = HashMap<String, Int>()
+    /** 满足比缓存（id → satisfied/total）：PENDING 增量检测的上一拍参照 */
+    private val satisfiedCache = HashMap<String, Float>()
 
     /** 那年今日（N8）：历年同日封存的现存档案中最近的一条（须满 1 整年）；无则 null。纯本地日期匹配，不涉密文 */
     data class TodayMemory(val capsuleId: String, val title: String, val yearsAgo: Int)
@@ -231,28 +232,32 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * 首页 ON_RESUME：对仍 LOCKED 的胶囊跑同步纯判定（Default 协程，无副作用）。
-     * 条件新满足 → PENDING 事件集合；不持久化（MainActivity 的判定链负责回写）。
+     * 首页 ON_RESUME：刷新仍锁定胶囊的满足比快照与 PENDING 事件（Default 协程，无副作用，不持久化）。
+     * 主链路（MainActivity 同一 ON_RESUME 的全量判定）已落本轮快照则直接采纳，
+     * 避免同一前台周期双重全量判定；主链路 400ms 内未完成则回退自身判定（结果等价）。
      */
     fun onScreenResumed() {
         if (judging) return
         judging = true
         viewModelScope.launch(Dispatchers.Default) {
             try {
+                val resumeAt = System.currentTimeMillis()
+                delay(400.milliseconds)
+                val snapshot = container.foregroundJudgeSnapshot
+                if (snapshot != null && snapshot.completedAtMillis >= resumeAt) {
+                    adoptForegroundSnapshot(snapshot.ratios)
+                    return@launch
+                }
                 val ctx = container.defaultContext(foregroundOnly = false)
                 val ratioMap = HashMap(_satisfaction.value)
                 for (capsule in repo.allLockedSync()) {
                     val result = judge.judge(capsule, ctx, RuntimeSettings.resolvedLang)
-                    val satisfied = result.items.count { it.satisfied }
                     // 成熟度快照随回前台判定即时演进（不等 30s 周期）
                     if (result.items.isNotEmpty()) {
-                        ratioMap[capsule.id] = satisfied.toFloat() / result.items.size
+                        val ratio = result.items.count { it.satisfied }.toFloat() / result.items.size
+                        ratioMap[capsule.id] = ratio
+                        notePendingDelta(capsule.id, ratio, result.overallOk)
                     }
-                    val prev = satisfiedCache[capsule.id]
-                    if (prev != null && satisfied > prev && !result.overallOk) {
-                        _pendingIds.update { it + capsule.id }
-                    }
-                    satisfiedCache[capsule.id] = satisfied
                 }
                 _satisfaction.value = ratioMap
                 // 回前台即时刷新预览卡（不等 30s 周期）
@@ -261,6 +266,26 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
                 judging = false
             }
         }
+    }
+
+    /** 满足比抬升 → PENDING 事件（仅仍锁定计；解锁回写与通知由主链路负责） */
+    private fun notePendingDelta(id: String, ratio: Float, overallOk: Boolean) {
+        val prev = satisfiedCache[id]
+        if (prev != null && ratio > prev && !overallOk) {
+            _pendingIds.update { it + id }
+        }
+        satisfiedCache[id] = ratio
+    }
+
+    /** 采纳主链路发布的满足比快照（仅仍锁定胶囊；产出与自身判定路径等价） */
+    private fun adoptForegroundSnapshot(ratios: Map<String, Float>) {
+        val ratioMap = HashMap(_satisfaction.value)
+        ratios.forEach { (id, ratio) ->
+            notePendingDelta(id, ratio, overallOk = false)
+            ratioMap[id] = ratio
+        }
+        _satisfaction.value = ratioMap
+        refreshPreview()
     }
 
     /** 点击 UNSEAL 球进入详情后消费事件 */

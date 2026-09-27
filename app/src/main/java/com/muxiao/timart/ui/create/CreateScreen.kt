@@ -10,11 +10,15 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import com.muxiao.timart.l10n.LocalStrings
 import com.muxiao.timart.ui.theme.InkPrimary
+import com.muxiao.timart.ui.theme.InkSecondary
 import com.muxiao.timart.ui.theme.SurfaceRaise
 import com.muxiao.timart.ui.theme.TimeGold
 import com.muxiao.timart.ui.theme.TimartType
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
@@ -126,7 +130,7 @@ fun CreateScreen(
                     TextButton(
                         onClick = onBack,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = com.muxiao.timart.ui.theme.InkSecondary,
+                            contentColor = InkSecondary,
                         ),
                         modifier = Modifier.padding(start = 12.dp),
                     ) {
@@ -135,6 +139,15 @@ fun CreateScreen(
                             style = TimartType.caption,
                         )
                     }
+                }
+                // 草稿恢复横幅（自动保存）：检测到未完成草稿时在首步提供 恢复/丢弃
+                val savedDraft = vm.savedDraft
+                if (backVisible && savedDraft != null) {
+                    DraftRestoreBanner(
+                        draft = savedDraft,
+                        onRestore = vm::restoreSavedDraft,
+                        onDiscard = vm::discardSavedDraft,
+                    )
                 }
             }
             AnimatedContent(
@@ -223,6 +236,55 @@ fun CreateScreen(
                 onBack()
             },
         )
+    }
+}
+
+/**
+ * 草稿恢复横幅（自动保存）：标题 + 保存时间与未命名标题摘要 + 隐私明示（草稿以明文保存、
+ * 未加密，且不含图片与语音）+ 恢复/丢弃。仅创建页首步展示。
+ */
+@Composable
+private fun DraftRestoreBanner(
+    draft: CreateDraftData,
+    onRestore: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    val L = LocalStrings.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(SurfaceRaise)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(text = L.draftFoundTitle, style = TimartType.body, color = InkPrimary)
+        Text(
+            text = L.draftFoundInfoFmt.format(
+                com.muxiao.timart.utils.format.TimeFormatter.dateTime(draft.savedAt),
+                draft.title.ifBlank { L.draftUntitled },
+            ),
+            style = TimartType.caption,
+            color = InkSecondary,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Text(
+            text = L.draftPlainNote,
+            style = TimartType.caption,
+            color = com.muxiao.timart.ui.theme.InkDisabled,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Row(modifier = Modifier.padding(top = 4.dp)) {
+            TextButton(
+                onClick = onRestore,
+                colors = ButtonDefaults.textButtonColors(contentColor = TimeGold),
+            ) {
+                Text(text = L.draftRestore, style = TimartType.caption)
+            }
+            TextButton(onClick = onDiscard) {
+                Text(text = L.draftDiscard, style = TimartType.caption, color = InkSecondary)
+            }
+        }
     }
 }
 

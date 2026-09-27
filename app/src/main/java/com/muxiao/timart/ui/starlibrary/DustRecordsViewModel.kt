@@ -4,14 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.muxiao.timart.data.local.db.CapsuleMetaKeys
 import com.muxiao.timart.data.local.db.MetaDao
+import com.muxiao.timart.domain.model.Capsule
 import com.muxiao.timart.domain.model.DestroyRecord
 import com.muxiao.timart.domain.model.unlock.ConditionText
 import com.muxiao.timart.domain.repository.CapsuleRepository
 import com.muxiao.timart.domain.repository.DestroyedRepository
+import com.muxiao.timart.domain.usecase.CapsuleCrudUseCase
 import com.muxiao.timart.utils.RuntimeSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,17 +25,48 @@ import kotlinx.coroutines.withContext
  * - [records] 由 Room Flow 驱动（按销毁时间倒序），删除后自动回流；
  * - [deleteRecord] 仅删除元记录——内容早在销毁时已物理删除，档案只是最后一行字；
  * - [loadBiography]「胶囊的一生」（体验储备池 §5）：销毁只删密文与图片，DESTROYED 胶囊行
- *   保留元信息（笔记/标签/规则/时间戳），配合 meta 刻度还原封存→达成→开启→归尘全程。
+ *   保留元信息（笔记/标签/规则/时间戳），配合 meta 刻度还原封存→达成→开启→归尘全程；
+ * - [trash] 回收站（最近删除缓冲，30 天自动清空）：星库「删除」的胶囊在此缓冲，
+ *   可恢复或提前彻底删除；到期清空由 MainActivity ON_RESUME 调 purgeExpiredTrash。
  */
 class DustRecordsViewModel(
     private val destroyedRepository: DestroyedRepository,
     private val capsuleRepository: CapsuleRepository,
     private val metaDao: MetaDao,
+    private val crud: CapsuleCrudUseCase? = null,
 ) : ViewModel() {
 
     /** 全部销毁记录 */
     val records: StateFlow<List<DestroyRecord>> = destroyedRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 回收站条目（胶囊本体 + 移入时刻；CRUD 未装配时为空流） */
+    data class TrashEntry(val capsule: Capsule, val deletedAt: Long)
+
+    val trash: StateFlow<List<TrashEntry>> = metaDao.observeLike(CapsuleMetaKeys.TRASH_KEY_PREFIX)
+        .map { entries ->
+            entries.mapNotNull { entry ->
+                val id = entry.key.removePrefix(CapsuleMetaKeys.TRASH_KEY_PREFIX)
+                val capsule = runCatching { capsuleRepository.byIdSync(id) }.getOrNull() ?: return@mapNotNull null
+                TrashEntry(capsule, entry.value.toLongOrNull() ?: 0L)
+            }.sortedBy { it.deletedAt }
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 从回收站恢复（清除缓冲标记，胶囊回到各列表） */
+    fun restoreFromTrash(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { crud?.restoreFromTrash(id) }
+        }
+    }
+
+    /** 回收站内彻底删除（确认弹窗之后调用；物理删除本体与文件，不写销毁档案） */
+    fun deleteTrashedNow(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { crud?.deleteNow(id) }
+        }
+    }
 
     /** 生平数据（按需加载，一次性回调） */
     data class Biography(

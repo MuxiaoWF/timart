@@ -150,6 +150,9 @@ fun SettingsScreen(container: AppContainer) {
     var showAutoBackupPeriod by remember { mutableStateOf(false) }
     var showAutoBackupHistory by remember { mutableStateOf(false) }
     var showBackupPwDialog by remember { mutableStateOf(false) }
+    var showCalendarExport by remember { mutableStateOf(false) }
+    var showHandover by remember { mutableStateOf(false) }
+    var showAlbumExport by remember { mutableStateOf(false) }
 
     // 自动备份目录选择（ACTION_OPEN_TREE + 持久化授权）
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -442,6 +445,18 @@ fun SettingsScreen(container: AppContainer) {
                     description = L.setGiftImportDesc,
                     onClick = { showGiftImportDialog = true },
                 )
+                // 遗产移交向导：移交包 = 加密赠予包 + 本地渲染的开启指引图（纯本地编排赠予链路）
+                SimpleRow(
+                    label = L.setHandover,
+                    description = L.setHandoverDesc,
+                    onClick = { showHandover = true },
+                )
+                // ics 日历导出：等待中胶囊的确定性时间条件进入用户自己的日历（零新权限）
+                SimpleRow(
+                    label = L.setCalendarExport,
+                    description = L.setCalendarExportDesc,
+                    onClick = { showCalendarExport = true },
+                )
 
                 // 备份口令（v3 备份口令分离）：导出/自动备份共用的独立口令，与主口令互不影响
                 SimpleRow(
@@ -540,6 +555,12 @@ fun SettingsScreen(container: AppContainer) {
                     label = L.setAnnualReport,
                     description = L.setAnnualReportDesc,
                     onClick = { showAnnualReport = true },
+                )
+                // 纪念册按年合订（海报页纵向拼接分卷导出；需口令会话已解锁）
+                SimpleRow(
+                    label = L.setAlbumExport,
+                    description = L.setAlbumExportDesc,
+                    onClick = { showAlbumExport = true },
                 )
                 SimpleRow(
                     label = L.setPerm,
@@ -717,6 +738,19 @@ fun SettingsScreen(container: AppContainer) {
     }
     if (showGiftImportDialog) {
         GiftImportDialog(manager = container.backupManager, onDismiss = { showGiftImportDialog = false })
+    }
+    if (showHandover) {
+        HandoverWizardDialog(
+            container = container,
+            manager = container.backupManager,
+            onDismiss = { showHandover = false },
+        )
+    }
+    if (showCalendarExport) {
+        CalendarExportDialog(container = container, onDismiss = { showCalendarExport = false })
+    }
+    if (showAlbumExport) {
+        AlbumExportDialog(container = container, onDismiss = { showAlbumExport = false })
     }
     if (showAnnualReport) {
         AnnualReportDialog(container = container, onDismiss = { showAnnualReport = false })
